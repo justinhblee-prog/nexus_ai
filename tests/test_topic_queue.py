@@ -271,6 +271,28 @@ class DurableTopicQueueTests(unittest.TestCase):
         self.assertIn("script_override", columns)
         self.assertIn("target_job_id", columns)
 
+    def test_existing_pipeline_schema_migrates_upload_metadata_columns(self):
+        db = self.api.get_db()
+        try:
+            db.execute("DROP TABLE pipeline_jobs")
+            db.execute("""CREATE TABLE pipeline_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_name TEXT NOT NULL, title TEXT NOT NULL, script TEXT NOT NULL DEFAULT '',
+                video_path TEXT NOT NULL DEFAULT '', stage TEXT NOT NULL DEFAULT '최종컨펌 대기',
+                created_at TEXT NOT NULL
+            )""")
+            db.commit()
+        finally:
+            db.close()
+        self.api.init_app_db()
+        db = self.api.get_db()
+        try:
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(pipeline_jobs)")}
+        finally:
+            db.close()
+        self.assertIn("youtube_video_id", columns)
+        self.assertIn("privacy_status", columns)
+
     def test_concurrent_connections_cannot_claim_the_same_queue_item(self):
         self.api.enqueue_topic("Future Leak | one shared queue item", source="test")
         with ThreadPoolExecutor(max_workers=8) as pool:
