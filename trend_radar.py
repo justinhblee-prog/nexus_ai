@@ -138,7 +138,7 @@ def scan_global_trends(period_type="daily"):
     ]
     by_geo = {"KR": [], "US": [], "JP": [], "GB": []}
     hn_items, hn_error = _fetch_hn()
-    by_geo["US"] = hn_items
+    by_geo["US"] = list(hn_items)
     source_results = [("US", "Hacker News", "https://hacker-news.firebaseio.com/v0/topstories.json",
                        hn_items, hn_error)]
     with ThreadPoolExecutor(max_workers=len(feeds)) as executor:
