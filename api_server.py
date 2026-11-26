@@ -142,30 +142,40 @@ def auto_produce_top_trends(count=3):
 
 
 def enqueue_topic(topic_line: str, source: str = "api", idempotency_key: str | None = None):
-    """Persist one topic before acknowledging it; repeated imports are idempotent."""
+    """Persist one topic per channel so retries cannot duplicate earlier channel renders."""
+    import uuid
     raw = topic_line.strip()
     if not raw:
-        return False
+        return 0
     channel_name = None
     topic = raw
     if "|" in raw:
         channel_name, topic = [part.strip() for part in raw.split("|", 1)]
         if not channel_name or not topic:
             raise ValueError("queue lines must be 'channel | topic' or 'topic'")
-    key = idempotency_key or __import__("uuid").uuid4().hex
-    now = int(time.time())
-    stamp = datetime.now().isoformat(timespec="seconds")
     db = get_db()
     try:
-        cur = db.execute(
-            """INSERT OR IGNORE INTO topic_queue
-               (idempotency_key, channel_name, topic, source, status, attempts,
-                available_at, created_at, updated_at)
-               VALUES (?, ?, ?, ?, 'pending', 0, ?, ?, ?)""",
-            (key, channel_name, topic, source, now, stamp, stamp),
-        )
+        if channel_name is None:
+            channels = [row["name"] for row in db.execute("SELECT name FROM channels ORDER BY id")]
+            if not channels:
+                raise RuntimeError("No channels are configured")
+        else:
+            channels = [channel_name]
+        now = int(time.time())
+        stamp = datetime.now().isoformat(timespec="seconds")
+        added = 0
+        for name in channels:
+            key = f"{idempotency_key or uuid.uuid4().hex}:{name}"
+            cur = db.execute(
+                """INSERT OR IGNORE INTO topic_queue
+                   (idempotency_key, channel_name, topic, source, status, attempts,
+                    available_at, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, 'pending', 0, ?, ?, ?)""",
+                (key, name, topic, source, now, stamp, stamp),
+            )
+            added += max(0, cur.rowcount)
         db.commit()
-        return cur.rowcount == 1
+        return added
     finally:
         db.close()
 
@@ -245,19 +255,22 @@ def import_legacy_topics_file():
     try:
         db.execute("BEGIN IMMEDIATE")
         stamp = datetime.now().isoformat(timespec="seconds")
+        channels = [row["name"] for row in db.execute("SELECT name FROM channels ORDER BY id")]
         for index, line in enumerate(lines):
             key = hashlib.sha256(f"{digest}:{index}:{line}".encode("utf-8")).hexdigest()
             channel_name, topic = (line.split("|", 1) if "|" in line else (None, line))
             channel_name = channel_name.strip() if channel_name else None
             topic = topic.strip()
-            if topic and (channel_name is None or channel_name):
-                db.execute(
-                    """INSERT OR IGNORE INTO topic_queue
-                       (idempotency_key, channel_name, topic, source, status, attempts,
-                        available_at, created_at, updated_at)
-                       VALUES (?, ?, ?, 'topics.txt', 'pending', 0, ?, ?, ?)""",
-                    (key, channel_name, topic, int(time.time()), stamp, stamp),
-                )
+            targets = [channel_name] if channel_name else channels
+            for target in targets:
+                if topic and target:
+                    db.execute(
+                        """INSERT OR IGNORE INTO topic_queue
+                           (idempotency_key, channel_name, topic, source, status, attempts,
+                            available_at, created_at, updated_at)
+                           VALUES (?, ?, ?, 'topics.txt', 'pending', 0, ?, ?, ?)""",
+                        (f"{key}:{target}", target, topic, int(time.time()), stamp, stamp),
+                    )
         db.commit()
     except Exception:
         db.rollback()
@@ -273,23 +286,17 @@ def import_legacy_topics_file():
 
 def watch_topics_loop():
     while True:
+        item = None
         try:
             import_legacy_topics_file()
             item = claim_next_topic()
             if item:
                 db = get_db()
                 try:
-                    if item["channel_name"]:
-                        channel = db.execute("SELECT * FROM channels WHERE name=?", (item["channel_name"],)).fetchone()
-                        if not channel:
-                            raise ValueError(f"Unknown channel: {item['channel_name']}")
-                        targets = [channel]
-                    else:
-                        targets = db.execute("SELECT * FROM channels ORDER BY id").fetchall()
-                    if not targets:
-                        raise RuntimeError("No channels are configured")
-                    for channel in targets:
-                        run_make_video(channel["name"], channel["persona"], item["topic"])
+                    channel = db.execute("SELECT * FROM channels WHERE name=?", (item["channel_name"],)).fetchone()
+                    if not channel:
+                        raise ValueError(f"Unknown channel: {item['channel_name']}")
+                    run_make_video(channel["name"], channel["persona"], item["topic"])
                 finally:
                     db.close()
                 finish_topic(item["id"])
@@ -441,9 +448,9 @@ def create_all(bg: BackgroundTasks):
 
 @app.post("/api/queue")
 def save_queue(req: QueueReq):
-    with open("topics.txt", "w", encoding="utf-8") as f:
-        f.write(req.topics_text.strip() + ("\n" if req.topics_text.strip() else ""))
-    return {"ok": True, "msg": "자동 제작 큐 저장 완료"}
+    lines = [line.strip() for line in req.topics_text.splitlines() if line.strip()]
+    added = sum(enqueue_topic(line, source="api") for line in lines)
+    return {"ok": True, "queued": added, "msg": f"{added}건을 채널별 내구성 제작 큐에 등록했습니다."}
 
 @app.post("/api/approve/{job_id}")
 def approve_job(job_id: int):
