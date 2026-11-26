@@ -97,6 +97,8 @@
         <div class="ops-metric"><div class="label">최근 24시간 이벤트</div><div class="value">—</div></div>
       </div>
       <div id="ops-events" class="event-list"><div style="color:#64748B;font-size:12px;">아직 기록된 이벤트가 없습니다.</div></div>
+      <div style="font-size:12px;font-weight:800;color:#38BDF8;margin-top:18px;">트렌드 수집 소스 상태</div>
+      <div id="ops-sources" class="event-list"><div style="color:#64748B;font-size:12px;">수집 상태 확인 대기</div></div>
     </section>
     <section class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1E293B;padding-bottom:16px;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
@@ -290,18 +292,22 @@
         const m = await metricsResponse.json();
         const events = (await eventsResponse.json()).items || [];
         const queue = m.queue_by_status || {}, pipeline = m.pipeline_by_stage || {};
+        const sources = m.sources || [];
+        const sourceOk = sources.filter(source => source.last_status === "success").length;
+        const sourceFailed = sources.filter(source => source.last_status !== "success").length;
         const cards = [
           ["제작 큐 대기", queue.pending || 0],
           ["실행 중", queue.running || 0],
           ["실패 격리", queue.failed || 0],
           ["검수 대기", pipeline["최종컨펌 대기"] || 0],
+          ["피드 정상 / 오류", sourceOk + " / " + sourceFailed],
           ["최근 24시간 이벤트", m.events_last_24h || 0]
         ];
         metricsNode.replaceChildren();
         cards.forEach(([label, value]) => {
           const card = document.createElement("div"); card.className = "ops-metric";
           const name = document.createElement("div"); name.className = "label"; name.textContent = label;
-          const number = document.createElement("div"); number.className = "value"; number.textContent = Number(value).toLocaleString();
+          const number = document.createElement("div"); number.className = "value"; number.textContent = typeof value === "number" ? value.toLocaleString() : String(value);
           card.append(name, number); metricsNode.append(card);
         });
         eventsNode.replaceChildren();
@@ -314,6 +320,22 @@
             const meta = document.createElement("span"); meta.className = "event-meta";
             meta.textContent = [event.entity_type, event.entity_id ? "#" + event.entity_id : "", event.occurred_at].filter(Boolean).join(" · ");
             row.append(name, meta); eventsNode.append(row);
+          });
+        }
+        const sourceNode = document.getElementById("ops-sources");
+        sourceNode.replaceChildren();
+        if (!sources.length) {
+          const empty = document.createElement("div"); empty.style.cssText = "color:#64748B;font-size:12px;";
+          empty.textContent = "아직 수집 시도 기록이 없습니다."; sourceNode.append(empty);
+        } else {
+          sources.forEach(source => {
+            const row = document.createElement("div"); row.className = "event-row";
+            const name = document.createElement("span"); name.className = "event-name";
+            name.textContent = source.region + " · " + source.source_name + " · " + (source.last_status === "success" ? "정상" : "오류");
+            const meta = document.createElement("span"); meta.className = "event-meta";
+            meta.textContent = "항목 " + source.item_count + " · 연속 실패 " + source.consecutive_failures +
+              " · 마지막 성공 " + (source.last_success_at || "없음");
+            row.append(name, meta); sourceNode.append(row);
           });
         }
         document.getElementById("ops-updated").textContent = "마지막 갱신: " + new Date().toLocaleTimeString("ko-KR");
