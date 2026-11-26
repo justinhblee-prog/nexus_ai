@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NEXUS STUDIO PRO</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #050811; color: #F8FAFC; font-family: 'Malgun Gothic', sans-serif; line-height: 1.5; }
+    header { position: sticky; top: 0; z-index: 40; height: 64px; background: #050811; border-bottom: 1px solid #1E293B; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; }
+    .logo { width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, #2563EB, #06B6D4); display: flex; align-items: center; justify-content: center; font-weight: 900; color: #fff; }
+    .live-badge { padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 700; background: rgba(16,185,129,0.15); color: #34D399; border: 1px solid rgba(16,185,129,0.4); margin-left: 6px; }
+    .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    select, input, textarea { background: #060A14; color: #F8FAFC; border: 1px solid #1E293B; border-radius: 10px; padding: 8px 12px; font-size: 13px; outline: none; }
+    button { border: none; border-radius: 10px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; color: #fff; }
+    .btn-blue { background: #2563EB; } .btn-green { background: #059669; } .btn-purple { background: #7C3AED; }
+    .btn-dark { background: #060A14; color: #94A3B8; border: 1px solid #1E293B; }
+    .btn-red { background: rgba(225,29,72,0.2); color: #FB7185; border: 1px solid rgba(225,29,72,0.4); }
+    main { max-width: 1380px; margin: 0 auto; padding: 24px; display: flex; flex-direction: column; gap: 24px; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+    .card { background: #0B101D; border: 1px solid #1E293B; border-radius: 16px; padding: 20px; }
+    .inset { background: #060A14; border: 1px solid #1E293B; border-radius: 12px; padding: 16px; }
+    .radar-layout { display: grid; grid-template-columns: 320px 1fr; gap: 20px; }
+    .radar-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; max-height: 520px; overflow-y: auto; }
+    .r-card { background: #060A14; border: 1px solid #1E293B; border-radius: 12px; padding: 14px; cursor: pointer; display: flex; flex-direction: column; gap: 8px; }
+    .r-card:hover { border-color: #38BDF8; }
+    .badge { padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; }
+    .b-gold { background: rgba(245,158,11,0.2); color: #FCD34D; } .b-blue { background: rgba(59,130,246,0.2); color: #7DD3FC; } .b-ch { background: #1E293B; color: #CBD5E1; }
+    .studio-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+    .work-grid { display: grid; grid-template-columns: 340px 1fr 250px; gap: 16px; }
+    .job-item { background: #060A14; border: 1px solid #1E293B; border-radius: 10px; padding: 12px; cursor: pointer; display: flex; gap: 10px; margin-bottom: 8px; }
+    .job-item.active { border-color: #38BDF8; background: rgba(30,58,138,0.2); }
+    .bar-bg { width: 100%; height: 6px; background: #1E293B; border-radius: 99px; overflow: hidden; margin-top: 4px; }
+    .bar-fill { height: 100%; background: linear-gradient(90deg, #2563EB, #10B981); }
+    @keyframes spin360 { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .spin { display: inline-block; animation: spin360 0.8s linear infinite; }
+    .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
+    .modal-bg.open { display: flex; }
+  </style>
+</head>
+<body>
+  <header>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div class="logo">N</div>
+      <div>
+        <div style="font-weight:900;font-size:15px;">NEXUS STUDIO PRO <span class="live-badge">● LIVE NEURAL</span></div>
+        <div style="font-size:11px;color:#94A3B8;">GLOBAL COMMAND CENTER V5.0</div>
+      </div>
+    </div>
+    <div class="controls">
+      <select id="scan-interval" onchange="changeInterval(this.value)"><option value="1">1분마다</option><option value="5" selected>5분마다</option><option value="15">15분마다</option></select>
+      <button onclick="forceScan()" id="btn-scan" class="btn-blue"><span id="scan-arrow">↻</span> <span id="scan-label">즉시 재스캔</span></button>
+    </div>
+  </header>
+  <main>
+    <section class="kpi-grid">
+      <div class="card"><div style="font-size:12px;color:#94A3B8;">포착된 글로벌 트렌드</div><div id="kpi-trends" style="font-size:30px;font-weight:900;margin-top:6px;">0</div></div>
+      <div class="card"><div style="font-size:12px;color:#94A3B8;">평균 대비 급상승</div><div id="kpi-growth" style="font-size:30px;font-weight:900;margin-top:6px;color:#34D399;">+0%</div></div>
+      <div class="card"><div style="font-size:12px;color:#94A3B8;">운영 중인 글로벌 채널</div><div id="kpi-channels" style="font-size:30px;font-weight:900;margin-top:6px;">0</div></div>
+      <div class="card"><div style="font-size:12px;color:#94A3B8;">검수 대기 / 업로드 완료</div><div id="kpi-jobs" style="font-size:30px;font-weight:900;margin-top:6px;color:#FBBF24;">0 / 0</div></div>
+    </section>
+    <section class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1E293B;padding-bottom:16px;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <div><div style="font-size:11px;font-weight:800;color:#38BDF8;">GLOBAL NEURAL RADAR</div><h2 style="font-size:19px;font-weight:800;">글로벌 신경망 트렌드 레이더 & 국가별 TOP 10</h2></div>
+        <div class="controls">
+          <button onclick="switchPeriod('daily')" id="tab-daily" class="btn-blue">일간 편성</button>
+          <button onclick="switchPeriod('weekly')" id="tab-weekly" class="btn-dark">주간 편성</button>
+          <button onclick="triggerTop3Auto()" class="btn-green">⚡ TOP 3 즉시 자동 제작</button>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+        <div class="controls">
+          <button onclick="setRankFilter('TOP10')" data-rf="TOP10" class="rf-btn btn-blue">🏆 글로벌 종합 TOP 10</button>
+          <button onclick="setRankFilter('KR')" data-rf="KR" class="rf-btn btn-dark">🇰🇷 한국 TOP 10</button>
+          <button onclick="setRankFilter('US')" data-rf="US" class="rf-btn btn-dark">🇺🇸 미국 TOP 10</button>
+          <button onclick="setRankFilter('JP')" data-rf="JP" class="rf-btn btn-dark">🇯🇵 일본 TOP 10</button>
+          <button onclick="setRankFilter('GB')" data-rf="GB" class="rf-btn btn-dark">🇬🇧 영국 TOP 10</button>
+        </div>
+        <div id="radar-count-label" style="font-size:12px;color:#94A3B8;font-weight:700;">0건 표시 중</div>
+      </div>
+      <div class="radar-layout">
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <div class="inset"><div style="font-size:12px;font-weight:700;margin-bottom:10px;">권역별 트렌드 포착 비중</div><div id="region-bars" style="display:flex;flex-direction:column;gap:10px;font-size:12px;"></div></div>
+          <div class="inset"><div style="font-size:12px;font-weight:700;">평균 바이럴 적합도</div><div style="font-size:28px;font-weight:900;color:#38BDF8;margin:4px 0;"><span id="avg-viral-score">0</span> / 100</div><div class="bar-bg"><div id="avg-viral-bar" class="bar-fill" style="width:0%"></div></div></div>
+        </div>
+        <div id="radar-grid" class="radar-cards"></div>
+      </div>
+    </section>
+    <section class="studio-grid">
+      <div class="card" style="display:flex;flex-direction:column;gap:10px;"><h3 style="font-size:15px;font-weight:800;">🎬 단건 AI 아나운서 영상 제작</h3><select id="single-channel" style="width:100%;"></select><input id="single-topic" type="text" placeholder="주제 입력" style="width:100%;" /><button onclick="createSingleVideo()" class="btn-blue" style="width:100%;">아나운서 숏폼 즉시 생성</button></div>
+      <div class="card" style="display:flex;flex-direction:column;justify-content:space-between;gap:10px;"><div><h3 style="font-size:15px;font-weight:800;">⚡ 전 채널 일괄 제작</h3><p style="font-size:12px;color:#94A3B8;margin-top:6px;">10개 채널 전용 남성·여성 아나운서 음성과 페르소나로 동시 제작합니다.</p></div><button onclick="createAllVideos()" class="btn-purple" style="width:100%;">전 채널 일괄 실행</button></div>
+      <div class="card" style="display:flex;flex-direction:column;gap:10px;"><h3 style="font-size:15px;font-weight:800;">💾 원격 자동 제작 큐 (topics.txt)</h3><textarea id="queue-text" rows="3" style="width:100%;"></textarea><button onclick="saveCloudQueue()" class="btn-green" style="width:100%;">큐 저장</button></div>
+    </section>
+    <section class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1E293B;padding-bottom:16px;margin-bottom:16px;">
+        <h2 style="font-size:19px;font-weight:800;">3단 검수 & YouTube 비공개 안전 배포</h2>
+        <div class="controls"><label style="font-size:12px;cursor:pointer;"><input type="checkbox" id="chk-select-all" onchange="toggleSelectAll(this.checked)"> 전체 선택</label><button onclick="bulkDeleteJobs()" class="btn-red">🗑️ 선택 삭제 (<span id="selected-count">0</span>)</button></div>
+      </div>
+      <div class="work-grid">
+        <div id="job-list" style="max-height:480px;overflow-y:auto;"></div>
+        <div class="inset" style="display:flex;flex-direction:column;gap:12px;">
+          <div style="display:flex;justify-content:space-between;font-size:12px;"><span id="editor-channel" style="font-weight:800;color:#38BDF8;">선택된 작업 없음</span><span id="editor-stage" style="color:#94A3B8;">-</span></div>
+          <input id="editor-title" type="text" style="width:100%;font-weight:700;" />
+          <textarea id="editor-script" rows="9" style="width:100%;line-height:1.6;"></textarea>
+          <div style="display:flex;gap:8px;"><button onclick="saveJobEdit()" class="btn-dark" style="flex:1;">💾 수정 저장</button><button onclick="approveUpload()" id="btn-approve" class="btn-green" style="flex:1;">✅ 최종 승인 및 업로드</button></div>
+        </div>
+        <div class="inset" style="display:flex;flex-direction:column;align-items:center;justify-content:center;"><div style="font-size:12px;font-weight:700;margin-bottom:8px;">9:16 실물 프리뷰</div><video id="preview-video" style="width:210px;aspect-ratio:9/16;border-radius:16px;background:#000;" controls playsinline></video></div>
+      </div>
+    </section>
+  </main>
+  <div id="radar-modal" class="modal-bg">
+    <div class="card" style="max-width:540px;width:100%;display:flex;flex-direction:column;gap:14px;">
+      <div style="display:flex;justify-content:space-between;"><h3 id="mod-title" style="font-size:17px;font-weight:800;"></h3><button onclick="closeModal()" class="btn-dark" style="padding:4px 10px;">✕</button></div>
+      <div class="inset" style="display:flex;justify-content:space-between;align-items:center;"><span id="mod-source" style="font-size:12px;font-weight:800;color:#38BDF8;"></span><a id="mod-url" href="#" target="_blank" style="background:#1E293B;color:#fff;text-decoration:none;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;">원문 출처 페이지 열기 ↗</a></div>
+      <div class="inset" style="font-size:12px;"><div>동일 카테고리 평균 조회수: <strong id="mod-avg-views"></strong></div><div style="color:#34D399;margin-top:4px;">포착 트렌드 추정 파급력: <strong id="mod-est-views"></strong></div></div>
+      <p id="mod-reason" class="inset" style="font-size:12px;"></p>
+      <div style="display:flex;gap:10px;"><button onclick="closeModal()" class="btn-dark" style="flex:1;">닫기</button><button onclick="produceFromModal()" class="btn-blue" style="flex:1;">🚀 이 근거로 AI 쇼츠 즉시 제작</button></div>
+    </div>
+  </div>
+  <script>
+    let currentPeriod = "daily", currentRankFilter = "TOP10", allRadarItems = [], allJobs = [], activeJobId = null, selectedModalItem = null;
+    function setScanningState(on) {
+      const a = document.getElementById("scan-arrow"), l = document.getElementById("scan-label"), b = document.getElementById("btn-scan");
+      if (on) { a.classList.add("spin"); l.textContent = "스캔 중..."; b.disabled = true; }
+      else { a.classList.remove("spin"); l.textContent = "즉시 재스캔"; b.disabled = false; }
+    }
+    async function loadRadar(p = currentPeriod) {
+      currentPeriod = p; setScanningState(true);
+      try { const r = await fetch("/api/radar/" + p); const d = await r.json(); allRadarItems = d.items || []; renderRadar(); }
+      finally { setScanningState(false); }
+    }
+    function setRankFilter(rf) {
+      currentRankFilter = rf;
+      document.querySelectorAll(".rf-btn").forEach(b => { b.className = b.dataset.rf === rf ? "rf-btn btn-blue" : "rf-btn btn-dark"; });
+      renderRadar();
+    }
+    function switchPeriod(p) {
+      document.getElementById("tab-daily").className = p === "daily" ? "btn-blue" : "btn-dark";
+      document.getElementById("tab-weekly").className = p === "weekly" ? "btn-blue" : "btn-dark";
+      loadRadar(p);
+    }
+    function renderRadar() {
+      document.getElementById("kpi-trends").textContent = allRadarItems.length;
+      if (allRadarItems.length > 0) {
+        const avgG = Math.round(allRadarItems.reduce((s, x) => s + (x.growth_pct || 0), 0) / allRadarItems.length);
+        const avgV = (allRadarItems.reduce((s, x) => s + (x.viral_score || 0), 0) / allRadarItems.length).toFixed(1);
+        document.getElementById("kpi-growth").textContent = "+" + avgG + "%";
+        document.getElementById("avg-viral-score").textContent = avgV;
+        document.getElementById("avg-viral-bar").style.width = Math.min(100, avgV) + "%";
+      }
+      const regs = [{c:"KR",n:"🇰🇷 한국"},{c:"US",n:"🇺🇸 미국"},{c:"JP",n:"🇯🇵 일본"},{c:"GB",n:"🇬🇧 영국"}];
+      const tot = Math.max(1, allRadarItems.length);
+      document.getElementById("region-bars").innerHTML = regs.map(r => {
+        const cnt = allRadarItems.filter(x => x.region === r.c).length;
+        const pct = Math.round((cnt / tot) * 100);
+        return "<div><div style='display:flex;justify-content:space-between;'><span>" + r.n + "</span><strong style='color:#38BDF8;'>" + cnt + "건 (" + pct + "%)</strong></div><div class='bar-bg'><div class='bar-fill' style='width:" + pct + "%'></div></div></div>";
+      }).join("");
+      let list = [...allRadarItems];
+      if (currentRankFilter === "TOP10") list = list.filter(x => x.is_global_top10 > 0).sort((a, b) => a.is_global_top10 - b.is_global_top10);
+      else list = list.filter(x => x.region === currentRankFilter).sort((a, b) => a.rank_no - b.rank_no);
+      document.getElementById("radar-count-label").textContent = "총 " + list.length + "건 순위 표시 중";
+      document.getElementById("radar-grid").innerHTML = list.map(it => {
+        const badge = currentRankFilter === "TOP10" ? "<span class='badge b-gold'>종합 #" + it.is_global_top10 + "</span>" : "<span class='badge b-blue'>" + it.region + " #" + it.rank_no + "</span>";
+        return "<div onclick='openRadarById(" + it.id + ")' class='r-card'><div style='display:flex;justify-content:space-between;'><div>" + badge + " <span class='badge b-ch'>" + it.matched_channel + "</span></div><span style='color:#34D399;font-size:12px;font-weight:800;'>⚡ " + it.viral_score + "점 · +" + it.growth_pct + "%</span></div><div style='font-size:14px;font-weight:700;'>" + it.topic + "</div><div style='display:flex;justify-content:space-between;font-size:11px;color:#94A3B8;border-top:1px solid #1E293B;padding-top:6px;'><span>출처: " + it.source_name + "</span><span style='color:#38BDF8;font-weight:700;'>상세·제작 ↗</span></div></div>";
+      }).join("");
+    }
+    function openRadarById(id) {
+      const it = allRadarItems.find(x => x.id === id); if (!it) return; selectedModalItem = it;
+      document.getElementById("mod-title").textContent = it.topic; document.getElementById("mod-source").textContent = it.source_name;
+      document.getElementById("mod-url").href = it.source_url; document.getElementById("mod-avg-views").textContent = Number(it.avg_cat_views).toLocaleString() + " 회";
+      document.getElementById("mod-est-views").textContent = Number(it.est_views).toLocaleString() + " 회 (+" + it.growth_pct + "%)";
+      document.getElementById("mod-reason").textContent = it.ai_reason; document.getElementById("radar-modal").classList.add("open");
+    }
+    function closeModal() { document.getElementById("radar-modal").classList.remove("open"); }
+    async function produceFromModal() {
+      if (!selectedModalItem) return;
+      const r = await fetch("/api/create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ channel_name: selectedModalItem.matched_channel, topic: selectedModalItem.topic }) });
+      closeModal(); alert((await r.json()).msg); setTimeout(loadOverview, 3000);
+    }
+    async function loadOverview() {
+      const r = await fetch("/api/overview"); const d = await r.json(); const chs = d.channels || []; allJobs = d.jobs || [];
+      document.getElementById("kpi-channels").textContent = chs.length;
+      const pend = allJobs.filter(j => !j.stage.includes("Uploaded") && !j.stage.includes("완료")).length;
+      document.getElementById("kpi-jobs").textContent = pend + " / " + (allJobs.length - pend);
+      const sel = document.getElementById("single-channel");
+      if (sel.options.length === 0 && chs.length > 0) sel.innerHTML = chs.map(c => "<option value='" + c.name + "'>" + c.name + "</option>").join("");
+      renderJobs();
+    }
+    function renderJobs() {
+      const box = document.getElementById("job-list");
+      if (!allJobs.length) { box.innerHTML = "<div style='text-align:center;padding:30px;color:#64748B;font-size:12px;'>생성된 영상 작업이 없습니다.</div>"; return; }
+      box.innerHTML = allJobs.map(j => "<div onclick='selectJob(" + j.id + ")' class='job-item " + (j.id === activeJobId ? "active" : "") + "'><input type='checkbox' value='" + j.id + "' onclick='event.stopPropagation(); updateSelectedCount();' class='job-chk' style='margin-top:4px;'><div style='flex:1;min-width:0;'><div style='font-size:11px;color:#38BDF8;font-weight:700;'>" + j.channel_name + " · <span style='color:#FBBF24;'>" + j.stage + "</span></div><div style='font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>" + j.title + "</div></div></div>").join("");
+      if (!activeJobId && allJobs.length > 0) selectJob(allJobs.slice(0, 1).pop().id);
+    }
+    function selectJob(id) {
+      activeJobId = id; const jb = allJobs.find(x => x.id === id); if (!jb) return;
+      document.getElementById("editor-channel").textContent = jb.channel_name; document.getElementById("editor-stage").textContent = jb.stage;
+      document.getElementById("editor-title").value = jb.title; document.getElementById("editor-script").value = jb.script;
+      if (jb.video_path) document.getElementById("preview-video").src = "/" + jb.video_path.replace(/^\//, "");
+      renderJobs();
+    }
+    function toggleSelectAll(c) { document.querySelectorAll(".job-chk").forEach(x => x.checked = c); updateSelectedCount(); }
+    function updateSelectedCount() { document.getElementById("selected-count").textContent = document.querySelectorAll(".job-chk:checked").length; }
+    async function bulkDeleteJobs() {
+      const ids = Array.from(document.querySelectorAll(".job-chk:checked")).map(c => Number(c.value)); if (!ids.length) return;
+      await fetch("/api/jobs/bulk-delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job_ids: ids }) });
+      activeJobId = null; loadOverview();
+    }
+    async function saveJobEdit() {
+      if (!activeJobId) return;
+      await fetch("/api/jobs/" + activeJobId, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: document.getElementById("editor-title").value, script: document.getElementById("editor-script").value }) });
+      alert("저장되었습니다."); loadOverview();
+    }
+    async function approveUpload() { if (!activeJobId) return; const r = await fetch("/api/approve/" + activeJobId, { method: "POST" }); alert((await r.json()).msg); loadOverview(); }
+    async function createSingleVideo() {
+      const topic = document.getElementById("single-topic").value.trim(); if (!topic) return;
+      const r = await fetch("/api/create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ channel_name: document.getElementById("single-channel").value, topic }) });
+      alert((await r.json()).msg);
+    }
+    async function createAllVideos() { const r = await fetch("/api/create-all", { method: "POST" }); alert((await r.json()).msg); }
+    async function saveCloudQueue() { const r = await fetch("/api/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ topics_text: document.getElementById("queue-text").value }) }); alert((await r.json()).msg); }
+    async function forceScan() { setScanningState(true); try { await fetch("/api/radar/scan/" + currentPeriod, { method: "POST" }); await loadRadar(currentPeriod); } finally { setScanningState(false); } }
+    async function changeInterval(m) { await fetch("/api/radar/interval/" + m, { method: "POST" }); }
+    async function triggerTop3Auto() { const r = await fetch("/api/radar/auto-produce-now", { method: "POST" }); alert((await r.json()).msg); }
+    loadRadar("daily"); loadOverview();
+  </script>
+</body>
+</html>
