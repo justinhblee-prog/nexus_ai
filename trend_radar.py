@@ -211,7 +211,9 @@ def scan_global_trends(period_type="daily"):
         all_items = []
         region_ranks = {"KR": 0, "US": 0, "JP": 0, "GB": 0}
         seen = set()
-        for geo, source_name, source_url, items, _error in source_results:
+        for geo, source_name, source_url, items, source_error in source_results:
+            if source_error is not None or not items:
+                continue
             for source_rank, item in enumerate(items, start=1):
                 _, topic, _source, url, source_score = item
                 dedupe_key = (geo, topic.casefold())
@@ -259,7 +261,14 @@ def scan_global_trends(period_type="daily"):
                 failed_sources += int(not success)
 
             if all_items:
-                conn.execute("DELETE FROM trend_recommendations WHERE period_type=?", (period_type,))
+                # Replace only sources that completed successfully; retain prior rows for
+                # failed feeds and expose their stale status through source health metadata.
+                for source_name, details in source_summary.items():
+                    if details["status"] == "success":
+                        conn.execute(
+                            "DELETE FROM trend_recommendations WHERE period_type=? AND source_name=?",
+                            (period_type, source_name),
+                        )
                 for item in all_items:
                     reason = f"[{item['region']}] {item['source_name']} source order #{item['source_rank']}"
                     conn.execute(
