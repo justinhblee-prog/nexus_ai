@@ -1,4 +1,4 @@
-import os, time, sqlite3, threading, logging
+import os, time, sqlite3, threading, logging, hmac, hashlib, secrets
 from datetime import datetime
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,6 +11,38 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("nexus.api")
 
 app = FastAPI(title="NEXUS STUDIO PRO API")
+# Browser sessions are signed server-side and stored in HttpOnly cookies.
+API_PASSWORD = os.getenv('NEXUS_API_PASSWORD', '')
+SESSION_SECRET = os.getenv('NEXUS_SESSION_SECRET', '')
+SESSION_COOKIE_NAME = 'nexus_session'
+SESSION_TTL_SECONDS = 12 * 60 * 60
+
+def auth_is_configured() -> bool:
+    return len(API_PASSWORD) >= 12 and len(SESSION_SECRET) >= 32
+
+def create_session_cookie(now: int | None = None) -> str:
+    if not auth_is_configured():
+        raise RuntimeError('API session secrets are not configured')
+    issued = int(time.time() if now is None else now)
+    payload = f'{issued + SESSION_TTL_SECONDS}.{secrets.token_urlsafe(18)}'
+    signature = hmac.new(SESSION_SECRET.encode('utf-8'), payload.encode('utf-8'), hashlib.sha256).hexdigest()
+    return f'{payload}.{signature}'
+
+def verify_session_cookie(cookie: str | None, now: int | None = None) -> bool:
+    if not auth_is_configured() or not cookie:
+        return False
+    try:
+        expires_text, nonce, signature = cookie.split('.', 2)
+        expires = int(expires_text)
+        current = int(time.time() if now is None else now)
+        if expires <= current or expires > current + SESSION_TTL_SECONDS + 60 or not nonce:
+            return False
+        payload = f'{expires_text}.{nonce}'
+        expected = hmac.new(SESSION_SECRET.encode('utf-8'), payload.encode('utf-8'), hashlib.sha256).hexdigest()
+        return hmac.compare_digest(signature, expected)
+    except (TypeError, ValueError):
+        return False
+
 # The compose file binds host ports to loopback; CORS is limited to local UI origins.
 LOCAL_UI_ORIGINS = {
     "http://127.0.0.1:8502", "http://localhost:8502",
@@ -24,11 +56,18 @@ app.add_middleware(
 )
 
 @app.middleware("http")
-async def reject_cross_origin_mutations(request, call_next):
-    # CORS alone does not prevent a browser from sending a forged state-changing request.
+async def enforce_local_origin_and_session(request, call_next):
     origin = request.headers.get("origin")
     if request.method not in ("GET", "HEAD", "OPTIONS") and origin and origin not in LOCAL_UI_ORIGINS:
         return JSONResponse(status_code=403, content={"detail": "Cross-origin mutation rejected"})
+    path = request.url.path
+    public_paths = {"/api/session/status", "/api/session/login", "/api/session/logout"}
+    protected = (path.startswith("/api/") and path not in public_paths) or path.startswith("/output/")
+    if protected:
+        if not auth_is_configured():
+            return JSONResponse(status_code=503, content={"detail": "Set NEXUS_API_PASSWORD and NEXUS_SESSION_SECRET to enable API authentication."})
+        if not verify_session_cookie(request.cookies.get(SESSION_COOKIE_NAME)):
+            return JSONResponse(status_code=401, content={"detail": "Authentication required"})
     return await call_next(request)
 
 os.makedirs("export", exist_ok=True)
@@ -413,6 +452,9 @@ def startup_event():
     threading.Thread(target=watch_topics_loop, daemon=True).start()
     threading.Thread(target=auto_radar_and_scheduler_loop, daemon=True).start()
 
+class LoginReq(BaseModel):
+    password: str
+
 class CreateReq(BaseModel):
     channel_name: str
     topic: str
@@ -433,6 +475,25 @@ def serve_home():
         return FileResponse("index.html")
     return {"status": "OK"}
 
+@app.get("/api/session/status")
+def session_status(request):
+    return {"configured": auth_is_configured(), "authenticated": verify_session_cookie(request.cookies.get(SESSION_COOKIE_NAME))}
+
+@app.post("/api/session/login")
+def session_login(req: LoginReq):
+    if not auth_is_configured():
+        raise HTTPException(status_code=503, detail="서버 설정에 NEXUS_API_PASSWORD(12자 이상)와 NEXUS_SESSION_SECRET(32자 이상)을 지정해야 합니다.")
+    if not hmac.compare_digest(req.password, API_PASSWORD):
+        raise HTTPException(status_code=401, detail="비밀번호가 올바르지 않습니다.")
+    response = JSONResponse({"ok": True})
+    response.set_cookie(key=SESSION_COOKIE_NAME, value=create_session_cookie(), max_age=SESSION_TTL_SECONDS, httponly=True, secure=os.getenv("NEXUS_COOKIE_SECURE", "false").lower() == "true", samesite="strict", path="/")
+    return response
+
+@app.post("/api/session/logout")
+def session_logout():
+    response = JSONResponse({"ok": True})
+    response.delete_cookie(key=SESSION_COOKIE_NAME, path="/", httponly=True, samesite="strict")
+    return response
 @app.get("/api/overview")
 def overview():
     db = get_db()
