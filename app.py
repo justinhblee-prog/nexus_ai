@@ -345,6 +345,15 @@ with t3:
                                 st.error("업로드된 영상의 Private 상태를 확인하지 못했습니다. 중복 업로드를 방지하기 위해 재시도를 차단했습니다.")
                             else:
                                 st.error(f"업로드 실패: {msg}")
+        reject_note = st.text_input("반려 사유 (선택)", max_chars=2000, key=f"reject-note-{int(jb['id'])}")
+        if st.button("↩ 반려 및 수정 요청", use_container_width=True,
+                     disabled=jb["stage"] != "최종컨펌 대기"):
+            conn.execute("UPDATE pipeline_jobs SET stage='반려(수정 필요)' WHERE id=?", (int(jb["id"]),))
+            conn.commit()
+            record_event("review.rejected", entity_type="pipeline_job", entity_id=int(jb["id"]),
+                         payload={"channel": ch_n, "note": reject_note.strip(), "source": "streamlit"})
+            st.success("반려 및 수정 요청이 기록되었습니다.")
+            st.rerun()
         with w_right:
             with st.container(border=True):
                 st.markdown('<div class="phone-cap">📱 9:16 SHORTS PREVIEW</div>', unsafe_allow_html=True)
