@@ -40,6 +40,26 @@ class NexusUiContractTests(unittest.TestCase):
             with self.subTest(stage=stage):
                 self.assertIn(stage, self.script)
 
+    def test_discovery_uses_source_native_rank_and_stale_status(self):
+        self.assertIn('currentRankFilter = "ALL"', self.script)
+        self.assertIn("source_score_label", self.script)
+        self.assertIn("source_is_stale", self.script)
+        self.assertIn("글로벌 비교 순위", self.html)
+        self.assertNotIn("평균 바이럴 적합도", self.html)
+        self.assertNotIn("글로벌 종합 TOP 10", self.html)
+
+    def test_analytics_uses_backend_summary_and_keeps_unavailable_metrics_blank(self):
+        self.assertIn('fetch("/api/analytics/summary"', self.script)
+        self.assertIn("YouTube 읽기 전용 분석 권한이 연결되지 않았습니다.", self.script)
+        self.assertIn("조회수·구독자·참여율·수익은 추정하지 않고 비워 둡니다.", self.script)
+
+    def test_review_edits_trigger_regeneration_and_disable_approval_until_ready(self):
+        self.assertIn('["최종컨펌 대기", "반려(수정 필요)", "재제작 실패"]', self.script)
+        self.assertIn("수정 후 재제작", self.html)
+        self.assertIn("if (response.ok) { activeJobId = null; await loadOverview(); }", self.script)
+        self.assertIn('"재제작 대기"', self.script)
+        self.assertIn('"재제작 실패"', self.script)
+
     def test_channel_chart_does_not_claim_unavailable_performance_metrics(self):
         self.assertIn("Channel Production Volume", self.script)
         self.assertNotIn("Global Trend Momentum", self.script)
