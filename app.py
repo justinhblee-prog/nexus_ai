@@ -328,6 +328,11 @@ with t3:
                     if st.button("✅ 최종 컨펌 승인 및 유튜브 비공개 업로드", type="primary", use_container_width=True,
                                  disabled=jb["stage"] != "최종컨펌 대기"):
                         if c1:
+                            output_root = os.path.realpath("output")
+                            video_path = os.path.realpath(jb["video_path"])
+                            if os.path.commonpath([output_root, video_path]) != output_root or not os.path.isfile(video_path):
+                                st.error("output 폴더 안의 실제 영상 파일만 업로드할 수 있습니다.")
+                                st.stop()
                             if not claim_upload(conn, int(jb["id"])):
                                 st.error("다른 요청에서 이미 검수 또는 업로드를 처리하고 있습니다.")
                                 st.rerun()
