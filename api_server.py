@@ -244,6 +244,8 @@ def enqueue_topic(topic_line: str, source: str = "api", idempotency_key: str | N
             raise ValueError("queue lines must be 'channel | topic' or 'topic'")
     db = get_db()
     try:
+        # Serialize the active-topic check and insert to prevent concurrent double-enqueue.
+        db.execute("BEGIN IMMEDIATE")
         if channel_name is None:
             channels = [row["name"] for row in db.execute("SELECT name FROM channels ORDER BY id")]
             if not channels:
