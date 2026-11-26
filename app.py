@@ -287,7 +287,8 @@ with t3:
                 et = st.text_input("유튜브 업로드 제목", value=jb["title"])
                 st.text_area("전체 내레이션 대본 확인", value=jb["script"], height=320)
                 c1 = st.checkbox("AI 생성 콘텐츠 라벨 적용 및 1차 비공개(Private) 안전 업로드 동의", value=True)
-                token_ok = os.path.exists(f"tokens/yt_token_{ch_n}.pickle")
+                safe_channel = "".join(ch for ch in ch_n if ch.isalnum() or ch in ("-", "_"))
+                token_ok = os.path.exists(f"tokens/yt_token_{safe_channel}.json")
                 if not token_ok:
                     st.warning(f"⚠️ [{ch_n}] 채널의 유튜브 인증이 필요합니다 (최초 1회)")
                     if st.button("🔗 구글 계정 로그인 인증 링크 생성", use_container_width=True):
