@@ -705,10 +705,16 @@ def reject_job(job_id: int, req: RejectReq):
 def update_job(job_id: int, req: UpdateJobReq):
     db = get_db()
     try:
-        cur = db.execute("UPDATE pipeline_jobs SET title=?, script=? WHERE id=?", (req.title, req.script, job_id))
-        db.commit()
-        if cur.rowcount == 0:
+        job = db.execute("SELECT stage, channel_name FROM pipeline_jobs WHERE id=?", (job_id,)).fetchone()
+        if not job:
             raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
+        resubmitted = job["stage"] == "반려(수정 필요)"
+        stage_sql = ", stage='최종컨펌 대기'" if resubmitted else ""
+        db.execute(f"UPDATE pipeline_jobs SET title=?, script=?{stage_sql} WHERE id=?", (req.title, req.script, job_id))
+        db.commit()
+        if resubmitted:
+            record_event("review.resubmitted", entity_type="pipeline_job", entity_id=job_id,
+                         payload={"channel": job["channel_name"], "source": "browser_studio"})
         return {"ok": True, "msg": "수정 내용이 저장되었습니다."}
     finally:
         db.close()
