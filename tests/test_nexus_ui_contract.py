@@ -61,6 +61,12 @@ class NexusUiContractTests(unittest.TestCase):
         self.assertIn('"재제작 대기"', self.script)
         self.assertIn('"재제작 실패"', self.script)
 
+    def test_discovery_render_does_not_overwrite_pipeline_kpis(self):
+        radar = self.script.split("function renderRadar()", 1)[1].split("function openRadarById", 1)[0]
+        self.assertNotIn('getElementById("kpi-trends")', radar)
+        self.assertNotIn('getElementById("kpi-growth")', radar)
+        self.assertIn("source_score", radar)
+
     def test_channel_chart_does_not_claim_unavailable_performance_metrics(self):
         self.assertIn("Channel Production Volume", self.script)
         self.assertNotIn("Global Trend Momentum", self.script)
