@@ -2,10 +2,11 @@ name: Shorts runtime checks
 
 on:
   pull_request:
-    branches: [main, feat/backend-followup-orchestration]
+    branches: [main, fix/shorts-runtime-security-bootstrap, feat/backend-followup-orchestration]
   push:
     branches:
       - "fix/shorts-runtime-security-bootstrap"
+      - "feat/backend-followup-orchestration"
 
 jobs:
   python-checks:
