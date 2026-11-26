@@ -47,6 +47,9 @@ class NexusUiContractTests(unittest.TestCase):
         self.assertIn("글로벌 비교 순위", self.html)
         self.assertNotIn("평균 바이럴 적합도", self.html)
         self.assertNotIn("글로벌 종합 TOP 10", self.html)
+        for fabricated_metric in ("viral_score", "growth_pct", "avg_cat_views", "est_views"):
+            with self.subTest(metric=fabricated_metric):
+                self.assertNotIn(fabricated_metric, self.script)
 
     def test_analytics_uses_backend_summary_and_keeps_unavailable_metrics_blank(self):
         self.assertIn('fetch("/api/analytics/summary"', self.script)
