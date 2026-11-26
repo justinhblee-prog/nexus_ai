@@ -369,6 +369,15 @@ def claim_next_topic(lease_seconds: int = 900):
     try:
         db.execute("BEGIN IMMEDIATE")
         db.execute(
+            """UPDATE pipeline_jobs SET stage='재제작 실패'
+               WHERE stage='재제작 대기' AND id IN (
+                   SELECT target_job_id FROM topic_queue
+                   WHERE status='running' AND lease_until < ? AND attempts >= 3
+                     AND target_job_id IS NOT NULL
+               )""",
+            (now,),
+        )
+        db.execute(
             """UPDATE topic_queue SET status='failed', lease_until=NULL, lease_token=NULL,
                last_error=COALESCE(last_error, 'Worker lease expired after maximum attempts'),
                updated_at=?
