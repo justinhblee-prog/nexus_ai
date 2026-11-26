@@ -512,6 +512,9 @@ class UpdateJobReq(BaseModel):
     title: str
     script: str
 
+class RejectReq(BaseModel):
+    note: str = ""
+
 @app.get("/")
 def serve_home():
     if os.path.exists("index.html"):
@@ -677,6 +680,26 @@ def approve_job(job_id: int):
         finally:
             db.close()
     return {"ok": ok, "msg": msg}
+
+@app.post("/api/reject/{job_id}")
+def reject_job(job_id: int, req: RejectReq):
+    note = (req.note or "").strip()
+    if len(note) > 2000:
+        raise HTTPException(status_code=400, detail="반려 사유는 2000자 이하여야 합니다.")
+    db = get_db()
+    try:
+        job = db.execute("SELECT stage, channel_name FROM pipeline_jobs WHERE id=?", (job_id,)).fetchone()
+        if not job:
+            raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
+        if job["stage"] != "최종컨펌 대기":
+            raise HTTPException(status_code=409, detail="검수 대기 상태의 작업만 반려할 수 있습니다.")
+        db.execute("UPDATE pipeline_jobs SET stage='반려(수정 필요)' WHERE id=?", (job_id,))
+        db.commit()
+    finally:
+        db.close()
+    record_event("review.rejected", entity_type="pipeline_job", entity_id=job_id,
+                 payload={"channel": job["channel_name"], "note": note, "source": "browser_studio"})
+    return {"ok": True, "msg": "반려 및 수정 요청이 기록되었습니다."}
 
 @app.put("/api/jobs/{job_id}")
 def update_job(job_id: int, req: UpdateJobReq):
