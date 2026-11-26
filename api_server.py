@@ -182,18 +182,46 @@ def run_make_video(ch_name: str, persona: str, topic: str, queue_id: int | None 
                      payload={"channel": ch_name, "checks": qa["checks"], "errors": qa["errors"]})
         if not qa["ok"]:
             raise RuntimeError("Video QA failed: " + ", ".join(qa["errors"]))
-        if queue_id is not None and not is_topic_lease_current(queue_id, lease_token):
-            raise RuntimeError("Queue lease was lost before the render result could be committed")
         db = get_db()
         try:
+            if queue_id is not None:
+                if not lease_token:
+                    raise RuntimeError("Queue lease token is required to commit a queued render")
+                db.execute("BEGIN IMMEDIATE")
+                lease = db.execute(
+                    """SELECT topic, source FROM topic_queue
+                       WHERE id=? AND status='running' AND lease_token=? AND lease_until>?""",
+                    (queue_id, lease_token, int(time.time())),
+                ).fetchone()
+                if not lease:
+                    db.rollback()
+                    raise RuntimeError("Queue lease was lost before the render result could be committed")
             cur = db.execute("INSERT INTO pipeline_jobs (channel_name, title, script, video_path, stage, created_at) VALUES (?,?,?,?,?,?)",
                              (ch_name, title, script, mp4, "최종컨펌 대기", datetime.now().strftime("%Y-%m-%d %H:%M")))
-            db.commit()
             job_id = cur.lastrowid
+            if queue_id is not None:
+                finished = db.execute(
+                    """UPDATE topic_queue SET status='completed', lease_until=NULL, lease_token=NULL,
+                       last_error=NULL, updated_at=?
+                       WHERE id=? AND status='running' AND lease_token=? AND lease_until>?""",
+                    (datetime.now().isoformat(timespec="seconds"), queue_id, lease_token, int(time.time())),
+                )
+                if finished.rowcount != 1:
+                    db.rollback()
+                    raise RuntimeError("Queue lease ownership changed before render commit")
+                if lease["source"] == "daily_radar":
+                    db.execute(
+                        "INSERT OR IGNORE INTO auto_produced_topics (topic, created_at) VALUES (?, ?)",
+                        (lease["topic"], datetime.now().isoformat(timespec="seconds")),
+                    )
+            db.commit()
         finally:
             db.close()
         record_event("render.completed", entity_type="pipeline_job", entity_id=job_id,
                      payload={"channel": ch_name, "elapsed_seconds": round(time.monotonic() - started, 3)})
+        if queue_id is not None:
+            record_event("queue.completed", entity_type="topic_queue", entity_id=queue_id,
+                         payload={"status": "completed", "pipeline_job_id": job_id})
         return job_id
     except Exception as exc:
         record_event("render.failed", entity_type="render",
@@ -338,21 +366,6 @@ def claim_next_topic(lease_seconds: int = 900):
         raise
     finally:
         db.close()
-
-def is_topic_lease_current(queue_id: int, lease_token: str | None) -> bool:
-    if not lease_token:
-        return False
-    db = get_db()
-    try:
-        row = db.execute(
-            """SELECT 1 FROM topic_queue
-               WHERE id=? AND status='running' AND lease_token=? AND lease_until>?""",
-            (queue_id, lease_token, int(time.time())),
-        ).fetchone()
-        return row is not None
-    finally:
-        db.close()
-
 
 def renew_topic_lease(queue_id: int, lease_token: str, lease_seconds: int = 900) -> bool:
     """Extend a running job only when the caller still owns an unexpired fencing token."""
@@ -515,7 +528,6 @@ def watch_topics_loop():
                         heartbeat.join(timeout=2)
                 finally:
                     db.close()
-                finish_topic(item["id"], item["lease_token"])
         except Exception as exc:
             logger.exception("Topic queue worker failed")
             if "item" in locals() and item:
