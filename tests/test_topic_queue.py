@@ -55,6 +55,7 @@ class DurableTopicQueueTests(unittest.TestCase):
         rows = self._rows()
         self.assertEqual(len(rows), 10)
         self.assertEqual({row["status"] for row in rows}, {"pending"})
+        self.assertIn("lease_token", rows[0].keys())
         self.assertEqual(len({row["channel_name"] for row in rows}), 10)
 
     def test_claim_lease_and_retry_limit(self):
@@ -73,7 +74,9 @@ class DurableTopicQueueTests(unittest.TestCase):
         second = self.api.claim_next_topic(lease_seconds=1)
         self.assertEqual(second["id"], first["id"])
         self.assertEqual(second["attempts"], 2)
-        self.api.finish_topic(second["id"], "temporary failure")
+        self.assertNotEqual(first["lease_token"], second["lease_token"])
+        self.assertFalse(self.api.finish_topic(first["id"], first["lease_token"]))
+        self.assertTrue(self.api.finish_topic(second["id"], second["lease_token"], "temporary failure"))
 
         db = self.api.get_db()
         try:
@@ -84,7 +87,7 @@ class DurableTopicQueueTests(unittest.TestCase):
 
         third = self.api.claim_next_topic(lease_seconds=1)
         self.assertEqual(third["attempts"], 3)
-        self.api.finish_topic(third["id"], "permanent failure")
+        self.assertTrue(self.api.finish_topic(third["id"], third["lease_token"], "permanent failure"))
         self.assertIsNone(self.api.claim_next_topic())
 
         row = self._rows()[0]
@@ -139,7 +142,7 @@ class DurableTopicQueueTests(unittest.TestCase):
         self.assertEqual(row["status"], "pending")
         claimed = self.api.claim_next_topic()
         self.assertEqual(claimed["topic"], "durable radar topic")
-        self.api.finish_topic(claimed["id"])
+        self.assertTrue(self.api.finish_topic(claimed["id"], claimed["lease_token"]))
         db = self.api.get_db()
         try:
             produced = db.execute(
