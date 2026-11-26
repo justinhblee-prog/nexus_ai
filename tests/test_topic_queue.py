@@ -90,6 +90,15 @@ class DurableTopicQueueTests(unittest.TestCase):
         self.assertEqual(row["status"], "failed")
         self.assertEqual(row["attempts"], 3)
 
+
+    def test_daily_scheduler_claim_is_idempotent_and_recovers_failed_run(self):
+        self.assertTrue(self.api.claim_daily_schedule("2026-11-26", lease_seconds=1))
+        self.assertFalse(self.api.claim_daily_schedule("2026-11-26"))
+        self.api.finish_daily_schedule("2026-11-26", "temporary failure")
+        self.assertTrue(self.api.claim_daily_schedule("2026-11-26"))
+        self.api.finish_daily_schedule("2026-11-26")
+        self.assertFalse(self.api.claim_daily_schedule("2026-11-26"))
+
     def test_legacy_file_import_is_idempotent_and_clears_after_commit(self):
         with open("topics.txt", "w", encoding="utf-8") as handle:
             handle.write("Future Leak | imported topic\n")
