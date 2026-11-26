@@ -394,7 +394,7 @@ def auto_radar_and_scheduler_loop():
             trend_radar.scan_global_trends("weekly")
             now = datetime.now()
             today_str = now.strftime("%Y-%m-%d")
-            if AUTO_PRODUCE_ENABLED and now.hour == 8 and claim_daily_schedule(today_str):
+            if AUTO_PRODUCE_ENABLED and now.hour >= 8 and claim_daily_schedule(today_str):
                 try:
                     auto_produce_top_trends(count=3)
                     finish_daily_schedule(today_str)
