@@ -340,52 +340,103 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
       if (on) { a.classList.add("spin"); l.textContent = "스캔 중..."; b.disabled = true; }
       else { a.classList.remove("spin"); l.textContent = "즉시 재스캔"; b.disabled = false; }
     }
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, ch => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      })[ch]);
+    }
     async function loadRadar(p = currentPeriod) {
-      currentPeriod = p; setScanningState(true);
-      try { const r = await fetch("/api/radar/" + p); const d = await r.json(); allRadarItems = d.items || []; renderRadar(); }
-      finally { setScanningState(false); }
+      currentPeriod = p;
+      const response = await fetch("/api/radar/" + p, { credentials: "same-origin" });
+      if (!response.ok) throw new Error("Discovery data request failed: " + response.status);
+      const data = await response.json();
+      allRadarItems = data.items || [];
+      radarScanMeta = data.scan || null;
+      radarDataStatus = data.data_status || "not_scanned";
+      const statusText = {
+        not_scanned: "아직 수집하지 않았습니다.",
+        fresh: "모든 수집원이 정상 갱신되었습니다.",
+        partial: "일부 수집원만 갱신되었습니다. 오래된 원천 데이터가 표시될 수 있습니다.",
+        stale: "최근 수집에 실패했습니다. 마지막 정상 데이터를 표시합니다."
+      };
+      const statusNode = document.getElementById("radar-scan-status");
+      if (statusNode) statusNode.textContent = statusText[radarDataStatus] || "수집 상태를 확인할 수 없습니다.";
+      renderRadar();
+      renderDashboardData();
     }
     function setRankFilter(rf) {
       currentRankFilter = rf;
-      document.querySelectorAll(".rf-btn").forEach(b => { b.className = b.dataset.rf === rf ? "rf-btn btn-blue" : "rf-btn btn-dark"; });
+      document.querySelectorAll(".rf-btn").forEach(b => {
+        b.className = b.dataset.rf === rf ? "rf-btn btn-blue" : "rf-btn btn-dark";
+      });
       renderRadar();
     }
     function switchPeriod(p) {
       document.getElementById("tab-daily").className = p === "daily" ? "btn-blue" : "btn-dark";
       document.getElementById("tab-weekly").className = p === "weekly" ? "btn-blue" : "btn-dark";
-      loadRadar(p);
+      loadRadar(p).catch(() => {
+        const statusNode = document.getElementById("radar-scan-status");
+        if (statusNode) statusNode.textContent = "Discovery 데이터를 불러오지 못했습니다.";
+      });
     }
     function renderRadar() {
       document.getElementById("kpi-trends").textContent = allRadarItems.length;
-      if (allRadarItems.length > 0) {
-        const avgG = Math.round(allRadarItems.reduce((s, x) => s + (x.growth_pct || 0), 0) / allRadarItems.length);
-        const avgV = (allRadarItems.reduce((s, x) => s + (x.viral_score || 0), 0) / allRadarItems.length).toFixed(1);
-        document.getElementById("kpi-growth").textContent = "+" + avgG + "%";
-        document.getElementById("avg-viral-score").textContent = avgV;
-        document.getElementById("avg-viral-bar").style.width = Math.min(100, avgV) + "%";
-      }
+      document.getElementById("kpi-growth").textContent = "—";
+      document.getElementById("avg-viral-score").textContent = "산출 불가";
       const regs = [{c:"KR",n:"🇰🇷 한국"},{c:"US",n:"🇺🇸 미국"},{c:"JP",n:"🇯🇵 일본"},{c:"GB",n:"🇬🇧 영국"}];
-      const tot = Math.max(1, allRadarItems.length);
-      document.getElementById("region-bars").innerHTML = regs.map(r => {
-        const cnt = allRadarItems.filter(x => x.region === r.c).length;
-        const pct = Math.round((cnt / tot) * 100);
-        return "<div><div style='display:flex;justify-content:space-between;'><span>" + r.n + "</span><strong style='color:#38BDF8;'>" + cnt + "건 (" + pct + "%)</strong></div><div class='bar-bg'><div class='bar-fill' style='width:" + pct + "%'></div></div></div>";
+      const total = Math.max(1, allRadarItems.length);
+      document.getElementById("region-bars").innerHTML = regs.map(region => {
+        const count = allRadarItems.filter(item => item.region === region.c).length;
+        const percent = Math.round((count / total) * 100);
+        return "<div><div style='display:flex;justify-content:space-between;'><span>" + region.n +
+          "</span><strong style='color:#38BDF8;'>" + count + "건 (" + percent + "%)</strong></div>" +
+          "<div class='bar-bg'><div class='bar-fill' style='width:" + percent + "%'></div></div></div>";
       }).join("");
-      let list = [...allRadarItems];
-      if (currentRankFilter === "TOP10") list = list.filter(x => x.is_global_top10 > 0).sort((a, b) => a.is_global_top10 - b.is_global_top10);
-      else list = list.filter(x => x.region === currentRankFilter).sort((a, b) => a.rank_no - b.rank_no);
-      document.getElementById("radar-count-label").textContent = "총 " + list.length + "건 순위 표시 중";
-      document.getElementById("radar-grid").innerHTML = list.map(it => {
-        const badge = currentRankFilter === "TOP10" ? "<span class='badge b-gold'>종합 #" + it.is_global_top10 + "</span>" : "<span class='badge b-blue'>" + it.region + " #" + it.rank_no + "</span>";
-        return "<div onclick='openRadarById(" + it.id + ")' class='r-card'><div style='display:flex;justify-content:space-between;'><div>" + badge + " <span class='badge b-ch'>" + it.matched_channel + "</span></div><span style='color:#34D399;font-size:12px;font-weight:800;'>⚡ " + it.viral_score + "점 · +" + it.growth_pct + "%</span></div><div style='font-size:14px;font-weight:700;'>" + it.topic + "</div><div style='display:flex;justify-content:space-between;font-size:11px;color:#94A3B8;border-top:1px solid #1E293B;padding-top:6px;'><span>출처: " + it.source_name + "</span><span style='color:#38BDF8;font-weight:700;'>상세·제작 ↗</span></div></div>";
-      }).join("");
+      let list = currentRankFilter === "ALL"
+        ? [...allRadarItems]
+        : allRadarItems.filter(item => item.region === currentRankFilter);
+      list.sort((a, b) => String(a.source_name || "").localeCompare(String(b.source_name || "")) ||
+        Number(a.source_rank || a.rank_no || 0) - Number(b.source_rank || b.rank_no || 0));
+      document.getElementById("radar-count-label").textContent = "총 " + list.length + "건 · 원천별 순서";
+      document.getElementById("radar-grid").innerHTML = list.map(item => {
+        const rank = Number(item.source_rank || item.rank_no || 0);
+        const score = item.source_score == null
+          ? "원천 순위 #" + rank
+          : escapeHtml(item.source_score_label || "원천 점수") + " " + escapeHtml(item.source_score);
+        const stale = item.source_is_stale
+          ? "<span class='badge b-gold'>이전 수집 데이터</span>" : "";
+        return "<div onclick='openRadarById(" + Number(item.id) + ")' class='r-card'>" +
+          "<div style='display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;'>" +
+          "<div><span class='badge b-blue'>" + escapeHtml(item.region) + " · #" + rank + "</span> " +
+          "<span class='badge b-ch'>" + escapeHtml(item.matched_channel || "미분류") + "</span></div>" +
+          "<span style='font-size:11px;color:var(--muted);'>" + stale + "</span></div>" +
+          "<div style='font-size:14px;font-weight:700;'>" + escapeHtml(item.topic) + "</div>" +
+          "<div style='font-size:11px;color:var(--muted);'>" + escapeHtml(item.source_name) +
+          " · " + score + "</div></div>";
+      }).join("") || "<div class='analytics-note'>표시할 Discovery 데이터가 없습니다. 상단의 즉시 재스캔을 실행해 주세요.</div>";
     }
     function openRadarById(id) {
-      const it = allRadarItems.find(x => x.id === id); if (!it) return; selectedModalItem = it;
-      document.getElementById("mod-title").textContent = it.topic; document.getElementById("mod-source").textContent = it.source_name;
-      document.getElementById("mod-url").href = it.source_url; document.getElementById("mod-avg-views").textContent = Number(it.avg_cat_views).toLocaleString() + " 회";
-      document.getElementById("mod-est-views").textContent = Number(it.est_views).toLocaleString() + " 회 (+" + it.growth_pct + "%)";
-      document.getElementById("mod-reason").textContent = it.ai_reason; document.getElementById("radar-modal").classList.add("open");
+      const item = allRadarItems.find(candidate => Number(candidate.id) === Number(id));
+      if (!item) return;
+      selectedModalItem = item;
+      document.getElementById("mod-title").textContent = item.topic || "";
+      document.getElementById("mod-source").textContent = item.source_name || "";
+      const link = document.getElementById("mod-url");
+      try {
+        const url = new URL(item.source_url);
+        if (url.protocol === "https:" || url.protocol === "http:") {
+          link.href = url.href; link.rel = "noopener noreferrer"; link.style.display = "";
+        } else { link.removeAttribute("href"); link.style.display = "none"; }
+      } catch (_) { link.removeAttribute("href"); link.style.display = "none"; }
+      document.getElementById("mod-avg-views").textContent =
+        "#" + Number(item.source_rank || item.rank_no || 0) + " · " + (item.source_name || "원천 미상");
+      document.getElementById("mod-est-views").textContent = item.source_score == null
+        ? "제공되지 않음"
+        : String(item.source_score_label || "원천 점수") + " " + String(item.source_score);
+      document.getElementById("mod-reason").textContent =
+        (item.ai_reason || "원천에서 수집된 항목입니다.") +
+        (item.source_is_stale ? " · 마지막 정상 수집 데이터이며 최신 갱신은 실패했습니다." : "");
+      document.getElementById("radar-modal").classList.add("open");
     }
     function closeModal() { document.getElementById("radar-modal").classList.remove("open"); }
     async function produceFromModal() {
