@@ -8,9 +8,9 @@ PR: [#1 — Draft](https://github.com/justinhblee-prog/nexus_ai/pull/1)
 
 ## 1. 현재 아키텍처
 
-- Docker Compose 서비스는 `shorts-center` 하나이며 컨테이너 이름은 `nexus_shorts_center`입니다.
+- Docker Compose 서비스는 `shorts-center` 하나이며 컨테이너 이름은 `nexus_ai_shorts_center`입니다. 기존 `nexus_shorts_center` 런타임과 충돌하지 않도록 분리했습니다.
 - 동일 컨테이너에서 FastAPI(Uvicorn, 8503)와 Streamlit(8502)을 실행합니다.
-- 호스트 포트는 `127.0.0.1`에만 바인딩합니다. LAN/공용 인터넷에 직접 노출하지 않습니다.
+- 호스트 포트는 기본 `127.0.0.1:28502`(Streamlit), `127.0.0.1:28503`(FastAPI)에만 바인딩합니다. 기존 서비스의 8502/8503 포트와 겹치지 않게 분리했으며, LAN/공용 인터넷에 직접 노출하지 않습니다.
 - 현재 Compose는 저장소 루트를 컨테이너의 `/app`에 바인드 마운트합니다.
 - FastAPI 프로세스가 `topics.txt` 호환 입력을 SQLite 큐로 가져오고 작업을 소비합니다. Streamlit에는 별도의 파일 감시자가 없습니다. 두 프로세스가 동일 파일을 동시에 비우는 경쟁 상태를 방지하기 위한 구조입니다.
 - 기본 DB는 `data/studio_data.db`, 렌더 결과는 `output/`, YouTube OAuth 토큰과 클라이언트 비밀 파일은 `tokens/`에 둡니다.
@@ -19,8 +19,8 @@ PR: [#1 — Draft](https://github.com/justinhblee-prog/nexus_ai/pull/1)
 
 | 화면 | 주소 | 인증 |
 |---|---|---|
-| Browser Studio / FastAPI | http://127.0.0.1:8503 | HMAC 서명 세션 쿠키 |
-| Streamlit Studio | http://127.0.0.1:8502 | Streamlit 서버 세션 |
+| Browser Studio / FastAPI | http://127.0.0.1:28503 | HMAC 서명 세션 쿠키 |
+| Streamlit Studio | http://127.0.0.1:28502 | Streamlit 서버 세션 |
 
 두 화면은 같은 운영자 비밀번호를 사용하지만 로그인 세션은 서로 독립적입니다.
 
@@ -32,6 +32,7 @@ PR: [#1 — Draft](https://github.com/justinhblee-prog/nexus_ai/pull/1)
 - `NEXUS_API_PASSWORD`: 12자 이상, 두 UI 공통 운영자 비밀번호
 - `NEXUS_SESSION_SECRET`: 32자 이상, FastAPI 서명용 별도 랜덤 키
 - `NEXUS_COOKIE_SECURE=false`: localhost HTTP 개발 환경. HTTPS 프록시를 사용할 때만 true로 전환
+- `NEXUS_STREAMLIT_HOST_PORT=28502`, `NEXUS_API_HOST_PORT=28503`: 호스트 포트가 사용 중일 때만 사용 가능한 포트로 변경
 
 PowerShell에서 비밀값을 화면에 출력하지 않고 생성하는 예:
 
