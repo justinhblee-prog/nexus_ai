@@ -332,6 +332,36 @@ def claim_next_topic(lease_seconds: int = 900):
     finally:
         db.close()
 
+def renew_topic_lease(queue_id: int, lease_token: str, lease_seconds: int = 900) -> bool:
+    """Extend a running job only when the caller still owns its fencing token."""
+    if not lease_token or lease_seconds < 1:
+        return False
+    db = get_db()
+    try:
+        cur = db.execute(
+            """UPDATE topic_queue SET lease_until=?, updated_at=?
+               WHERE id=? AND status='running' AND lease_token=?""",
+            (int(time.time()) + lease_seconds, datetime.now().isoformat(timespec="seconds"),
+             queue_id, lease_token),
+        )
+        db.commit()
+        return cur.rowcount == 1
+    finally:
+        db.close()
+
+
+def _topic_lease_heartbeat(queue_id: int, lease_token: str, stop_event: threading.Event,
+                           lease_seconds: int = 900):
+    interval = max(1, lease_seconds // 3)
+    while not stop_event.wait(interval):
+        try:
+            if not renew_topic_lease(queue_id, lease_token, lease_seconds):
+                logger.warning("Queue lease ownership lost for item %s", queue_id)
+                return
+        except Exception:
+            logger.exception("Could not renew queue lease for item %s", queue_id)
+
+
 def finish_topic(queue_id: int, lease_token: str, error: str | None = None, max_attempts: int = 3):
     """Finish only the current lease owner; stale workers cannot overwrite a newer attempt."""
     if not lease_token:
@@ -447,7 +477,18 @@ def watch_topics_loop():
                     channel = db.execute("SELECT * FROM channels WHERE name=?", (item["channel_name"],)).fetchone()
                     if not channel:
                         raise ValueError(f"Unknown channel: {item['channel_name']}")
-                    run_make_video(channel["name"], channel["persona"], item["topic"])
+                    heartbeat_stop = threading.Event()
+                    heartbeat = threading.Thread(
+                        target=_topic_lease_heartbeat,
+                        args=(item["id"], item["lease_token"], heartbeat_stop),
+                        daemon=True,
+                    )
+                    heartbeat.start()
+                    try:
+                        run_make_video(channel["name"], channel["persona"], item["topic"])
+                    finally:
+                        heartbeat_stop.set()
+                        heartbeat.join(timeout=2)
                 finally:
                     db.close()
                 finish_topic(item["id"], item["lease_token"])
