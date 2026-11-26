@@ -380,8 +380,6 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
       });
     }
     function renderRadar() {
-      document.getElementById("kpi-trends").textContent = allRadarItems.length;
-      document.getElementById("kpi-growth").textContent = "—";
       document.getElementById("avg-viral-score").textContent = "산출 불가";
       const regs = [{c:"KR",n:"🇰🇷 한국"},{c:"US",n:"🇺🇸 미국"},{c:"JP",n:"🇯🇵 일본"},{c:"GB",n:"🇬🇧 영국"}];
       const total = Math.max(1, allRadarItems.length);
