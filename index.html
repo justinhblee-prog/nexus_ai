@@ -565,7 +565,7 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
       document.getElementById("kpi-channels").textContent = "—";
       document.getElementById("kpi-jobs").textContent = "—";
       const sel = document.getElementById("single-channel");
-      if (sel.options.length === 0 && chs.length > 0) sel.innerHTML = chs.map(c => "<option value='" + c.name + "'>" + c.name + "</option>").join("");
+      if (sel.options.length === 0 && chs.length > 0) chs.forEach(c => { const option = document.createElement("option"); option.value = String(c.name || ""); option.textContent = String(c.name || ""); sel.append(option); });
       if (activeJobId && !allJobs.some(job => job.id === activeJobId)) activeJobId = null;
       renderJobs();
       if (activeJobId) selectJob(activeJobId);
@@ -573,9 +573,43 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
     }
     function renderJobs() {
       const box = document.getElementById("job-list");
-      if (!allJobs.length) { box.innerHTML = "<div style='text-align:center;padding:30px;color:#64748B;font-size:12px;'>생성된 영상 작업이 없습니다.</div>"; return; }
-      box.innerHTML = allJobs.map(j => "<div onclick='selectJob(" + j.id + ")' class='job-item " + (j.id === activeJobId ? "active" : "") + "'><input type='checkbox' value='" + j.id + "' onclick='event.stopPropagation(); updateSelectedCount();' class='job-chk' style='margin-top:4px;'><div style='flex:1;min-width:0;'><div style='font-size:11px;color:#38BDF8;font-weight:700;'>" + j.channel_name + " · <span style='color:#FBBF24;'>" + j.stage + "</span></div><div style='font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>" + j.title + "</div></div></div>").join("");
-      if (!activeJobId && allJobs.length > 0) selectJob(allJobs.slice(0, 1).pop().id);
+      box.replaceChildren();
+      if (!allJobs.length) {
+        const empty = document.createElement("div");
+        empty.style.cssText = "text-align:center;padding:30px;color:#64748B;font-size:12px;";
+        empty.textContent = "생성된 영상 작업이 없습니다.";
+        box.append(empty);
+        return;
+      }
+      allJobs.forEach(j => {
+        const row = document.createElement("div");
+        row.className = "job-item" + (j.id === activeJobId ? " active" : "");
+        row.addEventListener("click", () => selectJob(j.id));
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.value = String(j.id);
+        checkbox.className = "job-chk";
+        checkbox.style.marginTop = "4px";
+        checkbox.addEventListener("click", event => event.stopPropagation());
+        checkbox.addEventListener("change", updateSelectedCount);
+        const details = document.createElement("div");
+        details.style.cssText = "flex:1;min-width:0;";
+        const meta = document.createElement("div");
+        meta.style.cssText = "font-size:11px;color:#38BDF8;font-weight:700;";
+        const channel = document.createElement("span");
+        channel.textContent = String(j.channel_name || "");
+        const stage = document.createElement("span");
+        stage.style.color = "#FBBF24";
+        stage.textContent = String(j.stage || "");
+        meta.append(channel, document.createTextNode(" · "), stage);
+        const title = document.createElement("div");
+        title.style.cssText = "font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+        title.textContent = String(j.title || "");
+        details.append(meta, title);
+        row.append(checkbox, details);
+        box.append(row);
+      });
+      if (!activeJobId && allJobs.length > 0) selectJob(allJobs[0].id);
     }
     function selectJob(id) {
       activeJobId = id; const jb = allJobs.find(x => x.id === id); if (!jb) return;
