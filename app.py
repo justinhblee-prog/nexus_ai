@@ -1,4 +1,4 @@
-﻿import streamlit as st
+import streamlit as st
 import pandas as pd
 import plotly.express as px
 import sqlite3, os, time, threading
@@ -70,7 +70,33 @@ st.markdown("""
 os.makedirs("data", exist_ok=True)
 os.makedirs("output", exist_ok=True)
 os.makedirs("tokens", exist_ok=True)
-conn = sqlite3.connect("data/studio_data.db", check_same_thread=False)
+conn = sqlite3.connect("data/studio_data.db", check_same_thread=False, timeout=30)
+conn.execute("PRAGMA busy_timeout=30000")
+conn.executescript("""
+    CREATE TABLE IF NOT EXISTS channels (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        platform TEXT NOT NULL DEFAULT 'YouTube',
+        yt_id TEXT NOT NULL DEFAULT '',
+        persona TEXT NOT NULL DEFAULT '전문가 톤',
+        subs INTEGER NOT NULL DEFAULT 0,
+        views INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL DEFAULT ''
+    );
+    CREATE TABLE IF NOT EXISTS pipeline_jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        channel_name TEXT NOT NULL,
+        title TEXT NOT NULL,
+        script TEXT NOT NULL DEFAULT '',
+        video_path TEXT NOT NULL DEFAULT '',
+        stage TEXT NOT NULL DEFAULT '최종컨펌 대기',
+        created_at TEXT NOT NULL
+    );
+""")
+conn.commit()
 
 def get_set(k):
     r = conn.execute("SELECT value FROM settings WHERE key=?", (k,)).fetchone()
@@ -97,7 +123,8 @@ def watch_onedrive_topics():
                             t_name, t_str = [x.strip() for x in line.split("|", 1)]
                             m = chs[chs["name"] == t_name]
                             if not m.empty:
-                                make_video(m.iloc["name"], m.iloc["persona"], t_str)
+                                selected = m.iloc[0]
+                                make_video(selected["name"], selected["persona"], t_str)
                         else:
                             for _, r in chs.iterrows():
                                 make_video(r["name"], r["persona"], line)
@@ -204,7 +231,7 @@ with t2:
             st.markdown("#### 🎯 단건 즉시 렌더링")
             st.caption("특정 채널 1개를 지정해 지금 바로 시네마틱 쇼츠를 생성합니다.")
             ch = st.selectbox("대상 채널 선택", df["name"].tolist())
-            row = df[df["name"] == ch].iloc
+            row = df[df["name"] == ch].iloc[0]
             tp = st.text_input("영상 주제 입력", placeholder="예: 2026년 달라지는 AI 산업 핵심 요약")
             if st.button("🚀 선택한 채널 톤으로 즉시 생성", type="primary", use_container_width=True):
                 if tp:
