@@ -245,7 +245,7 @@ flowchart TD
 - [x] 별도 Streamlit UI 인증 코드 및 FastAPI와 동일한 운영자 비밀번호 적용 (로컬 브라우저 end-to-end는 미검증)
 - [x] DB 기반 제작 큐·채널별 작업·lease·재시도·실패 격리 및 legacy 파일 브리지 구현
 - [x] 일일 08:00 제작 실행의 DB 기반 고유 일정 키·lease·실패 재시도 및 재시작 후 복구. 선정된 트렌드는 직접 렌더링하지 않고 `daily_radar` 소스로 영속 큐에 등록하며, 실제 렌더 성공 후에만 제작 완료 이력에 반영한다.
-- [x] GitHub Actions 실제 실행 및 테스트 통과 (최신 브랜치 검증 31개 테스트 통과)
+- [x] GitHub Actions 실제 실행 및 테스트 통과 (최신 브랜치 검증 36개 테스트 통과)
 - [ ] 로컬 Docker·렌더링·OAuth end-to-end 확인
 
 **완료 기준:** 브라우저 API 인증, 큐·일일 스케줄 idempotency, 별도 Streamlit 보호, 로컬 Docker·렌더링·OAuth 런타임 검증까지 확보. Streamlit 인증 코드는 구현됐으며, 로컬 Docker·브라우저 로그인·렌더링·OAuth 비공개 업로드 실환경 검증이 남아 있어 Phase 0 전체는 아직 미완료.
