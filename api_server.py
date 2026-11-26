@@ -506,6 +506,10 @@ def finish_topic(queue_id: int, lease_token: str, error: str | None = None, max_
             event_type = "queue.retry_scheduled"
             payload = {"status": "pending", "attempt": row["attempts"]}
         record_event(event_type, entity_type="topic_queue", entity_id=queue_id, payload=payload)
+        if error is not None and row["attempts"] >= max_attempts and row["target_job_id"] is not None:
+            record_event("review.regeneration_failed", entity_type="pipeline_job",
+                         entity_id=row["target_job_id"],
+                         payload={"queue_id": queue_id, "error_type": "render_error"})
         return True
     finally:
         db.close()
@@ -957,7 +961,7 @@ def approve_job(job_id: int):
         db.commit()
     finally:
         db.close()
-    return {"ok": ok, "msg": msg}
+    return {"ok": ok, "msg": msg, "video_id": video_id, "privacy_status": privacy_status}
 
 @app.post("/api/reject/{job_id}")
 def reject_job(job_id: int, req: RejectReq):
