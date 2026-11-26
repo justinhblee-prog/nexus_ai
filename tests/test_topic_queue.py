@@ -427,6 +427,56 @@ class DurableTopicQueueTests(unittest.TestCase):
         self.assertEqual(getattr(too_many.exception, "status_code", None), 400)
         self.assertEqual(len(self._rows()), 0)
 
+    def test_analytics_summary_never_invents_platform_performance(self):
+        db = self.api.get_db()
+        try:
+            db.execute(
+                "INSERT INTO pipeline_jobs (channel_name,title,script,video_path,stage,created_at,youtube_video_id,privacy_status) VALUES (?,?,?,?,?,?,?,?)",
+                ("Future Leak", "Reviewed", "script", "", "업로드 완료(비공개)", "now", "abc123", "private"),
+            )
+            db.execute(
+                "INSERT INTO pipeline_jobs (channel_name,title,script,video_path,stage,created_at) VALUES (?,?,?,?,?,?)",
+                ("Money Glitch", "Pending", "script", "", "최종컨펌 대기", "now"),
+            )
+            db.commit()
+        finally:
+            db.close()
+        with patch.object(self.api.trend_radar, "get_scan_status", return_value=None, create=True), \
+             patch.object(self.api.trend_radar, "get_source_health", return_value=[], create=True):
+            summary = self.api.analytics_summary()
+        self.assertEqual(summary["production"]["jobs_total"], 2)
+        self.assertEqual(summary["production"]["by_stage"]["업로드 완료(비공개)"], 1)
+        self.assertEqual(summary["publishing"]["private_uploads"], 1)
+        self.assertEqual(summary["production"]["by_channel"][0]["provider_video_ids"], 1)
+        self.assertEqual(summary["platform_metrics"]["status"], "not_connected")
+        for key in ("subscribers", "views", "engagement_rate", "revenue", "updated_at"):
+            self.assertIsNone(summary["platform_metrics"][key])
+
+    def test_radar_get_serves_cached_results_without_triggering_network_scan(self):
+        db = self.api.get_db()
+        try:
+            db.execute("""CREATE TABLE trend_recommendations (
+                period_type TEXT, region TEXT, source_name TEXT, source_rank INTEGER,
+                viral_score INTEGER, is_global_top10 INTEGER, topic TEXT
+            )""")
+            db.execute(
+                """INSERT INTO trend_recommendations VALUES
+                   ('daily', 'KR', 'Google News KR', 1, NULL, 0, 'cached source topic')"""
+            )
+            db.commit()
+        finally:
+            db.close()
+        scan_meta = {"status": "failed", "item_count": 0}
+        with patch.object(self.api.trend_radar, "init_radar_db", self.api.get_db, create=True), \
+             patch.object(self.api.trend_radar, "get_scan_status", return_value=scan_meta, create=True), \
+             patch.object(self.api.trend_radar, "get_source_health", return_value=[], create=True), \
+             patch.object(self.api.trend_radar, "scan_global_trends",
+                          side_effect=AssertionError("GET must not scan feeds"), create=True):
+            result = self.api.get_radar("daily")
+        self.assertEqual(result["data_status"], "stale")
+        self.assertFalse(result["global_ranking_available"])
+        self.assertEqual(result["items"][0]["topic"], "cached source topic")
+
     def test_manual_api_create_routes_through_durable_queue(self):
         request = self.api.CreateReq(channel_name="Future Leak", topic="API queued topic")
         result = self.api.create_single(request)
