@@ -168,6 +168,32 @@ class ApiReviewGuardTests(unittest.TestCase):
         self.assertEqual(uploaded["youtube_video_id"], "video987")
         self.assertEqual(uploaded["privacy_status"], "public")
 
+    def test_upload_adapter_success_without_video_id_is_not_trusted(self):
+        os.makedirs("output", exist_ok=True)
+        video_path = os.path.join("output", "missing-id.mp4")
+        with open(video_path, "wb") as handle:
+            handle.write(b"x" * 2048)
+        db = self.api.get_db()
+        try:
+            db.execute("UPDATE pipeline_jobs SET video_path=? WHERE id=1", (video_path,))
+            db.commit()
+        finally:
+            db.close()
+        with patch.object(self.api, "validate_video",
+                          return_value={"ok": True, "checks": {}, "errors": []}), \
+             patch.object(self.api.yt_uploader, "upload_to_youtube",
+                          return_value=(True, "upload succeeded"), create=True):
+            result = self.api.approve_job(1)
+        self.assertFalse(result["ok"])
+        self.assertEqual(self._stage(1), "업로드 상태 확인 필요")
+        db = self.api.get_db()
+        try:
+            uploaded = db.execute("SELECT youtube_video_id, privacy_status FROM pipeline_jobs WHERE id=1").fetchone()
+        finally:
+            db.close()
+        self.assertIsNone(uploaded["youtube_video_id"])
+        self.assertEqual(uploaded["privacy_status"], "unknown")
+
     def test_delete_guards_protect_uploading_and_regenerating_jobs(self):
         with self.assertRaises(HTTPException) as uploading:
             self.api.delete_job(4)
