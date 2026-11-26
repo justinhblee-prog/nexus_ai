@@ -21,5 +21,9 @@ jobs:
         run: python -m compileall -q api_server.py app.py streamlit_auth.py audit_log.py trend_radar.py video_maker.py yt_uploader.py
       - name: Verify local authentication setup files
         run: test -f .env.example && test -f docs/LOCAL_API_AUTH_SETUP.md
+      - name: Validate browser studio JavaScript syntax
+        run: |
+          python -c "from pathlib import Path; import re; html=Path('index.html').read_text(encoding='utf-8'); scripts=re.findall(r'<script>(.*?)</script>', html, re.S); assert scripts; Path('/tmp/nexus-studio.js').write_text(scripts[-1], encoding='utf-8')"
+          node --check /tmp/nexus-studio.js
       - name: Run radar, queue, authentication, and audit-log tests
         run: python -m unittest discover -s tests -v
