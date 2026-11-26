@@ -50,6 +50,43 @@
     .event-name { color:#E2E8F0; font-weight:700; }
     .event-meta { color:#64748B; text-align:right; font-size:11px; }
     @media (max-width:760px) { main { padding:14px; } header { padding:0 14px; height:auto; min-height:64px; } .work-grid { grid-template-columns:1fr; } .radar-layout { grid-template-columns:1fr; } }
+
+:root{--bg:#fff;--surface:#fff;--panel:#f7f7f7;--text:#111;--muted:#666;--line:#dedede;--accent:#111;--soft:#eee;--shadow:0 8px 28px rgba(0,0,0,.04)}
+body{background:var(--bg);color:var(--text);font-family:Inter,Pretendard,'Malgun Gothic',sans-serif}
+header{background:var(--surface);color:var(--text);border-color:var(--line)}
+.logo{background:#111;color:#fff}
+.live-badge{background:var(--soft);color:var(--text);border-color:var(--line)}
+select,input,textarea{background:var(--surface);color:var(--text);border-color:var(--line)}
+.btn-blue,.btn-green,.btn-purple{background:var(--accent);color:var(--bg)}
+.btn-dark{background:var(--surface);color:var(--text);border-color:var(--line)}
+.btn-red{background:var(--soft);color:var(--text);border-color:var(--line)}
+.card,.inset,.r-card,.job-item,.ops-metric,.event-row{background:var(--surface);color:var(--text);border-color:var(--line);box-shadow:var(--shadow)}
+.inset{background:var(--panel)}.bar-bg{background:var(--line)}.bar-fill{background:var(--accent)}
+.auth-overlay{background:rgba(255,255,255,.97)}.auth-card{background:#fff;color:#111;border-color:#ddd}
+.nexus-shell{display:grid;grid-template-columns:238px minmax(0,1fr);min-height:calc(100vh - 64px)}
+.nexus-sidebar{position:sticky;top:64px;height:calc(100vh - 64px);border-right:1px solid var(--line);background:var(--surface);padding:20px 13px;display:flex;flex-direction:column;gap:20px}
+.side-brand{font-size:11px;letter-spacing:1.5px;font-weight:900;color:var(--muted);padding:0 12px}
+.side-nav{display:flex;flex-direction:column;gap:5px}.side-nav button{width:100%;text-align:left;background:transparent;color:var(--muted);border:1px solid transparent;padding:12px;border-radius:10px}
+.side-nav button.active{background:var(--soft);color:var(--text);border-color:var(--line)}
+.side-foot{margin-top:auto;padding:12px;color:var(--muted);font-size:11px;border-top:1px solid var(--line)}
+.workspace{min-width:0;padding:24px;display:flex;flex-direction:column;gap:20px}
+.workspace-view{display:none;flex-direction:column;gap:20px;min-width:0}.workspace-view.active{display:flex}
+.workspace-heading{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
+.workspace-heading h1{font-size:26px;letter-spacing:-.8px}.eyebrow{font-size:10px;letter-spacing:1.5px;font-weight:900;color:var(--muted);margin-bottom:6px}
+.dash-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr);gap:16px}
+.chart-card{min-height:260px}.chart-card canvas{width:100%;height:190px;display:block}
+.mix-list{display:flex;flex-direction:column;gap:14px;margin-top:18px}.mix-row{display:grid;grid-template-columns:38px 1fr 38px;gap:10px;align-items:center;font-size:12px}
+.mix-track{height:8px;border-radius:9px;background:var(--line);overflow:hidden}.mix-track i{display:block;height:100%;background:var(--accent)}
+.queue-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.queue-tile{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--panel)}.queue-tile strong{display:block;font-size:22px;margin-top:5px}
+[data-theme="executive-blue"]{--bg:#071426;--surface:#0d2038;--panel:#102944;--text:#edf5ff;--muted:#9bb2cc;--line:#25415e;--accent:#4d9cff;--soft:#183958;--shadow:none}
+[data-theme="emerald-luxe"]{--bg:#071b16;--surface:#0d281f;--panel:#12362a;--text:#e8fff4;--muted:#9ac8b2;--line:#285341;--accent:#36c995;--soft:#174333;--shadow:none}
+[data-theme="editorial-coral"]{--bg:#211e1e;--surface:#2c2828;--panel:#373131;--text:#fff5f1;--muted:#c4b0aa;--line:#514544;--accent:#ff806e;--soft:#513832;--shadow:none}
+[data-theme="indigo-future"]{--bg:#111326;--surface:#191c35;--panel:#222746;--text:#f0f1ff;--muted:#a9afd2;--line:#393f69;--accent:#9296ff;--soft:#30365d;--shadow:none}
+[data-theme="executive-blue"] .logo,[data-theme="emerald-luxe"] .logo,[data-theme="editorial-coral"] .logo,[data-theme="indigo-future"] .logo{background:var(--accent);color:#08111f}
+[data-theme="executive-blue"] .btn-blue,[data-theme="emerald-luxe"] .btn-blue,[data-theme="editorial-coral"] .btn-blue,[data-theme="indigo-future"] .btn-blue{background:var(--accent);color:#08111f}
+@media(max-width:900px){.nexus-shell{grid-template-columns:1fr}.nexus-sidebar{position:relative;top:auto;height:auto;padding:10px 12px;border-right:0;border-bottom:1px solid var(--line)}.side-brand,.side-foot{display:none}.side-nav{flex-direction:row;overflow-x:auto}.side-nav button{white-space:nowrap;width:auto}.workspace{padding:15px}.dash-grid{grid-template-columns:1fr}}
+
   </style>
 </head>
 <body>
@@ -160,6 +197,13 @@
     </div>
   </div>
   <script>
+
+const NEXUS_THEMES=["monochrome","executive-blue","emerald-luxe","editorial-coral","indigo-future"];
+function setTheme(t){if(!NEXUS_THEMES.includes(t))t="monochrome";document.documentElement.dataset.theme=t;const s=document.getElementById("nexus-theme");if(s)s.value=t;try{localStorage.setItem("nexus-theme",t)}catch(e){};renderDashboardData()}
+function showWorkspace(n){document.querySelectorAll(".workspace-view").forEach(v=>v.classList.toggle("active",v.dataset.workspace===n));document.querySelectorAll(".side-nav button").forEach(b=>b.classList.toggle("active",b.dataset.workspace===n));if(n==="operations")loadOpsMetrics();if(n==="dashboard"||n==="analytics")renderDashboardData()}
+function renderDashboardData(){const jobs=allJobs||[],items=allRadarItems||[],regions=["KR","US","JP","GB"];const counts=[jobs.filter(j=>/대기|pending/i.test(j.stage)).length,jobs.filter(j=>/진행|running|생성/i.test(j.stage)).length,jobs.filter(j=>j.stage==="최종컨펌 대기").length,jobs.filter(j=>/Uploaded|완료/i.test(j.stage)).length];const labels=["제작 대기","제작 중","검수 대기","업로드 완료"];const tiles=labels.map((x,i)=>"<div class='queue-tile'><span style='color:var(--muted);font-size:11px'>"+x+"</span><strong>"+counts[i]+"</strong></div>").join("");["nexus-queue","nexus-analytics-queue"].forEach(id=>{const n=document.getElementById(id);if(n)n.innerHTML=tiles});const mix=regions.map(r=>{const c=items.filter(x=>x.region===r).length;return "<div class='mix-row'><b>"+r+"</b><div class='mix-track'><i style='width:"+Math.round(c/Math.max(1,items.length)*100)+"%'></i></div><span>"+c+"</span></div>"}).join("");["nexus-mix","nexus-analytics-mix"].forEach(id=>{const n=document.getElementById(id);if(n)n.innerHTML=mix});const canvas=document.getElementById("nexus-chart");if(canvas){const ctx=canvas.getContext("2d"),w=canvas.width,h=canvas.height,style=getComputedStyle(document.documentElement);ctx.clearRect(0,0,w,h);ctx.strokeStyle=style.getPropertyValue("--line");for(let i=0;i<4;i++){ctx.beginPath();ctx.moveTo(40,20+i*58);ctx.lineTo(w-15,20+i*58);ctx.stroke()}const vals=items.slice(0,24).reverse().map(x=>Math.max(0,Number(x.growth_pct)||0)),max=Math.max(1,...vals);if(vals.length){ctx.strokeStyle=style.getPropertyValue("--accent");ctx.lineWidth=4;ctx.beginPath();vals.forEach((v,i)=>{const x=45+i*(w-80)/Math.max(1,vals.length-1),y=h-25-v/max*(h-65);i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke()}else{ctx.fillStyle=style.getPropertyValue("--muted");ctx.font="16px sans-serif";ctx.fillText("트렌드 수집 후 데이터가 표시됩니다.",45,110)}}}
+function initNexusShell(){const old=document.querySelector("body > main");if(!old)return;const sections=[...old.children];const shell=document.createElement("div");shell.className="nexus-shell";const side=document.createElement("aside");side.className="nexus-sidebar";side.innerHTML="<div class='side-brand'>NEXUS / WORKSPACE</div><nav class='side-nav' aria-label='주 메뉴'></nav><div class='side-foot'>Human approval required<br>YouTube upload · Private by default</div>";const nav=side.querySelector("nav");const main=document.createElement("main");main.className="workspace";const names=[["dashboard","Dashboard","▦"],["studio","AI Content Studio","✦"],["discovery","Discovery","◎"],["review","Review","✓"],["publishing","Publishing","↗"],["analytics","Analytics","⌁"],["operations","Operations","⚙"]];const views={};names.forEach(([id,label,icon],i)=>{const b=document.createElement("button");b.type="button";b.dataset.workspace=id;b.textContent=icon+"  "+label;b.onclick=()=>showWorkspace(id);if(!i)b.className="active";nav.append(b);const v=document.createElement("section");v.className="workspace-view"+(!i?" active":"");v.dataset.workspace=id;const head=document.createElement("div");head.className="workspace-heading";head.innerHTML="<div><div class='eyebrow'>NEXUS STUDIO PRO</div><h1>"+label+"</h1></div>";v.append(head);main.append(v);views[id]=v});const put=(id,el)=>{if(el)views[id].append(el)};put("dashboard",sections[0]);const dash=document.createElement("div");dash.className="dash-grid";dash.innerHTML="<section class='card chart-card'><div class='eyebrow'>CHANNEL PERFORMANCE</div><h2>Global Trend Momentum</h2><canvas id='nexus-chart' width='900' height='230'></canvas></section><section class='card chart-card'><div class='eyebrow'>CONTENT MIX</div><h2>Regional Distribution</h2><div id='nexus-mix' class='mix-list'></div></section>";views.dashboard.append(dash);const q=document.createElement("section");q.className="card";q.innerHTML="<div class='eyebrow'>PRODUCTION QUEUE</div><h2 style='font-size:17px;margin-bottom:14px'>제작 파이프라인 현황</h2><div id='nexus-queue' class='queue-list'></div>";views.dashboard.append(q);put("operations",sections[1]);put("discovery",sections[2]);put("studio",sections[3]);put("review",sections[4]);const publish=document.createElement("section");publish.className="card";publish.innerHTML="<h2>Human approval · Private by default</h2><p style='color:var(--muted);margin-top:8px'>최종 검수 승인 후 YouTube 비공개 업로드를 진행합니다. 자동 공개 전환은 수행하지 않습니다.</p><button class='btn-dark' style='margin-top:14px' onclick='showWorkspace(\"review\")'>검수 대기열 열기</button>";views.publishing.append(publish);const analytics=document.createElement("div");analytics.className="dash-grid";analytics.innerHTML="<section class='card'><div class='eyebrow'>REGIONAL CONTENT MIX</div><div id='nexus-analytics-mix' class='mix-list'></div></section><section class='card'><div class='eyebrow'>PIPELINE SUMMARY</div><div id='nexus-analytics-queue' class='queue-list'></div></section>";views.analytics.append(analytics);old.replaceWith(shell);shell.append(side,main);const controls=document.querySelector("header .controls");if(controls){const sel=document.createElement("select");sel.id="nexus-theme";sel.className="theme-select";sel.setAttribute("aria-label","테마 선택");sel.innerHTML="<option value='monochrome'>Monochrome · 기본</option><option value='executive-blue'>Executive Blue</option><option value='emerald-luxe'>Emerald Luxe</option><option value='editorial-coral'>Editorial Coral</option><option value='indigo-future'>Indigo Future</option>";sel.onchange=()=>setTheme(sel.value);controls.prepend(sel)}let theme="monochrome";try{theme=localStorage.getItem("nexus-theme")||theme}catch(e){}setTheme(theme)}
+
     let currentPeriod = "daily", currentRankFilter = "TOP10", allRadarItems = [], allJobs = [], activeJobId = null, selectedModalItem = null;
 
     let studioStarted = false, opsRefreshTimer = null;
@@ -350,7 +394,7 @@
       document.getElementById("kpi-jobs").textContent = pend + " / " + (allJobs.length - pend);
       const sel = document.getElementById("single-channel");
       if (sel.options.length === 0 && chs.length > 0) sel.innerHTML = chs.map(c => "<option value='" + c.name + "'>" + c.name + "</option>").join("");
-      renderJobs();
+      renderJobs();renderDashboardData();
     }
     function renderJobs() {
       const box = document.getElementById("job-list");
