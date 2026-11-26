@@ -773,6 +773,59 @@ def get_events(limit: int = 50, event_type: str | None = None):
         raise HTTPException(status_code=400, detail="limit must be between 1 and 200")
     return {"items": list_events(limit=limit, event_type=event_type)}
 
+@app.get("/api/analytics/summary")
+def analytics_summary():
+    db = get_db()
+    try:
+        total_jobs = db.execute("SELECT COUNT(*) FROM pipeline_jobs").fetchone()[0]
+        by_stage = {
+            row[0]: row[1] for row in db.execute(
+                "SELECT stage, COUNT(*) FROM pipeline_jobs GROUP BY stage"
+            ).fetchall()
+        }
+        by_channel = [
+            dict(row) for row in db.execute(
+                """SELECT channel_name, COUNT(*) AS jobs_total,
+                          SUM(CASE WHEN stage='최종컨펌 대기' THEN 1 ELSE 0 END) AS review_pending,
+                          SUM(CASE WHEN stage='업로드 완료(비공개)' THEN 1 ELSE 0 END) AS uploaded_private,
+                          SUM(CASE WHEN youtube_video_id IS NOT NULL AND youtube_video_id != '' THEN 1 ELSE 0 END) AS provider_video_ids
+                   FROM pipeline_jobs GROUP BY channel_name ORDER BY jobs_total DESC, channel_name"""
+            ).fetchall()
+        ]
+        publishing = {
+            "private_uploads": by_stage.get("업로드 완료(비공개)", 0),
+            "upload_in_progress": by_stage.get("업로드 진행 중", 0),
+            "privacy_unverified": by_stage.get("업로드 상태 확인 필요", 0),
+            "regeneration_pending": by_stage.get("재제작 대기", 0),
+            "regeneration_failed": by_stage.get("재제작 실패", 0),
+        }
+    finally:
+        db.close()
+    daily_scan = trend_radar.get_scan_status("daily")
+    weekly_scan = trend_radar.get_scan_status("weekly")
+    source_health = trend_radar.get_source_health()
+    return {
+        "production": {"jobs_total": total_jobs, "by_stage": by_stage, "by_channel": by_channel},
+        "publishing": publishing,
+        "discovery": {
+            "daily_scan": daily_scan,
+            "weekly_scan": weekly_scan,
+            "source_health": source_health,
+            "global_ranking_available": False,
+        },
+        "platform_metrics": {
+            "status": "not_connected",
+            "subscribers": None,
+            "views": None,
+            "engagement_rate": None,
+            "revenue": None,
+            "source": None,
+            "updated_at": None,
+            "note": "YouTube read-only analytics credentials are not connected; platform performance is not estimated.",
+        },
+    }
+
+
 @app.get("/api/ops/metrics")
 def ops_metrics():
     return get_ops_metrics()
