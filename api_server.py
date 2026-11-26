@@ -98,7 +98,6 @@ def run_make_video(ch_name: str, persona: str, topic: str):
         db.commit()
     finally:
         db.close()
-    db.close()
 
 def auto_produce_top_trends(count=3):
     db = trend_radar.init_radar_db()
