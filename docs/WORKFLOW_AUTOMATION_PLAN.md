@@ -241,12 +241,12 @@ flowchart TD
 - [x] 렌더·업로드 의존성 및 OAuth JSON 저장 방식 정리
 - [x] 로컬 포트 바인딩·CORS 제한·외부 출처 변경 요청 차단
 - [x] 주요 API의 입력 검증·DB 연결 정리 보강
-- [ ] API 인증·세션 보호 완성
+- [x] FastAPI·브라우저 대시보드 API 및 출력 미디어 인증, HttpOnly 세션 쿠키, 로컬 Origin 검사\n- [ ] 별도 Streamlit UI 인증 및 로컬 브라우저 end-to-end 확인
 - [x] DB 기반 제작 큐·채널별 작업·lease·재시도·실패 격리 및 legacy 파일 브리지 구현\n- [x] 일일 08:00 제작 실행의 DB 기반 고유 일정 키·lease·실패 재시도 및 재시작 후 복구
-- [x] GitHub Actions 실제 실행 및 테스트 통과 (Python 컴파일 + 6개 단위 테스트)
+- [x] GitHub Actions 실제 실행 및 테스트 통과 (최신 인증·큐·레이더 테스트 12개 통과)
 - [ ] 로컬 Docker·렌더링·OAuth end-to-end 확인
 
-**완료 기준:** API 인증, 스케줄 중복 방지, 로컬 Docker·렌더링·OAuth 런타임 검증까지 확보. DB 큐는 구현됐으나 Phase 0 전체는 아직 미완료.
+**완료 기준:** 브라우저 API 인증, 큐·일일 스케줄 idempotency, 별도 Streamlit 보호, 로컬 Docker·렌더링·OAuth 런타임 검증까지 확보. Streamlit 인증과 로컬 실환경 검증이 남아 있어 Phase 0 전체는 아직 미완료.
 
 ### Phase 1 — 개발 업무 추적 자동화
 
@@ -316,7 +316,7 @@ flowchart TD
 
 | 우선순위 | 작업 | 선행 조건 | 완료 증거 |
 |---|---|---|---|
-| P0 | API 인증과 Streamlit/웹 UI 호환 설계 | 현재 API·UI 경로 조사 | 인증 테스트·무인증 변경 요청 차단 |
+| P0 | FastAPI 브라우저 API·미디어 인증 | API·HTML 경로 조사 | 서명 쿠키·무인증 요청 차단·세션 테스트 (구현 완료) |\n| P0 | Streamlit UI 보호 및 로컬 인증 통합 확인 | 로컬 Docker 접근 | Streamlit 로그인 및 브라우저 E2E 증거 |
 | P0 | 큐 유실·중복 실행 방지 | 작업 상태 모델 확정 | 재시작·동시 실행 테스트 |
 | P0 | GitHub Actions 실제 실행 확인 | Workflow 트리거 및 권한 | 성공한 run URL와 로그 |
 | P0 | Docker·렌더링·OAuth 통합 테스트 | 로컬 환경 접근 | 테스트 영상·Private 업로드 증거 |
@@ -345,7 +345,7 @@ flowchart TD
 
 ## 11. 현재 구현과 다음 실행 항목의 구분
 
-이 브랜치에서 확인된 것은 기본 앱 API, 레이더 수집 코드, 렌더링·업로드 모듈, GitHub Actions 컴파일·단위 테스트, 그리고 SQLite 기반 채널별 제작 큐(lease·재시도·실패 격리 포함)다. 이벤트 오케스트레이션, 다중 인스턴스 분산 락 검증, 단계별 Worker, 자동 QA, 리뷰 감사 로그, 성과 분석 파이프라인은 **목표 설계이며 아직 구현 완료로 간주하지 않는다.**
+이 브랜치에서 확인된 것은 기본 앱 API, 레이더 수집 코드, 렌더링·업로드 모듈, GitHub Actions 컴파일·단위 테스트, SQLite 기반 채널별 제작 큐(lease·재시도·실패 격리 포함), 일일 스케줄 idempotency, FastAPI API·미디어의 서명 쿠키 인증이다. 이벤트 오케스트레이션, 다중 인스턴스 분산 락 검증, 단계별 Worker, 자동 QA, 리뷰 감사 로그, 성과 분석 파이프라인은 **목표 설계이며 아직 구현 완료로 간주하지 않는다.**
 
 즉시 다음으로 진행할 순서는 다음과 같다.
 
