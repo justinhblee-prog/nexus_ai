@@ -330,7 +330,10 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
     function startStudio() {
       if (studioStarted) return;
       studioStarted = true;
-      loadRadar("daily");
+      loadRadar("daily").catch(error => {
+        const statusNode = document.getElementById("radar-scan-status");
+        if (statusNode) statusNode.textContent = error.message || "Discovery 데이터를 불러오지 못했습니다.";
+      });
       loadOverview();
       loadOpsMetrics();
       if (opsRefreshTimer === null) opsRefreshTimer = window.setInterval(loadOpsMetrics, 15000);
