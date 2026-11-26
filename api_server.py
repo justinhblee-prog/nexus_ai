@@ -185,6 +185,8 @@ def run_make_video(ch_name: str, persona: str, topic: str, queue_id: int | None 
                    title_override: str | None = None, target_job_id: int | None = None):
     if not topic or not topic.strip():
         raise ValueError("topic must not be empty")
+    if target_job_id is not None and queue_id is None:
+        raise ValueError("target_job_id requires a claimed queue item")
     started = time.monotonic()
     record_event("render.started", entity_type="render", payload={"channel": ch_name, "topic_length": len(topic)})
     try:
@@ -983,8 +985,9 @@ def enqueue_job_regeneration(job_id: int, title: str, script: str):
 def update_job(job_id: int, req: UpdateJobReq):
     title = (req.title or "").strip()
     script = (req.script or "").strip()
-    if not title or len(title) > 200:
-        raise HTTPException(status_code=400, detail="title must contain 1 to 200 characters")
+    title = " ".join(title.split())
+    if not title or len(title) > 100:
+        raise HTTPException(status_code=400, detail="title must contain 1 to 100 characters")
     if len(script) > 20000:
         raise HTTPException(status_code=400, detail="script exceeds the 20,000 character limit")
     try:
