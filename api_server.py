@@ -935,36 +935,63 @@ def reject_job(job_id: int, req: RejectReq):
                  payload={"channel": job["channel_name"], "note": note, "source": "browser_studio"})
     return {"ok": True, "msg": "반려 및 수정 요청이 기록되었습니다."}
 
+def enqueue_job_regeneration(job_id: int, title: str, script: str):
+    """Atomically move an editable review job to regeneration and enqueue its exact revision."""
+    sentences = split_manual_script(script)
+    db = get_db()
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        job = db.execute(
+            "SELECT stage, channel_name FROM pipeline_jobs WHERE id=?", (job_id,)
+        ).fetchone()
+        if not job:
+            raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
+        allowed_stages = ("최종컨펌 대기", "반려(수정 필요)", "재제작 실패")
+        if job["stage"] not in allowed_stages:
+            raise HTTPException(status_code=409, detail="검수 대기, 반려 또는 재제작 실패 상태의 작업만 수정할 수 있습니다.")
+        cur = db.execute(
+            "UPDATE pipeline_jobs SET stage='재제작 대기' WHERE id=? AND stage=?",
+            (job_id, job["stage"]),
+        )
+        if cur.rowcount != 1:
+            raise HTTPException(status_code=409, detail="작업 상태가 변경되어 재제작을 등록하지 못했습니다.")
+        stamp = datetime.now().isoformat(timespec="seconds")
+        queue_key = f"review-edit:{job_id}:{secrets.token_urlsafe(12)}"
+        queued = db.execute(
+            """INSERT INTO topic_queue
+               (idempotency_key, channel_name, topic, source, status, attempts, available_at,
+                title_override, script_override, target_job_id, created_at, updated_at)
+               VALUES (?, ?, ?, 'review_regeneration', 'pending', 0, ?, ?, ?, ?, ?, ?)""",
+            (queue_key, job["channel_name"], title, int(time.time()), title, script,
+             job_id, stamp, stamp),
+        )
+        queue_id = queued.lastrowid
+        db.commit()
+        record_event("review.regeneration_queued", entity_type="pipeline_job", entity_id=job_id,
+                     payload={"channel": job["channel_name"], "queue_id": queue_id,
+                              "sentence_count": len(sentences)})
+        return queue_id
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
 @app.put("/api/jobs/{job_id}")
 def update_job(job_id: int, req: UpdateJobReq):
     title = (req.title or "").strip()
     script = (req.script or "").strip()
-    if not title or not script:
-        raise HTTPException(status_code=400, detail="title and script are required")
-    if len(title) > 200 or len(script) > 20000:
-        raise HTTPException(status_code=400, detail="title or script exceeds the allowed length")
-    db = get_db()
+    if not title or len(title) > 200:
+        raise HTTPException(status_code=400, detail="title must contain 1 to 200 characters")
+    if len(script) > 20000:
+        raise HTTPException(status_code=400, detail="script exceeds the 20,000 character limit")
     try:
-        job = db.execute("SELECT stage, channel_name FROM pipeline_jobs WHERE id=?", (job_id,)).fetchone()
-        if not job:
-            raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
-        if job["stage"] not in ("최종컨펌 대기", "반려(수정 필요)"):
-            raise HTTPException(status_code=409, detail="검수 대기 또는 반려 상태의 작업만 수정할 수 있습니다.")
-        resubmitted = job["stage"] == "반려(수정 필요)"
-        next_stage = "최종컨펌 대기"
-        cur = db.execute(
-            "UPDATE pipeline_jobs SET title=?, script=?, stage=? WHERE id=? AND stage IN ('최종컨펌 대기','반려(수정 필요)')",
-            (title, script, next_stage, job_id),
-        )
-        if cur.rowcount != 1:
-            raise HTTPException(status_code=409, detail="작업 상태가 변경되어 수정 내용을 저장하지 못했습니다.")
-        db.commit()
-        if resubmitted:
-            record_event("review.resubmitted", entity_type="pipeline_job", entity_id=job_id,
-                         payload={"channel": job["channel_name"], "source": "browser_studio"})
-        return {"ok": True, "msg": "수정 내용이 저장되었습니다."}
-    finally:
-        db.close()
+        queue_id = enqueue_job_regeneration(job_id, title, script)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "queued": True, "queue_id": queue_id,
+            "msg": "수정한 대본으로 재제작을 등록했습니다. 새 영상의 품질검수 후 다시 최종 승인을 요청합니다."}
 
 @app.post("/api/jobs/bulk-delete")
 def bulk_delete_jobs(req: BulkDelReq):
