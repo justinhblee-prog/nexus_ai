@@ -74,6 +74,23 @@ def init_app_db():
         );
         CREATE INDEX IF NOT EXISTS idx_pipeline_jobs_created
             ON pipeline_jobs(id DESC);
+
+        CREATE TABLE IF NOT EXISTS topic_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            idempotency_key TEXT NOT NULL UNIQUE,
+            channel_name TEXT,
+            topic TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'api',
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            available_at INTEGER NOT NULL,
+            lease_until INTEGER,
+            last_error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_topic_queue_claim
+            ON topic_queue(status, available_at, lease_until, id);
     """)
     db.executescript("INSERT OR IGNORE INTO channels (name, platform, yt_id, persona) VALUES\n        ('Brain Glitch', 'YouTube', '', '심리 전문가 톤'),\n        ('Silent Signals', 'YouTube', '', '인간관계 전문가 톤'),\n        ('Unseen Truth', 'YouTube', '', '팩트체크 전문가 톤'),\n        ('Dark Files Global', 'YouTube', '', '미스터리 다큐 톤'),\n        ('99% Missed', 'YouTube', '', '생활 정보 전문가 톤'),\n        ('Money Glitch', 'YouTube', '', '경제 분석가 톤'),\n        ('Secret Vault 24', 'YouTube', '', '자산·습관 전문가 톤'),\n        ('Future Leak', 'YouTube', '', 'AI·기술 분석가 톤'),\n        ('30Sec Shift', 'YouTube', '', '건강 정보 전문가 톤'),\n        ('Why Nobody Tells', 'YouTube', '', '지식 큐레이터 톤');")
     db.commit()
@@ -123,29 +140,167 @@ def auto_produce_top_trends(count=3):
     finally:
         db.close()
 
+
+def enqueue_topic(topic_line: str, source: str = "api", idempotency_key: str | None = None):
+    """Persist one topic before acknowledging it; repeated imports are idempotent."""
+    raw = topic_line.strip()
+    if not raw:
+        return False
+    channel_name = None
+    topic = raw
+    if "|" in raw:
+        channel_name, topic = [part.strip() for part in raw.split("|", 1)]
+        if not channel_name or not topic:
+            raise ValueError("queue lines must be 'channel | topic' or 'topic'")
+    key = idempotency_key or __import__("uuid").uuid4().hex
+    now = int(time.time())
+    stamp = datetime.now().isoformat(timespec="seconds")
+    db = get_db()
+    try:
+        cur = db.execute(
+            """INSERT OR IGNORE INTO topic_queue
+               (idempotency_key, channel_name, topic, source, status, attempts,
+                available_at, created_at, updated_at)
+               VALUES (?, ?, ?, ?, 'pending', 0, ?, ?, ?)""",
+            (key, channel_name, topic, source, now, stamp, stamp),
+        )
+        db.commit()
+        return cur.rowcount == 1
+    finally:
+        db.close()
+
+def claim_next_topic(lease_seconds: int = 900):
+    """Atomically claim one pending or expired lease so concurrent workers cannot double-run it."""
+    now = int(time.time())
+    db = get_db()
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute(
+            """SELECT * FROM topic_queue
+               WHERE available_at <= ?
+                 AND (status='pending' OR (status='running' AND lease_until < ?))
+               ORDER BY id LIMIT 1""",
+            (now, now),
+        ).fetchone()
+        if not row:
+            db.commit()
+            return None
+        db.execute(
+            """UPDATE topic_queue SET status='running', attempts=attempts+1,
+               lease_until=?, updated_at=? WHERE id=?""",
+            (now + lease_seconds, datetime.now().isoformat(timespec="seconds"), row["id"]),
+        )
+        claimed = dict(row)
+        claimed["attempts"] += 1
+        db.commit()
+        return claimed
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+def finish_topic(queue_id: int, error: str | None = None, max_attempts: int = 3):
+    db = get_db()
+    try:
+        row = db.execute("SELECT attempts FROM topic_queue WHERE id=?", (queue_id,)).fetchone()
+        if not row:
+            return
+        now = int(time.time())
+        stamp = datetime.now().isoformat(timespec="seconds")
+        if error is None:
+            db.execute(
+                "UPDATE topic_queue SET status='completed', lease_until=NULL, last_error=NULL, updated_at=? WHERE id=?",
+                (stamp, queue_id),
+            )
+        elif row["attempts"] >= max_attempts:
+            db.execute(
+                "UPDATE topic_queue SET status='failed', lease_until=NULL, last_error=?, updated_at=? WHERE id=?",
+                (error[:2000], stamp, queue_id),
+            )
+        else:
+            delay = min(3600, 30 * (2 ** max(0, row["attempts"] - 1)))
+            db.execute(
+                """UPDATE topic_queue SET status='pending', lease_until=NULL,
+                   available_at=?, last_error=?, updated_at=? WHERE id=?""",
+                (now + delay, error[:2000], stamp, queue_id),
+            )
+        db.commit()
+    finally:
+        db.close()
+
+def import_legacy_topics_file():
+    """Import the legacy OneDrive topics.txt without losing content on worker crashes."""
+    path = "topics.txt"
+    if not os.path.exists(path):
+        return
+    with open(path, "r", encoding="utf-8") as handle:
+        snapshot = handle.read()
+    lines = [line.strip() for line in snapshot.splitlines() if line.strip()]
+    if not lines:
+        return
+    import hashlib
+    digest = hashlib.sha256(snapshot.encode("utf-8")).hexdigest()
+    db = get_db()
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        stamp = datetime.now().isoformat(timespec="seconds")
+        for index, line in enumerate(lines):
+            key = hashlib.sha256(f"{digest}:{index}:{line}".encode("utf-8")).hexdigest()
+            channel_name, topic = (line.split("|", 1) if "|" in line else (None, line))
+            channel_name = channel_name.strip() if channel_name else None
+            topic = topic.strip()
+            if topic and (channel_name is None or channel_name):
+                db.execute(
+                    """INSERT OR IGNORE INTO topic_queue
+                       (idempotency_key, channel_name, topic, source, status, attempts,
+                        available_at, created_at, updated_at)
+                       VALUES (?, ?, ?, 'topics.txt', 'pending', 0, ?, ?, ?)""",
+                    (key, channel_name, topic, int(time.time()), stamp, stamp),
+                )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+    # Clear only if no external edit occurred after the snapshot was read.
+    with open(path, "r", encoding="utf-8") as handle:
+        current = handle.read()
+    if current == snapshot:
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("")
+
 def watch_topics_loop():
     while True:
         try:
-            if os.path.exists("topics.txt"):
-                with open("topics.txt", "r", encoding="utf-8") as f:
-                    lines = [l.strip() for l in f.readlines() if l.strip()]
-                if lines:
-                    with open("topics.txt", "w", encoding="utf-8") as f:
-                        f.write("")
-                    db = get_db()
-                    chs = db.execute("SELECT * FROM channels").fetchall()
-                    for line in lines:
-                        if "|" in line:
-                            t_name, t_str = [x.strip() for x in line.split("|", 1)]
-                            for c in chs: 
-                                if c["name"] == t_name:
-                                    run_make_video(c["name"], c["persona"], t_str)
-                        else:
-                            for c in chs:
-                                run_make_video(c["name"], c["persona"], line)
-        except Exception:
+            import_legacy_topics_file()
+            item = claim_next_topic()
+            if item:
+                db = get_db()
+                try:
+                    if item["channel_name"]:
+                        channel = db.execute("SELECT * FROM channels WHERE name=?", (item["channel_name"],)).fetchone()
+                        if not channel:
+                            raise ValueError(f"Unknown channel: {item['channel_name']}")
+                        targets = [channel]
+                    else:
+                        targets = db.execute("SELECT * FROM channels ORDER BY id").fetchall()
+                    if not targets:
+                        raise RuntimeError("No channels are configured")
+                    for channel in targets:
+                        run_make_video(channel["name"], channel["persona"], item["topic"])
+                finally:
+                    db.close()
+                finish_topic(item["id"])
+        except Exception as exc:
             logger.exception("Topic queue worker failed")
-        time.sleep(15)
+            if "item" in locals() and item:
+                try:
+                    finish_topic(item["id"], str(exc))
+                except Exception:
+                    logger.exception("Could not update failed queue item")
+        time.sleep(5)
 
 def auto_radar_and_scheduler_loop():
     last_auto_date = ""
@@ -199,8 +354,19 @@ def overview():
         jobs = [dict(r) for r in db.execute("SELECT * FROM pipeline_jobs ORDER BY id DESC").fetchall()]
     finally:
         db.close()
-    q_txt = open("topics.txt", "r", encoding="utf-8").read().strip() if os.path.exists("topics.txt") else ""
-    return {"channels": chs, "jobs": jobs, "topics_text": q_txt, "auto_produce": AUTO_PRODUCE_ENABLED}
+    queue_db = get_db()
+    try:
+        pending = queue_db.execute(
+            "SELECT channel_name, topic FROM topic_queue WHERE status IN ('pending','running') ORDER BY id"
+        ).fetchall()
+    finally:
+        queue_db.close()
+    q_txt = "\\n".join(
+        (f"{row['channel_name']} | " if row["channel_name"] else "") + row["topic"]
+        for row in pending
+    )
+    return {"channels": chs, "jobs": jobs, "topics_text": q_txt, "auto_produce": AUTO_PRODUCE_ENABLED,
+            "queue_pending": len(pending)}
 
 @app.get("/api/radar/{period}")
 def get_radar(period: str = "daily"):
