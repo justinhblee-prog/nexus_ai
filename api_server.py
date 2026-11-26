@@ -664,21 +664,27 @@ def approve_job(job_id: int):
     video_path = os.path.realpath(jb["video_path"])
     if os.path.commonpath([output_root, video_path]) != output_root or not os.path.isfile(video_path):
         raise HTTPException(status_code=400, detail="output 폴더 안의 실제 영상 파일만 업로드할 수 있습니다.")
+    db = get_db()
+    try:
+        if not claim_upload(db, job_id):
+            raise HTTPException(status_code=409, detail="다른 요청에서 이미 검수 또는 업로드를 처리하고 있습니다.")
+        db.commit()
+    finally:
+        db.close()
     record_event("review.approved", entity_type="pipeline_job", entity_id=job_id,
                  payload={"channel": jb["channel_name"], "approval_source": "api"})
     ok, msg = yt_uploader.upload_to_youtube(jb["channel_name"], video_path, jb["title"], jb["script"])
-    privacy_unverified = msg.startswith("UPLOAD_CREATED_PRIVACY_UNVERIFIED:")
+    privacy_unverified = msg.startswith("UPLOAD_CREATED_PRIVACY_UNVERIFIED:") or msg.startswith("UPLOAD_RESULT_UNCERTAIN:")
     event_type = "upload.completed" if ok else ("upload.privacy_unverified" if privacy_unverified else "upload.failed")
     record_event(event_type, entity_type="pipeline_job", entity_id=job_id,
                  payload={"channel": jb["channel_name"], "privacy_status": "private" if ok else "unverified"})
-    if ok or privacy_unverified:
-        db = get_db()
-        try:
-            stage = "업로드 완료(비공개)" if ok else "업로드 상태 확인 필요"
-            db.execute("UPDATE pipeline_jobs SET stage=? WHERE id=?", (stage, job_id))
-            db.commit()
-        finally:
-            db.close()
+    db = get_db()
+    try:
+        db.execute("UPDATE pipeline_jobs SET stage=? WHERE id=?",
+                   (upload_result_stage(ok, privacy_unverified), job_id))
+        db.commit()
+    finally:
+        db.close()
     return {"ok": ok, "msg": msg}
 
 @app.post("/api/reject/{job_id}")
@@ -693,7 +699,9 @@ def reject_job(job_id: int, req: RejectReq):
             raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
         if job["stage"] != "최종컨펌 대기":
             raise HTTPException(status_code=409, detail="검수 대기 상태의 작업만 반려할 수 있습니다.")
-        db.execute("UPDATE pipeline_jobs SET stage='반려(수정 필요)' WHERE id=?", (job_id,))
+        cur = db.execute("UPDATE pipeline_jobs SET stage='반려(수정 필요)' WHERE id=? AND stage='최종컨펌 대기'", (job_id,))
+        if cur.rowcount != 1:
+            raise HTTPException(status_code=409, detail="다른 요청에서 이미 검수 또는 업로드를 처리하고 있습니다.")
         db.commit()
     finally:
         db.close()
