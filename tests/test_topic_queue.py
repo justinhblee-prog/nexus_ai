@@ -5,6 +5,7 @@ import sys
 import tempfile
 import types
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
 
@@ -90,6 +91,22 @@ class DurableTopicQueueTests(unittest.TestCase):
         self.assertEqual(row["status"], "failed")
         self.assertEqual(row["attempts"], 3)
 
+
+    def test_concurrent_connections_cannot_claim_the_same_queue_item(self):
+        self.api.enqueue_topic("Future Leak | one shared queue item", source="test")
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            claims = list(pool.map(lambda _: self.api.claim_next_topic(lease_seconds=60), range(8)))
+        claimed = [item for item in claims if item is not None]
+        self.assertEqual(len(claimed), 1)
+        self.assertEqual(len({item["id"] for item in claimed}), 1)
+        row = self._rows()[0]
+        self.assertEqual(row["status"], "running")
+        self.assertEqual(row["attempts"], 1)
+
+    def test_concurrent_scheduler_claims_are_single_winner(self):
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(lambda _: self.api.claim_daily_schedule("parallel-day"), range(8)))
+        self.assertEqual(sum(bool(result) for result in results), 1)
 
     def test_daily_scheduler_claim_is_idempotent_and_recovers_failed_run(self):
         self.assertTrue(self.api.claim_daily_schedule("2026-11-26", lease_seconds=1))
