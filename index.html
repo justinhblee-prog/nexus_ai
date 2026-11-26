@@ -568,22 +568,41 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
       document.getElementById("editor-channel").textContent = jb.channel_name; document.getElementById("editor-stage").textContent = jb.stage;
       document.getElementById("editor-title").value = jb.title; document.getElementById("editor-script").value = jb.script;
       const reviewable = jb.stage === "최종컨펌 대기";
+      const editable = ["최종컨펌 대기", "반려(수정 필요)", "재제작 실패"].includes(jb.stage);
       document.getElementById("btn-approve").disabled = !reviewable;
       document.getElementById("btn-reject").disabled = !reviewable;
+      document.getElementById("editor-title").disabled = !editable;
+      document.getElementById("editor-script").disabled = !editable;
+      document.getElementById("btn-save-edit").disabled = !editable;
+      document.getElementById("btn-save-edit").textContent = editable ? "↻ 수정 후 재제작" : "재제작 진행 중";
       if (jb.video_path) document.getElementById("preview-video").src = "/" + jb.video_path.replace(/^\//, "");
       renderJobs();
     }
     function toggleSelectAll(c) { document.querySelectorAll(".job-chk").forEach(x => x.checked = c); updateSelectedCount(); }
     function updateSelectedCount() { document.getElementById("selected-count").textContent = document.querySelectorAll(".job-chk:checked").length; }
     async function bulkDeleteJobs() {
-      const ids = Array.from(document.querySelectorAll(".job-chk:checked")).map(c => Number(c.value)); if (!ids.length) return;
-      await fetch("/api/jobs/bulk-delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job_ids: ids }) });
-      activeJobId = null; loadOverview();
+      const ids = Array.from(document.querySelectorAll(".job-chk:checked")).map(c => Number(c.value));
+      if (!ids.length) return;
+      const response = await fetch("/api/jobs/bulk-delete", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_ids: ids })
+      });
+      const result = await response.json();
+      alert(result.msg || result.detail || "삭제 요청을 처리하지 못했습니다.");
+      if (response.ok) { activeJobId = null; await loadOverview(); }
     }
     async function saveJobEdit() {
       if (!activeJobId) return;
-      await fetch("/api/jobs/" + activeJobId, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: document.getElementById("editor-title").value, script: document.getElementById("editor-script").value }) });
-      alert("저장되었습니다."); loadOverview();
+      const response = await fetch("/api/jobs/" + activeJobId, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: document.getElementById("editor-title").value,
+          script: document.getElementById("editor-script").value
+        })
+      });
+      const result = await response.json();
+      alert(result.msg || result.detail || "재제작 요청을 처리하지 못했습니다.");
+      if (response.ok) { activeJobId = null; await loadOverview(); }
     }
     async function rejectJob() {
       if (!activeJobId) return;
@@ -597,7 +616,13 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
       alert(result.msg || result.detail || "반려 요청을 처리하지 못했습니다.");
       if (r.ok) { activeJobId = null; loadOverview(); }
     }
-    async function approveUpload() { if (!activeJobId) return; const r = await fetch("/api/approve/" + activeJobId, { method: "POST" }); alert((await r.json()).msg); loadOverview(); }
+    async function approveUpload() {
+      if (!activeJobId) return;
+      const response = await fetch("/api/approve/" + activeJobId, { method: "POST" });
+      const result = await response.json();
+      alert(result.msg || result.detail || "업로드 결과를 확인하지 못했습니다.");
+      await loadOverview();
+    }
     async function createSingleVideo() {
       const topic = document.getElementById("single-topic").value.trim(); if (!topic) return;
       const r = await fetch("/api/create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ channel_name: document.getElementById("single-channel").value, topic }) });
@@ -605,9 +630,25 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
     }
     async function createAllVideos() { const r = await fetch("/api/create-all", { method: "POST" }); alert((await r.json()).msg); }
     async function saveCloudQueue() { const r = await fetch("/api/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ topics_text: document.getElementById("queue-text").value }) }); alert((await r.json()).msg); }
-    async function forceScan() { setScanningState(true); try { await fetch("/api/radar/scan/" + currentPeriod, { method: "POST" }); await loadRadar(currentPeriod); } finally { setScanningState(false); } }
+    async function forceScan() {
+      setScanningState(true);
+      try {
+        const response = await fetch("/api/radar/scan/" + currentPeriod, { method: "POST" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "Discovery scan failed");
+        await loadRadar(currentPeriod);
+        if (result.msg) document.getElementById("radar-scan-status").textContent =
+          result.msg + " · 상태: " + (result.scan?.status || "unknown");
+      } catch (error) {
+        document.getElementById("radar-scan-status").textContent = error.message;
+      } finally { setScanningState(false); }
+    }
     async function changeInterval(m) { await fetch("/api/radar/interval/" + m, { method: "POST" }); }
-    async function triggerTop3Auto() { const r = await fetch("/api/radar/auto-produce-now", { method: "POST" }); alert((await r.json()).msg); }
+    async function triggerTop3Auto() {
+      const response = await fetch("/api/radar/auto-produce-now", { method: "POST" });
+      const result = await response.json();
+      alert(result.msg || result.detail || "자동 제작 요청을 처리하지 못했습니다.");
+    }
     initNexusShell();
     checkSession();
   </script>
