@@ -95,6 +95,30 @@ class DurableTopicQueueTests(unittest.TestCase):
         self.assertEqual(row["attempts"], 3)
 
 
+    def test_render_job_and_queue_completion_commit_atomically(self):
+        self.api.enqueue_topic("Future Leak | atomic render", source="daily_radar")
+        item = self.api.claim_next_topic(lease_seconds=60)
+        with patch.object(self.api.video_maker, "render_pro_short",
+                          return_value=("output/atomic.mp4", "Atomic title", "Atomic script"), create=True), \
+             patch.object(self.api, "validate_video", return_value={"ok": True, "checks": {}, "errors": []}):
+            job_id = self.api.run_make_video(
+                "Future Leak", "persona", "atomic render",
+                queue_id=item["id"], lease_token=item["lease_token"],
+            )
+        db = self.api.get_db()
+        try:
+            job = db.execute("SELECT id, stage FROM pipeline_jobs WHERE id=?", (job_id,)).fetchone()
+            queue = db.execute("SELECT status, lease_token FROM topic_queue WHERE id=?", (item["id"],)).fetchone()
+            produced = db.execute(
+                "SELECT topic FROM auto_produced_topics WHERE topic='atomic render'"
+            ).fetchone()
+        finally:
+            db.close()
+        self.assertEqual(job["stage"], "최종컨펌 대기")
+        self.assertEqual(queue["status"], "completed")
+        self.assertIsNone(queue["lease_token"])
+        self.assertIsNotNone(produced)
+
     def test_stale_render_cannot_commit_pipeline_job(self):
         self.api.enqueue_topic("Future Leak | stale render", source="test")
         item = self.api.claim_next_topic(lease_seconds=60)
