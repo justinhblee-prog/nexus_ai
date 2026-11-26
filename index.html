@@ -559,7 +559,10 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
       document.getElementById("kpi-jobs").textContent = "—";
       const sel = document.getElementById("single-channel");
       if (sel.options.length === 0 && chs.length > 0) sel.innerHTML = chs.map(c => "<option value='" + c.name + "'>" + c.name + "</option>").join("");
-      renderJobs();renderDashboardData();
+      if (activeJobId && !allJobs.some(job => job.id === activeJobId)) activeJobId = null;
+      renderJobs();
+      if (activeJobId) selectJob(activeJobId);
+      renderDashboardData();
     }
     function renderJobs() {
       const box = document.getElementById("job-list");
@@ -595,7 +598,7 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
       });
       const result = await response.json();
       alert(result.msg || result.detail || "삭제 요청을 처리하지 못했습니다.");
-      if (response.ok) { activeJobId = null; await loadOverview(); }
+      if (response.ok) { await loadOverview(); }
     }
     async function saveJobEdit() {
       if (!activeJobId) return;
@@ -608,7 +611,7 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
       });
       const result = await response.json();
       alert(result.msg || result.detail || "재제작 요청을 처리하지 못했습니다.");
-      if (response.ok) { activeJobId = null; await loadOverview(); }
+      if (response.ok) { await loadOverview(); }
     }
     async function rejectJob() {
       if (!activeJobId) return;
@@ -627,7 +630,6 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
       const response = await fetch("/api/approve/" + activeJobId, { method: "POST" });
       const result = await response.json();
       alert(result.msg || result.detail || "업로드 결과를 확인하지 못했습니다.");
-      activeJobId = null;
       await loadOverview();
     }
     async function createSingleVideo() {
