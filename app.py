@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import sqlite3, os, time, threading
 from streamlit_auth import is_auth_configured, verify_streamlit_password
+from audit_log import record_event
 from datetime import datetime, timedelta
 import video_maker, yt_uploader
 
@@ -127,42 +128,24 @@ def get_set(k):
     return next(iter(r)) if r else ""
 
 def make_video(ch_name, persona, topic):
-    mp4_path, title, full_script = video_maker.render_pro_short(ch_name, persona, topic, get_set("oa"))
-    conn.execute("INSERT INTO pipeline_jobs (channel_name, title, script, video_path, stage, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                 (ch_name, title, full_script, mp4_path, "최종컨펌 대기", datetime.now().strftime("%Y-%m-%d %H:%M")))
-    conn.commit()
+    started = time.monotonic()
+    record_event("render.started", entity_type="render", payload={"channel": ch_name, "topic_length": len(topic)})
+    try:
+        mp4_path, title, full_script = video_maker.render_pro_short(ch_name, persona, topic, get_set("oa"))
+        cur = conn.execute("INSERT INTO pipeline_jobs (channel_name, title, script, video_path, stage, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                           (ch_name, title, full_script, mp4_path, "최종컨펌 대기", datetime.now().strftime("%Y-%m-%d %H:%M")))
+        conn.commit()
+        record_event("render.completed", entity_type="pipeline_job", entity_id=cur.lastrowid,
+                     payload={"channel": ch_name, "elapsed_seconds": round(time.monotonic() - started, 3)})
+    except Exception as exc:
+        record_event("render.failed", entity_type="render",
+                     payload={"channel": ch_name, "error_type": type(exc).__name__,
+                              "elapsed_seconds": round(time.monotonic() - started, 3)})
+        raise
 
-def watch_onedrive_topics():
-    while True:
-        try:
-            if os.path.exists("topics.txt"):
-                with open("topics.txt", "r", encoding="utf-8") as f:
-                    lines = [l.strip() for l in f.readlines() if l.strip()]
-                if lines:
-                    with open("topics.txt", "w", encoding="utf-8") as f:
-                        f.write("")
-                    chs = pd.read_sql_query("SELECT * FROM channels", conn)
-                    for line in lines:
-                        if "|" in line:
-                            t_name, t_str = [x.strip() for x in line.split("|", 1)]
-                            m = chs[chs["name"] == t_name]
-                            if not m.empty:
-                                selected = m.iloc[0]
-                                make_video(selected["name"], selected["persona"], t_str)
-                        else:
-                            for _, r in chs.iterrows():
-                                make_video(r["name"], r["persona"], line)
-        except Exception as e:
-            print("Watcher:", e)
-        time.sleep(15)
-
-@st.cache_resource
-def start_watcher():
-    t = threading.Thread(target=watch_onedrive_topics, daemon=True)
-    t.start()
-    return True
-
-start_watcher()
+# The FastAPI process is the single owner of topics.txt import and the durable
+# SQLite topic queue. Keeping a second Streamlit file watcher here could race
+# with the API importer and consume the same file twice or lose entries.
 df = pd.read_sql_query("SELECT * FROM channels", conn)
 jobs = pd.read_sql_query("SELECT * FROM pipeline_jobs ORDER BY id DESC", conn)
 pend = len(jobs[jobs["stage"] == "최종컨펌 대기"])
@@ -334,8 +317,13 @@ with t3:
                     st.caption(f"🟢 `{ch_n}` 유튜브 API 토큰 연결됨")
                     if st.button("✅ 최종 컨펌 승인 및 유튜브 비공개 업로드", type="primary", use_container_width=True):
                         if c1:
+                            record_event("review.approved", entity_type="pipeline_job", entity_id=int(jb["id"]),
+                                 payload={"channel": ch_n, "approval_source": "streamlit"})
                             with st.spinner("YouTube Studio로 영상 전송 중..."):
                                 ok, msg = yt_uploader.upload_to_youtube(ch_n, jb["video_path"], et, jb["script"])
+                            record_event("upload.completed" if ok else "upload.failed",
+                                         entity_type="pipeline_job", entity_id=int(jb["id"]),
+                                         payload={"channel": ch_n, "privacy_status": "private" if ok else None})
                             if ok:
                                 conn.execute("UPDATE pipeline_jobs SET title=?, stage='업로드 완료(비공개)' WHERE id=?", (et, int(jb["id"])))
                                 conn.commit()
@@ -353,6 +341,8 @@ with t3:
                 if st.button("🗑️ 현재 작업 삭제", use_container_width=True):
                     conn.execute("DELETE FROM pipeline_jobs WHERE id=?", (int(jb["id"]),))
                     conn.commit()
+                    record_event("pipeline_job.deleted", entity_type="pipeline_job", entity_id=int(jb["id"]),
+                                 payload={"channel": ch_n, "source": "streamlit"})
                     st.rerun()
 
 with t4:
