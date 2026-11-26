@@ -1,13 +1,12 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import sqlite3, os, time, threading
+import sqlite3, os
 from streamlit_auth import is_auth_configured, verify_streamlit_password
 from audit_log import safe_record_event as record_event
-from video_qa import validate_video
 from review_workflow import claim_upload, upload_result_stage
 from datetime import datetime, timedelta
-import video_maker, yt_uploader
+import yt_uploader
 
 st.set_page_config(page_title="NEXUS STUDIO PRO", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
 
@@ -32,6 +31,9 @@ if not st.session_state.get("nexus_streamlit_authenticated", False):
             st.error("비밀번호가 올바르지 않습니다.")
     st.stop()
 
+# Reuse the FastAPI-owned durable queue; do not render inside Streamlit callbacks.
+from api_server import enqueue_topic, init_app_db
+init_app_db()
 
 st.markdown("""
 <style>
@@ -129,34 +131,13 @@ def get_set(k):
     r = conn.execute("SELECT value FROM settings WHERE key=?", (k,)).fetchone()
     return next(iter(r)) if r else ""
 
-def make_video(ch_name, persona, topic):
-    started = time.monotonic()
-    record_event("render.started", entity_type="render", payload={"channel": ch_name, "topic_length": len(topic)})
-    try:
-        mp4_path, title, full_script = video_maker.render_pro_short(ch_name, persona, topic, get_set("oa"))
-        qa = validate_video(mp4_path)
-        record_event("qa.passed" if qa["ok"] else "qa.failed", entity_type="render",
-                     payload={"channel": ch_name, "checks": qa["checks"], "errors": qa["errors"]})
-        if not qa["ok"]:
-            raise RuntimeError("Video QA failed: " + ", ".join(qa["errors"]))
-        cur = conn.execute("INSERT INTO pipeline_jobs (channel_name, title, script, video_path, stage, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                           (ch_name, title, full_script, mp4_path, "최종컨펌 대기", datetime.now().strftime("%Y-%m-%d %H:%M")))
-        conn.commit()
-        record_event("render.completed", entity_type="pipeline_job", entity_id=cur.lastrowid,
-                     payload={"channel": ch_name, "elapsed_seconds": round(time.monotonic() - started, 3)})
-    except Exception as exc:
-        record_event("render.failed", entity_type="render",
-                     payload={"channel": ch_name, "error_type": type(exc).__name__,
-                              "elapsed_seconds": round(time.monotonic() - started, 3)})
-        raise
-
 # The FastAPI process is the single owner of topics.txt import and the durable
 # SQLite topic queue. Keeping a second Streamlit file watcher here could race
 # with the API importer and consume the same file twice or lose entries.
 df = pd.read_sql_query("SELECT * FROM channels", conn)
 jobs = pd.read_sql_query("SELECT * FROM pipeline_jobs ORDER BY id DESC", conn)
 pend = len(jobs[jobs["stage"] == "최종컨펌 대기"])
-q_file_cnt = len([x for x in open("topics.txt", encoding="utf-8").read().splitlines() if x.strip()]) if os.path.exists("topics.txt") else 0
+q_file_cnt = conn.execute("SELECT COUNT(*) FROM topic_queue WHERE status IN ('pending', 'running')").fetchone()[0]
 
 with st.sidebar:
     st.markdown("### ⚡ NEXUS STUDIO")
@@ -165,10 +146,14 @@ with st.sidebar:
         st.session_state.pop("nexus_streamlit_authenticated", None)
         st.rerun()
     st.divider()
-    if st.button("⚡ 전 채널 1편씩 즉시 일괄 생성", type="primary", use_container_width=True):
-        with st.spinner("전 채널 시네마틱 숏폼 일괄 렌더링 중..."):
-            for _, r in df.iterrows():
-                make_video(r["name"], r["persona"], "오늘의 글로벌 핵심 트렌드")
+    if st.button("⚡ 전 채널 1편씩 제작 큐 등록", type="primary", use_container_width=True):
+        queued = 0
+        for _, r in df.iterrows():
+            queued += enqueue_topic(
+                f"{r['name']} | 오늘의 글로벌 핵심 트렌드",
+                source="streamlit_create_all",
+            )
+        st.success(f"{queued}건을 내구성 제작 큐에 등록했습니다.")
         st.rerun()
     st.markdown("")
     with st.expander("🔑 글로벌 API 키 설정"):
@@ -252,9 +237,11 @@ with t2:
             tp = st.text_input("영상 주제 입력", placeholder="예: 2026년 달라지는 AI 산업 핵심 요약")
             if st.button("🚀 선택한 채널 톤으로 즉시 생성", type="primary", use_container_width=True):
                 if tp:
-                    with st.spinner("AI 대본 · 성우 음성 · 모션 배경 · 대형 자막 합성 중..."):
-                        make_video(row["name"], row["persona"], tp)
-                    st.success("제작 완료! [🛡️ 검수 & 유튜브 배포] 탭에서 확인하세요.")
+                    queued = enqueue_topic(f"{row['name']} | {tp}", source="streamlit_create")
+                    if queued:
+                        st.success("제작 요청을 내구성 큐에 등록했습니다. 완료 후 검수 탭에 표시됩니다.")
+                    else:
+                        st.info("같은 채널·주제가 이미 대기 또는 실행 중입니다.")
                     st.rerun()
                 else:
                     st.warning("영상 주제를 입력해주세요.")
