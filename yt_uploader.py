@@ -5,6 +5,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+from upload_safety import classify_upload_response
 
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 SECRET_PATH = "tokens/client_secret.json"
@@ -66,7 +67,11 @@ def upload_to_youtube(channel_name, video_path, title, description="AI 자동 �
         }
         media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/mp4")
         response = youtube.videos().insert(part="snippet,status", body=body, media_body=media).execute()
-        video_id = response.get("id")
-        return True, f"비공개 업로드 성공! 영상 ID: {video_id} 👉 https://www.youtube.com/watch?v={video_id}"
+        outcome, video_id, privacy_status = classify_upload_response(response)
+        if outcome == "private":
+            return True, f"비공개 업로드 성공! 영상 ID: {video_id} 👉 https://www.youtube.com/watch?v={video_id}"
+        if outcome == "privacy_unverified":
+            return False, f"UPLOAD_CREATED_PRIVACY_UNVERIFIED:{video_id}:{privacy_status or 'missing'}"
+        return False, "UPLOAD_RESPONSE_MISSING_VIDEO_ID"
     except Exception as exc:
         return False, f"YOUTUBE_UPLOAD_FAILED: {type(exc).__name__}: {exc}"
