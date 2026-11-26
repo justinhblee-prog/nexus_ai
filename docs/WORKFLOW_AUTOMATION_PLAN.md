@@ -241,8 +241,10 @@ flowchart TD
 - [x] 렌더·업로드 의존성 및 OAuth JSON 저장 방식 정리
 - [x] 로컬 포트 바인딩·CORS 제한·외부 출처 변경 요청 차단
 - [x] 주요 API의 입력 검증·DB 연결 정리 보강
-- [x] FastAPI·브라우저 대시보드 API 및 출력 미디어 인증, HttpOnly 세션 쿠키, 로컬 Origin 검사\n- [ ] 별도 Streamlit UI 인증 및 로컬 브라우저 end-to-end 확인
-- [x] DB 기반 제작 큐·채널별 작업·lease·재시도·실패 격리 및 legacy 파일 브리지 구현\n- [x] 일일 08:00 제작 실행의 DB 기반 고유 일정 키·lease·실패 재시도 및 재시작 후 복구
+- [x] FastAPI·브라우저 대시보드 API 및 출력 미디어 인증, HttpOnly 세션 쿠키, 로컬 Origin 검사
+- [ ] 별도 Streamlit UI 인증 및 로컬 브라우저 end-to-end 확인
+- [x] DB 기반 제작 큐·채널별 작업·lease·재시도·실패 격리 및 legacy 파일 브리지 구현
+- [x] 일일 08:00 제작 실행의 DB 기반 고유 일정 키·lease·실패 재시도 및 재시작 후 복구
 - [x] GitHub Actions 실제 실행 및 테스트 통과 (최신 인증·큐·레이더 테스트 12개 통과)
 - [ ] 로컬 Docker·렌더링·OAuth end-to-end 확인
 
@@ -316,7 +318,8 @@ flowchart TD
 
 | 우선순위 | 작업 | 선행 조건 | 완료 증거 |
 |---|---|---|---|
-| P0 | FastAPI 브라우저 API·미디어 인증 | API·HTML 경로 조사 | 서명 쿠키·무인증 요청 차단·세션 테스트 (구현 완료) |\n| P0 | Streamlit UI 보호 및 로컬 인증 통합 확인 | 로컬 Docker 접근 | Streamlit 로그인 및 브라우저 E2E 증거 |
+| P0 | FastAPI 브라우저 API·미디어 인증 | API·HTML 경로 조사 | 서명 쿠키·무인증 요청 차단·세션 테스트 (구현 완료) |
+| P0 | Streamlit UI 보호 및 로컬 인증 통합 확인 | 로컬 Docker 접근 | Streamlit 로그인 및 브라우저 E2E 증거 |
 | P0 | 큐 유실·중복 실행 방지 | 작업 상태 모델 확정 | 재시작·동시 실행 테스트 |
 | P0 | GitHub Actions 실제 실행 확인 | Workflow 트리거 및 권한 | 성공한 run URL와 로그 |
 | P0 | Docker·렌더링·OAuth 통합 테스트 | 로컬 환경 접근 | 테스트 영상·Private 업로드 증거 |
@@ -349,11 +352,9 @@ flowchart TD
 
 즉시 다음으로 진행할 순서는 다음과 같다.
 
-1. API 인증 설계 및 UI 호환성 검증
-2. `topics.txt` 큐의 DB 이전과 작업 상태·이벤트 기록
-3. 스케줄러 중복 실행 방지 및 재시작 복구
-4. CI를 실제 실행해 테스트 통과 증거 확보
-5. 로컬 Docker·영상 렌더링·OAuth 비공개 업로드 통합 검증
-6. 위 항목이 통과된 뒤 Worker 분리와 다중 역할 자동화 착수
+1. 별도 Streamlit UI 인증 및 로컬 브라우저/Docker end-to-end 검증
+2. 작업 이벤트 감사 기록과 큐·스케줄 운영 메트릭 추가
+3. 로컬 영상 렌더링·OAuth 비공개 업로드 통합 검증
+4. 위 항목이 통과된 뒤 Worker 분리와 다중 역할 자동화 착수
 
 **안전 원칙:** Draft PR 유지, main 변경·병합·운영 배포는 별도 승인 전까지 금지한다. YouTube 공개 게시 자동화는 구현하지 않는다.
