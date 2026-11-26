@@ -395,6 +395,27 @@ class DurableTopicQueueTests(unittest.TestCase):
             db.close()
         self.assertIsNotNone(produced)
 
+    def test_auto_produce_skips_stale_sources_after_partial_scan(self):
+        db = self.api.get_db()
+        try:
+            db.execute("""CREATE TABLE trend_recommendations (
+                period_type TEXT, region TEXT, rank_no INTEGER, source_rank INTEGER,
+                is_global_top10 INTEGER, topic TEXT, matched_channel TEXT, source_name TEXT
+            )""")
+            db.execute(
+                """INSERT INTO trend_recommendations
+                   VALUES ('daily', 'US', 1, 1, 0, 'stale topic', 'Future Leak', 'Hacker News')"""
+            )
+            db.commit()
+        finally:
+            db.close()
+        with patch.object(self.api.trend_radar, "get_scan_status", return_value={
+            "status": "partial",
+            "source_summary": {"Hacker News": {"status": "failed"}},
+        }, create=True), patch.object(self.api.trend_radar, "init_radar_db", self.api.get_db, create=True):
+            self.assertEqual(self.api.auto_produce_top_trends(count=3), 0)
+        self.assertEqual(self._rows(), [])
+
     def test_duplicate_active_channel_topic_is_not_enqueued_twice(self):
         first = self.api.enqueue_topic("Future Leak | active topic", source="manual")
         second = self.api.enqueue_topic("Future Leak | active topic", source="manual")
