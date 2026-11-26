@@ -356,10 +356,16 @@ class DurableTopicQueueTests(unittest.TestCase):
         db = self.api.get_db()
         try:
             db.execute("""CREATE TABLE trend_recommendations (
-                period_type TEXT, is_global_top10 INTEGER, topic TEXT, matched_channel TEXT
+                period_type TEXT, region TEXT, rank_no INTEGER, source_rank INTEGER,
+                is_global_top10 INTEGER, topic TEXT, matched_channel TEXT, source_name TEXT,
+                source_url TEXT, source_score INTEGER, source_score_label TEXT,
+                est_views INTEGER, avg_cat_views INTEGER, growth_pct INTEGER, viral_score INTEGER,
+                ai_reason TEXT, created_at TEXT
             )""")
             db.execute(
-                "INSERT INTO trend_recommendations VALUES ('daily', 1, 'durable radar topic', 'Future Leak')"
+                """INSERT INTO trend_recommendations
+                   (period_type, region, rank_no, source_rank, is_global_top10, topic, matched_channel, source_name)
+                   VALUES ('daily', 'KR', 1, 1, 0, 'durable radar topic', 'Future Leak', 'Google News KR')"""
             )
             db.commit()
         finally:
