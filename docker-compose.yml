@@ -1,11 +1,11 @@
-﻿services:
+services:
   shorts-center:
     build: .
     container_name: nexus_shorts_center
     ports:
-      - "8502:8502"
-      - "8503:8503"
+      - "127.0.0.1:8502:8502"
+      - "127.0.0.1:8503:8503"
     volumes:
       - .:/app
-    command: bash -c "pip install -q fastapi uvicorn pydantic && uvicorn api_server:app --host 0.0.0.0 --port 8503 & streamlit run app.py --server.port=8502 --server.address=0.0.0.0"
+    command: sh -c "uvicorn api_server:app --host 0.0.0.0 --port 8503 & exec streamlit run app.py --server.port=8502 --server.address=0.0.0.0"
     restart: unless-stopped
