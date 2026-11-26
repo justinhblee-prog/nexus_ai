@@ -167,6 +167,42 @@ class TrendRadarSmokeTests(unittest.TestCase):
         self.assertEqual(scan["status"], "failed")
         self.assertEqual(scan["item_count"], 0)
 
+    def test_partial_scan_updates_successful_sources_and_preserves_failed_source_rows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            previous_path = trend_radar.DB_PATH
+            trend_radar.DB_PATH = os.path.join(directory, "studio_data.db")
+            try:
+                with patch.object(trend_radar, "_fetch_hn", return_value=(
+                    [("US", "Old HN story", "Hacker News", "https://news.ycombinator.com/item?id=3", 10)], None
+                )), patch.object(trend_radar, "_parse_rss_safe", side_effect=lambda geo, label, url: (
+                    [(geo, f"Old {label}", label, f"https://example.test/{geo}", None)], None
+                )):
+                    trend_radar.scan_global_trends("daily")
+                def second_parse(geo, label, url):
+                    if label == "Google News KR":
+                        return [(geo, "New KR story", label, "https://example.test/new-kr", None)], None
+                    return [], "feed timeout"
+                with patch.object(trend_radar, "_fetch_hn", return_value=([], "HN timeout")), \
+                     patch.object(trend_radar, "_parse_rss_safe", side_effect=second_parse):
+                    items = trend_radar.scan_global_trends("daily")
+                conn = trend_radar.init_radar_db()
+                try:
+                    topics = {
+                        row[0] for row in conn.execute(
+                            "SELECT topic FROM trend_recommendations WHERE period_type='daily'"
+                        )
+                    }
+                finally:
+                    conn.close()
+                scan = trend_radar.get_scan_status("daily")
+            finally:
+                trend_radar.DB_PATH = previous_path
+        self.assertEqual([item["topic"] for item in items], ["New KR story"])
+        self.assertIn("New KR story", topics)
+        self.assertIn("Old Hacker News", topics)
+        self.assertIn("Old Google News US", topics)
+        self.assertEqual(scan["status"], "partial")
+
     def test_legacy_recommendation_table_migrates_source_score_columns(self):
         with tempfile.TemporaryDirectory() as directory:
             previous_path = trend_radar.DB_PATH
