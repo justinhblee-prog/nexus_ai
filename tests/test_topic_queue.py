@@ -149,6 +149,33 @@ class DurableTopicQueueTests(unittest.TestCase):
             db.close()
         self.assertIsNotNone(produced)
 
+    def test_duplicate_active_channel_topic_is_not_enqueued_twice(self):
+        first = self.api.enqueue_topic("Future Leak | active topic", source="manual")
+        second = self.api.enqueue_topic("Future Leak | active topic", source="manual")
+        self.assertEqual(first, 1)
+        self.assertEqual(second, 0)
+        rows = self._rows()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["status"], "pending")
+
+    def test_manual_api_create_routes_through_durable_queue(self):
+        request = self.api.CreateReq(channel_name="Future Leak", topic="API queued topic")
+        result = self.api.create_single(request)
+        self.assertEqual(result["queued"], 1)
+        rows = self._rows()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["source"], "api_create")
+        self.assertEqual(rows[0]["channel_name"], "Future Leak")
+        self.assertEqual(rows[0]["topic"], "API queued topic")
+
+    def test_create_all_queues_every_channel_without_inline_render(self):
+        result = self.api.create_all()
+        self.assertEqual(result["queued"], 10)
+        rows = self._rows()
+        self.assertEqual(len(rows), 10)
+        self.assertEqual({row["source"] for row in rows}, {"api_create_all"})
+        self.assertEqual({row["status"] for row in rows}, {"pending"})
+
     def test_legacy_file_import_is_idempotent_and_clears_after_commit(self):
         with open("topics.txt", "w", encoding="utf-8") as handle:
             handle.write("Future Leak | imported topic\n")
