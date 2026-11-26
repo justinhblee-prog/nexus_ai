@@ -141,7 +141,8 @@
           <div style="display:flex;justify-content:space-between;font-size:12px;"><span id="editor-channel" style="font-weight:800;color:#38BDF8;">선택된 작업 없음</span><span id="editor-stage" style="color:#94A3B8;">-</span></div>
           <input id="editor-title" type="text" style="width:100%;font-weight:700;" />
           <textarea id="editor-script" rows="9" style="width:100%;line-height:1.6;"></textarea>
-          <div style="display:flex;gap:8px;"><button onclick="saveJobEdit()" class="btn-dark" style="flex:1;">💾 수정 저장</button><button onclick="approveUpload()" id="btn-approve" class="btn-green" style="flex:1;">✅ 최종 승인 및 업로드</button></div>
+          <input id="reject-note" type="text" maxlength="2000" placeholder="반려 사유 (선택)" style="width:100%;" />
+          <div style="display:flex;gap:8px;"><button onclick="saveJobEdit()" class="btn-dark" style="flex:1;">💾 수정 저장</button><button onclick="rejectJob()" class="btn-red" style="flex:1;">↩ 반려 및 수정 요청</button><button onclick="approveUpload()" id="btn-approve" class="btn-green" style="flex:1;">✅ 최종 승인 및 업로드</button></div>
         </div>
         <div class="inset" style="display:flex;flex-direction:column;align-items:center;justify-content:center;"><div style="font-size:12px;font-weight:700;margin-bottom:8px;">9:16 실물 프리뷰</div><video id="preview-video" style="width:210px;aspect-ratio:9/16;border-radius:16px;background:#000;" controls playsinline></video></div>
       </div>
@@ -353,6 +354,18 @@
       if (!activeJobId) return;
       await fetch("/api/jobs/" + activeJobId, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: document.getElementById("editor-title").value, script: document.getElementById("editor-script").value }) });
       alert("저장되었습니다."); loadOverview();
+    }
+    async function rejectJob() {
+      if (!activeJobId) return;
+      const note = document.getElementById("reject-note").value.trim();
+      if (!confirm("선택한 영상을 반려하고 수정 요청으로 이동하시겠습니까?")) return;
+      const r = await fetch("/api/reject/" + activeJobId, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note })
+      });
+      const result = await r.json();
+      alert(result.msg || result.detail || "반려 요청을 처리하지 못했습니다.");
+      if (r.ok) { activeJobId = null; loadOverview(); }
     }
     async function approveUpload() { if (!activeJobId) return; const r = await fetch("/api/approve/" + activeJobId, { method: "POST" }); alert((await r.json()).msg); loadOverview(); }
     async function createSingleVideo() {
