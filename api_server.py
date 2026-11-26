@@ -381,6 +381,7 @@ def finish_topic(queue_id: int, lease_token: str, error: str | None = None, max_
             event_type = "queue.retry_scheduled"
             payload = {"status": "pending", "attempt": row["attempts"]}
         record_event(event_type, entity_type="topic_queue", entity_id=queue_id, payload=payload)
+        return True
     finally:
         db.close()
 
