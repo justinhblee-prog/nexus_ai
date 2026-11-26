@@ -995,14 +995,23 @@ def update_job(job_id: int, req: UpdateJobReq):
 
 @app.post("/api/jobs/bulk-delete")
 def bulk_delete_jobs(req: BulkDelReq):
-    if not req.job_ids:
-        return {"ok": False, "msg": "선택된 핬목이 없습니다."}
+    job_ids = sorted(set(req.job_ids or []))
+    if not job_ids:
+        return {"ok": False, "deleted": 0, "skipped": 0, "msg": "선택된 항목이 없습니다."}
+    if len(job_ids) > 100 or any(job_id < 1 for job_id in job_ids):
+        raise HTTPException(status_code=400, detail="Select at most 100 valid job IDs")
     db = get_db()
     try:
-        placeholders = ",".join("?" for _ in req.job_ids)
-        cur = db.execute(f"DELETE FROM pipeline_jobs WHERE id IN ({placeholders})", req.job_ids)
+        placeholders = ",".join("?" for _ in job_ids)
+        cur = db.execute(
+            f"DELETE FROM pipeline_jobs WHERE id IN ({placeholders}) AND stage NOT IN ('업로드 진행 중','재제작 대기')",
+            job_ids,
+        )
         db.commit()
-        return {"ok": True, "msg": f"{cur.rowcount}건의 작업이 삭제되었습니다."}
+        deleted = cur.rowcount
+        skipped = len(job_ids) - deleted
+        return {"ok": True, "deleted": deleted, "skipped": skipped,
+                "msg": f"{deleted}건 삭제, 진행 중인 작업 {skipped}건은 보호했습니다."}
     finally:
         db.close()
 
@@ -1010,10 +1019,15 @@ def bulk_delete_jobs(req: BulkDelReq):
 def delete_job(job_id: int):
     db = get_db()
     try:
-        cur = db.execute("DELETE FROM pipeline_jobs WHERE id=?", (job_id,))
-        db.commit()
-        if cur.rowcount == 0:
+        job = db.execute("SELECT stage FROM pipeline_jobs WHERE id=?", (job_id,)).fetchone()
+        if not job:
             raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
+        if job["stage"] in ("업로드 진행 중", "재제작 대기"):
+            raise HTTPException(status_code=409, detail="업로드 또는 재제작이 진행 중인 작업은 삭제할 수 없습니다.")
+        cur = db.execute("DELETE FROM pipeline_jobs WHERE id=? AND stage NOT IN ('업로드 진행 중','재제작 대기')", (job_id,))
+        db.commit()
+        if cur.rowcount != 1:
+            raise HTTPException(status_code=409, detail="작업 상태가 변경되어 삭제하지 못했습니다.")
         return {"ok": True, "msg": "삭제 완료"}
     finally:
         db.close()
