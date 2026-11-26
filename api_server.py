@@ -287,7 +287,7 @@ def auto_produce_top_trends(count=3):
     try:
         produced = {row[0] for row in db.execute("SELECT topic FROM auto_produced_topics")}
         queued = {row[0] for row in db.execute(
-            "SELECT topic FROM topic_queue WHERE source='daily_radar'"
+            "SELECT topic FROM topic_queue WHERE source='daily_radar' AND status IN ('pending','running')"
         )}
     finally:
         db.close()
