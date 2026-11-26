@@ -4,6 +4,7 @@ import plotly.express as px
 import sqlite3, os, time, threading
 from streamlit_auth import is_auth_configured, verify_streamlit_password
 from audit_log import safe_record_event as record_event
+from video_qa import validate_video
 from datetime import datetime, timedelta
 import video_maker, yt_uploader
 
@@ -132,6 +133,11 @@ def make_video(ch_name, persona, topic):
     record_event("render.started", entity_type="render", payload={"channel": ch_name, "topic_length": len(topic)})
     try:
         mp4_path, title, full_script = video_maker.render_pro_short(ch_name, persona, topic, get_set("oa"))
+        qa = validate_video(mp4_path)
+        record_event("qa.passed" if qa["ok"] else "qa.failed", entity_type="render",
+                     payload={"channel": ch_name, "checks": qa["checks"], "errors": qa["errors"]})
+        if not qa["ok"]:
+            raise RuntimeError("Video QA failed: " + ", ".join(qa["errors"]))
         cur = conn.execute("INSERT INTO pipeline_jobs (channel_name, title, script, video_path, stage, created_at) VALUES (?, ?, ?, ?, ?, ?)",
                            (ch_name, title, full_script, mp4_path, "최종컨펌 대기", datetime.now().strftime("%Y-%m-%d %H:%M")))
         conn.commit()
