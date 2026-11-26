@@ -3,7 +3,7 @@ from datetime import datetime
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 import video_maker, yt_uploader, trend_radar
 
@@ -12,12 +12,25 @@ logger = logging.getLogger("nexus.api")
 
 app = FastAPI(title="NEXUS STUDIO PRO API")
 # The compose file binds host ports to loopback; CORS is limited to local UI origins.
+LOCAL_UI_ORIGINS = {
+    "http://127.0.0.1:8502", "http://localhost:8502",
+    "http://127.0.0.1:8503", "http://localhost:8503",
+}
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:8502", "http://localhost:8502", "http://127.0.0.1:8503", "http://localhost:8503"],
+    allow_origins=sorted(LOCAL_UI_ORIGINS),
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
+
+@app.middleware("http")
+async def reject_cross_origin_mutations(request, call_next):
+    # CORS alone does not prevent a browser from sending a forged state-changing request.
+    origin = request.headers.get("origin")
+    if request.method not in ("GET", "HEAD", "OPTIONS") and origin and origin not in LOCAL_UI_ORIGINS:
+        return JSONResponse(status_code=403, content={"detail": "Cross-origin mutation rejected"})
+    return await call_next(request)
+
 os.makedirs("export", exist_ok=True)
 os.makedirs("output", exist_ok=True)
 app.mount("/output", StaticFiles(directory="output"), name="output")
