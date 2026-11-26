@@ -160,6 +160,11 @@ def run_make_video(ch_name: str, persona: str, topic: str):
     record_event("render.started", entity_type="render", payload={"channel": ch_name, "topic_length": len(topic)})
     try:
         mp4, title, script = video_maker.render_pro_short(ch_name, persona, topic, get_oa_key())
+        qa = validate_video(mp4)
+        record_event("qa.passed" if qa["ok"] else "qa.failed", entity_type="render",
+                     payload={"channel": ch_name, "checks": qa["checks"], "errors": qa["errors"]})
+        if not qa["ok"]:
+            raise RuntimeError("Video QA failed: " + ", ".join(qa["errors"]))
         db = get_db()
         try:
             cur = db.execute("INSERT INTO pipeline_jobs (channel_name, title, script, video_path, stage, created_at) VALUES (?,?,?,?,?,?)",
