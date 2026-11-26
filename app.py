@@ -335,7 +335,7 @@ with t3:
                             record_event(event_type, entity_type="pipeline_job", entity_id=int(jb["id"]),
                                          payload={"channel": ch_n, "privacy_status": "private" if ok else "unverified"})
                             if ok:
-                                conn.execute("UPDATE pipeline_jobs SET title=?, stage='업로드 완료(비공개)' WHERE id=?", (et, int(jb["id"]))
+                                conn.execute("UPDATE pipeline_jobs SET title=?, stage='업로드 완료(비공개)' WHERE id=?", (et, int(jb["id"])))
                                 conn.commit()
                                 st.success(msg)
                                 st.balloons()
