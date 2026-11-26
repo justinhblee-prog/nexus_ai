@@ -185,9 +185,16 @@ def claim_next_topic(lease_seconds: int = 900):
     db = get_db()
     try:
         db.execute("BEGIN IMMEDIATE")
+        db.execute(
+            """UPDATE topic_queue SET status='failed', lease_until=NULL,
+               last_error=COALESCE(last_error, 'Worker lease expired after maximum attempts'),
+               updated_at=?
+               WHERE status='running' AND lease_until < ? AND attempts >= 3""",
+            (datetime.now().isoformat(timespec="seconds"), now),
+        )
         row = db.execute(
             """SELECT * FROM topic_queue
-               WHERE available_at <= ?
+               WHERE available_at <= ? AND attempts < 3
                  AND (status='pending' OR (status='running' AND lease_until < ?))
                ORDER BY id LIMIT 1""",
             (now, now),
