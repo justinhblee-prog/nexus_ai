@@ -159,6 +159,8 @@ class ApiReviewGuardTests(unittest.TestCase):
                           return_value=(False, "UPLOAD_CREATED_PRIVACY_UNVERIFIED:video987:public"), create=True):
             result = self.api.approve_job(1)
         self.assertFalse(result["ok"])
+        self.assertEqual(result["video_id"], "video987")
+        self.assertEqual(result["privacy_status"], "public")
         self.assertEqual(self._stage(1), "업로드 상태 확인 필요")
         db = self.api.get_db()
         try:
