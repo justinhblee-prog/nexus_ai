@@ -2,7 +2,7 @@ name: Shorts runtime checks
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/backend-followup-orchestration]
   push:
     branches:
       - "fix/shorts-runtime-security-bootstrap"
