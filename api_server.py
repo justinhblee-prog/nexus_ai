@@ -75,11 +75,16 @@ def get_oa_key():
         db.close()
 
 def run_make_video(ch_name: str, persona: str, topic: str):
+    if not topic or not topic.strip():
+        raise ValueError("topic must not be empty")
     mp4, title, script = video_maker.render_pro_short(ch_name, persona, topic, get_oa_key())
     db = get_db()
-    db.execute("INSERT INTO pipeline_jobs (channel_name, title, script, video_path, stage, created_at) VALUES (?,?,?,?,?,?)",
-               (ch_name, title, script, mp4, "최종컨펌 대기", datetime.now().strftime("%Y-%m-%d %H:%M")))
-    db.commit()
+    try:
+        db.execute("INSERT INTO pipeline_jobs (channel_name, title, script, video_path, stage, created_at) VALUES (?,?,?,?,?,?)",
+                   (ch_name, title, script, mp4, "최종컨펌 대기", datetime.now().strftime("%Y-%m-%d %H:%M")))
+        db.commit()
+    finally:
+        db.close()
     db.close()
 
 def auto_produce_top_trends(count=3):
@@ -177,8 +182,11 @@ def serve_home():
 @app.get("/api/overview")
 def overview():
     db = get_db()
-    chs = [dict(r) for r in db.execute("SELECT * FROM channels").fetchall()]
-    jobs = [dict(r) for r in db.execute("SELECT * FROM pipeline_jobs ORDER BY id DESC").fetchall()]
+    try:
+        chs = [dict(r) for r in db.execute("SELECT * FROM channels").fetchall()]
+        jobs = [dict(r) for r in db.execute("SELECT * FROM pipeline_jobs ORDER BY id DESC").fetchall()]
+    finally:
+        db.close()
     q_txt = open("topics.txt", "r", encoding="utf-8").read().strip() if os.path.exists("topics.txt") else ""
     return {"channels": chs, "jobs": jobs, "topics_text": q_txt, "auto_produce": AUTO_PRODUCE_ENABLED}
 
@@ -285,24 +293,36 @@ def approve_job(job_id: int):
 @app.put("/api/jobs/{job_id}")
 def update_job(job_id: int, req: UpdateJobReq):
     db = get_db()
-    db.execute("UPDATE pipeline_jobs SET title=?, script=? WHERE id=?", (req.title, req.script, job_id))
-    db.commit()
-    return {"ok": True, "msg": "수정 내용이 저장되었습니다."}
+    try:
+        cur = db.execute("UPDATE pipeline_jobs SET title=?, script=? WHERE id=?", (req.title, req.script, job_id))
+        db.commit()
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
+        return {"ok": True, "msg": "수정 내용이 저장되었습니다."}
+    finally:
+        db.close()
 
 @app.post("/api/jobs/bulk-delete")
 def bulk_delete_jobs(req: BulkDelReq):
     if not req.job_ids:
         return {"ok": False, "msg": "선택된 핬목이 없습니다."}
     db = get_db()
-    placeholders = ",".join("?" for _ in req.job_ids)
-    db.execute(f"DELETE FROM pipeline_jobs WHERE id IN ({placeholders})", req.job_ids)
-    db.commit()
-    deleted = db.execute("SELECT changes()").fetchone()[0]
-    return {"ok": True, "msg": f"{deleted}건의 작업이 삭제되었습니다."}
+    try:
+        placeholders = ",".join("?" for _ in req.job_ids)
+        cur = db.execute(f"DELETE FROM pipeline_jobs WHERE id IN ({placeholders})", req.job_ids)
+        db.commit()
+        return {"ok": True, "msg": f"{cur.rowcount}건의 작업이 삭제되었습니다."}
+    finally:
+        db.close()
 
 @app.delete("/api/jobs/{job_id}")
 def delete_job(job_id: int):
     db = get_db()
-    db.execute("DELETE FROM pipeline_jobs WHERE id=?", (job_id,))
-    db.commit()
-    return {"ok": True, "msg": "삭제 완료"}
+    try:
+        cur = db.execute("DELETE FROM pipeline_jobs WHERE id=?", (job_id,))
+        db.commit()
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
+        return {"ok": True, "msg": "삭제 완료"}
+    finally:
+        db.close()
