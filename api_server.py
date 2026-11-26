@@ -1,6 +1,6 @@
 import os, time, sqlite3, threading, logging, hmac, hashlib, secrets
 from datetime import datetime
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -476,7 +476,7 @@ def serve_home():
     return {"status": "OK"}
 
 @app.get("/api/session/status")
-def session_status(request):
+def session_status(request: Request):
     return {"configured": auth_is_configured(), "authenticated": verify_session_cookie(request.cookies.get(SESSION_COOKIE_NAME))}
 
 @app.post("/api/session/login")
