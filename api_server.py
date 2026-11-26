@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 import video_maker, yt_uploader, trend_radar
 from audit_log import safe_record_event as record_event, list_events, get_ops_metrics
+from video_qa import validate_video
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("nexus.api")
@@ -708,8 +709,17 @@ def approve_job(job_id: int):
         raise HTTPException(status_code=409, detail="이미 처리됐거나 업로드 상태 확인이 필요한 작업입니다.")
     output_root = os.path.realpath("output")
     video_path = os.path.realpath(jb["video_path"])
-    if os.path.commonpath([output_root, video_path]) != output_root or not os.path.isfile(video_path):
+    try:
+        inside_output = os.path.commonpath([output_root, video_path]) == output_root
+    except ValueError:
+        inside_output = False
+    if not inside_output or not os.path.isfile(video_path):
         raise HTTPException(status_code=400, detail="output 폴더 안의 실제 영상 파일만 업로드할 수 있습니다.")
+    qa = validate_video(video_path)
+    if not qa.get("ok"):
+        record_event("upload.blocked_qa", entity_type="pipeline_job", entity_id=job_id,
+                     payload={"errors": qa.get("errors", [])})
+        raise HTTPException(status_code=409, detail="업로드 직전 영상 품질검사에 실패했습니다.")
     db = get_db()
     try:
         if not claim_upload(db, job_id):
@@ -757,14 +767,27 @@ def reject_job(job_id: int, req: RejectReq):
 
 @app.put("/api/jobs/{job_id}")
 def update_job(job_id: int, req: UpdateJobReq):
+    title = (req.title or "").strip()
+    script = (req.script or "").strip()
+    if not title or not script:
+        raise HTTPException(status_code=400, detail="title and script are required")
+    if len(title) > 200 or len(script) > 20000:
+        raise HTTPException(status_code=400, detail="title or script exceeds the allowed length")
     db = get_db()
     try:
         job = db.execute("SELECT stage, channel_name FROM pipeline_jobs WHERE id=?", (job_id,)).fetchone()
         if not job:
             raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
+        if job["stage"] not in ("최종컨펌 대기", "반려(수정 필요)"):
+            raise HTTPException(status_code=409, detail="검수 대기 또는 반려 상태의 작업만 수정할 수 있습니다.")
         resubmitted = job["stage"] == "반려(수정 필요)"
-        stage_sql = ", stage='최종컨펌 대기'" if resubmitted else ""
-        db.execute(f"UPDATE pipeline_jobs SET title=?, script=?{stage_sql} WHERE id=?", (req.title, req.script, job_id))
+        next_stage = "최종컨펌 대기" if resubmitted else "최종컨펌 대기"
+        cur = db.execute(
+            "UPDATE pipeline_jobs SET title=?, script=?, stage=? WHERE id=? AND stage IN ('최종컨펌 대기','반려(수정 필요)')",
+            (title, script, next_stage, job_id),
+        )
+        if cur.rowcount != 1:
+            raise HTTPException(status_code=409, detail="작업 상태가 변경되어 수정 내용을 저장하지 못했습니다.")
         db.commit()
         if resubmitted:
             record_event("review.resubmitted", entity_type="pipeline_job", entity_id=job_id,
