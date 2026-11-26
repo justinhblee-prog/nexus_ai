@@ -93,10 +93,22 @@ def get_ops_metrics(db_path="data/studio_data.db", now=None):
         latest = conn.execute(
             "SELECT event_type, occurred_at FROM audit_events ORDER BY id DESC LIMIT 1"
         ).fetchone()
+        sources = []
+        if "source_health" in tables:
+            sources = [dict(row) for row in conn.execute(
+                """SELECT source_name, region, last_attempt_at, last_success_at, last_status,
+                          item_count, consecutive_failures, last_error
+                   FROM source_health ORDER BY region, source_name"""
+            ).fetchall()]
+        source_summary = {}
+        for source in sources:
+            source_summary[source["last_status"]] = source_summary.get(source["last_status"], 0) + 1
         return {
             "queue_by_status": grouped("topic_queue", "status"),
             "scheduler_by_status": grouped("scheduler_runs", "status"),
             "pipeline_by_stage": grouped("pipeline_jobs", "stage"),
+            "source_health_summary": source_summary,
+            "sources": sources,
             "events_last_24h": recent_events,
             "latest_event": dict(latest) if latest else None,
         }
