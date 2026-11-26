@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 import video_maker, yt_uploader, trend_radar
+from audit_log import record_event, list_events, get_ops_metrics
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("nexus.api")
@@ -155,14 +156,26 @@ def get_oa_key():
 def run_make_video(ch_name: str, persona: str, topic: str):
     if not topic or not topic.strip():
         raise ValueError("topic must not be empty")
-    mp4, title, script = video_maker.render_pro_short(ch_name, persona, topic, get_oa_key())
-    db = get_db()
+    started = time.monotonic()
+    record_event("render.started", entity_type="render", payload={"channel": ch_name, "topic_length": len(topic)})
     try:
-        db.execute("INSERT INTO pipeline_jobs (channel_name, title, script, video_path, stage, created_at) VALUES (?,?,?,?,?,?)",
-                   (ch_name, title, script, mp4, "최종컨펌 대기", datetime.now().strftime("%Y-%m-%d %H:%M")))
-        db.commit()
-    finally:
-        db.close()
+        mp4, title, script = video_maker.render_pro_short(ch_name, persona, topic, get_oa_key())
+        db = get_db()
+        try:
+            cur = db.execute("INSERT INTO pipeline_jobs (channel_name, title, script, video_path, stage, created_at) VALUES (?,?,?,?,?,?)",
+                             (ch_name, title, script, mp4, "최종컨펌 대기", datetime.now().strftime("%Y-%m-%d %H:%M")))
+            db.commit()
+            job_id = cur.lastrowid
+        finally:
+            db.close()
+        record_event("render.completed", entity_type="pipeline_job", entity_id=job_id,
+                     payload={"channel": ch_name, "elapsed_seconds": round(time.monotonic() - started, 3)})
+        return job_id
+    except Exception as exc:
+        record_event("render.failed", entity_type="render",
+                     payload={"channel": ch_name, "error_type": type(exc).__name__,
+                              "elapsed_seconds": round(time.monotonic() - started, 3)})
+        raise
 
 def auto_produce_top_trends(count=3):
     db = trend_radar.init_radar_db()
@@ -223,6 +236,9 @@ def enqueue_topic(topic_line: str, source: str = "api", idempotency_key: str | N
             )
             added += max(0, cur.rowcount)
         db.commit()
+        if added:
+            record_event("queue.enqueued", entity_type="topic_queue",
+                         payload={"source": source, "channel_count": added})
         return added
     finally:
         db.close()
@@ -258,6 +274,8 @@ def claim_next_topic(lease_seconds: int = 900):
         claimed = dict(row)
         claimed["attempts"] += 1
         db.commit()
+        record_event("queue.claimed", entity_type="topic_queue", entity_id=claimed["id"],
+                     payload={"channel": claimed["channel_name"], "attempt": claimed["attempts"]})
         return claimed
     except Exception:
         db.rollback()
@@ -291,6 +309,16 @@ def finish_topic(queue_id: int, error: str | None = None, max_attempts: int = 3)
                 (now + delay, error[:2000], stamp, queue_id),
             )
         db.commit()
+        if error is None:
+            event_type = "queue.completed"
+            payload = {"status": "completed"}
+        elif row["attempts"] >= max_attempts:
+            event_type = "queue.failed"
+            payload = {"status": "failed", "error_type": "processing_error"}
+        else:
+            event_type = "queue.retry_scheduled"
+            payload = {"status": "pending", "attempt": row["attempts"]}
+        record_event(event_type, entity_type="topic_queue", entity_id=queue_id, payload=payload)
     finally:
         db.close()
 
@@ -400,6 +428,8 @@ def claim_daily_schedule(schedule_key: str, lease_seconds: int = 21600, max_atte
                 (schedule_key, now + lease_seconds, stamp, stamp),
             )
         db.commit()
+        record_event("scheduler.started", entity_type="scheduler_run", entity_id=schedule_key,
+                     payload={"attempt": (row["attempts"] + 1) if row else 1})
         return True
     except Exception:
         db.rollback()
@@ -422,6 +452,9 @@ def finish_daily_schedule(schedule_key: str, error: str | None = None):
                 (error[:2000], stamp, schedule_key),
             )
         db.commit()
+        record_event("scheduler.failed" if error else "scheduler.completed",
+                     entity_type="scheduler_run", entity_id=schedule_key,
+                     payload={"error_type": "scheduler_error"} if error else {"status": "completed"})
     finally:
         db.close()
 
@@ -494,6 +527,16 @@ def session_logout():
     response = JSONResponse({"ok": True})
     response.delete_cookie(key=SESSION_COOKIE_NAME, path="/", httponly=True, samesite="strict")
     return response
+@app.get("/api/events")
+def get_events(limit: int = 50, event_type: str | None = None):
+    if limit < 1 or limit > 200:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 200")
+    return {"items": list_events(limit=limit, event_type=event_type)}
+
+@app.get("/api/ops/metrics")
+def ops_metrics():
+    return get_ops_metrics()
+
 @app.get("/api/overview")
 def overview():
     db = get_db()
@@ -606,7 +649,11 @@ def approve_job(job_id: int):
     video_path = os.path.realpath(jb["video_path"])
     if os.path.commonpath([output_root, video_path]) != output_root or not os.path.isfile(video_path):
         raise HTTPException(status_code=400, detail="output 폴더 안의 실제 영상 파일만 업로드할 수 있습니다.")
+    record_event("review.approved", entity_type="pipeline_job", entity_id=job_id,
+                 payload={"channel": jb["channel_name"], "approval_source": "api"})
     ok, msg = yt_uploader.upload_to_youtube(jb["channel_name"], video_path, jb["title"], jb["script"])
+    record_event("upload.completed" if ok else "upload.failed", entity_type="pipeline_job", entity_id=job_id,
+                 payload={"channel": jb["channel_name"], "privacy_status": "private" if ok else None})
     if ok:
         db = get_db()
         try:
