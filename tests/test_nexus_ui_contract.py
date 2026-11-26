@@ -82,6 +82,16 @@ class NexusUiContractTests(unittest.TestCase):
         self.assertIn("Channel Production Volume", self.script)
         self.assertNotIn("Global Trend Momentum", self.script)
 
+    def test_untrusted_job_and_channel_labels_are_rendered_as_text(self):
+        jobs = self.script.split("function renderJobs()", 1)[1].split("function selectJob(id)", 1)[0]
+        self.assertIn("box.replaceChildren()", jobs)
+        self.assertIn("title.textContent = String(j.title || \"\")", jobs)
+        self.assertIn("channel.textContent = String(j.channel_name || \"\")", jobs)
+        self.assertNotIn("box.innerHTML = allJobs.map", jobs)
+        self.assertNotIn("j.title +", jobs)
+        self.assertIn("option.textContent = String(c.name || \"\")", self.script)
+        self.assertNotIn("sel.innerHTML = chs.map", self.script)
+
 
 if __name__ == "__main__":
     unittest.main()
