@@ -895,7 +895,7 @@ def _upload_result_metadata(ok: bool, message: str):
     if ok:
         marker = "영상 ID: "
         video_id = message.split(marker, 1)[1].split()[0] if marker in message else None
-        return video_id, "private" if video_id else "unverified"
+        return video_id, "private" if video_id else "unknown"
     if message.startswith("UPLOAD_CREATED_PRIVACY_UNVERIFIED:"):
         parts = message.split(":", 2)
         video_id = parts[1] if len(parts) > 1 and parts[1] != "unknown" else None
