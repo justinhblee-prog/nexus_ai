@@ -41,6 +41,15 @@
     .auth-card { width:min(420px,100%); background:#0B101D; border:1px solid #24334D; border-radius:16px; padding:26px; box-shadow:0 24px 80px rgba(0,0,0,.5); }
     .auth-card input { width:100%; margin:14px 0 10px; }
     .auth-error { min-height:20px; color:#FDA4AF; font-size:12px; }
+    .ops-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(155px,1fr)); gap:10px; }
+    .ops-metric { background:#060A14; border:1px solid #1E293B; border-radius:12px; padding:14px; }
+    .ops-metric .label { color:#94A3B8; font-size:11px; font-weight:700; }
+    .ops-metric .value { color:#F8FAFC; font-size:24px; font-weight:900; margin-top:4px; }
+    .event-list { display:flex; flex-direction:column; gap:8px; margin-top:12px; }
+    .event-row { display:flex; justify-content:space-between; align-items:center; gap:12px; background:#060A14; border:1px solid #1E293B; border-radius:9px; padding:10px 12px; font-size:12px; }
+    .event-name { color:#E2E8F0; font-weight:700; }
+    .event-meta { color:#64748B; text-align:right; font-size:11px; }
+    @media (max-width:760px) { main { padding:14px; } header { padding:0 14px; height:auto; min-height:64px; } .work-grid { grid-template-columns:1fr; } .radar-layout { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
@@ -74,6 +83,20 @@
       <div class="card"><div style="font-size:12px;color:#94A3B8;">평균 대비 급상승</div><div id="kpi-growth" style="font-size:30px;font-weight:900;margin-top:6px;color:#34D399;">+0%</div></div>
       <div class="card"><div style="font-size:12px;color:#94A3B8;">운영 중인 글로벌 채널</div><div id="kpi-channels" style="font-size:30px;font-weight:900;margin-top:6px;">0</div></div>
       <div class="card"><div style="font-size:12px;color:#94A3B8;">검수 대기 / 업로드 완료</div><div id="kpi-jobs" style="font-size:30px;font-weight:900;margin-top:6px;color:#FBBF24;">0 / 0</div></div>
+    </section>
+    <section class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+        <div><div style="font-size:11px;font-weight:800;color:#38BDF8;">LIVE OPERATIONS</div><h2 style="font-size:18px;font-weight:800;">자동화 운영 현황 & 작업 이벤트</h2></div>
+        <span id="ops-updated" style="font-size:11px;color:#64748B;">상태 확인 대기</span>
+      </div>
+      <div id="ops-metrics" class="ops-grid">
+        <div class="ops-metric"><div class="label">제작 큐 대기</div><div class="value">—</div></div>
+        <div class="ops-metric"><div class="label">실행 중</div><div class="value">—</div></div>
+        <div class="ops-metric"><div class="label">실패 격리</div><div class="value">—</div></div>
+        <div class="ops-metric"><div class="label">검수 대기</div><div class="value">—</div></div>
+        <div class="ops-metric"><div class="label">최근 24시간 이벤트</div><div class="value">—</div></div>
+      </div>
+      <div id="ops-events" class="event-list"><div style="color:#64748B;font-size:12px;">아직 기록된 이벤트가 없습니다.</div></div>
     </section>
     <section class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1E293B;padding-bottom:16px;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
@@ -191,6 +214,8 @@
       studioStarted = true;
       loadRadar("daily");
       loadOverview();
+      loadOpsMetrics();
+      window.setInterval(loadOpsMetrics, 15000);
     }
 
     function setScanningState(on) {
@@ -250,6 +275,49 @@
       if (!selectedModalItem) return;
       const r = await fetch("/api/create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ channel_name: selectedModalItem.matched_channel, topic: selectedModalItem.topic }) });
       closeModal(); alert((await r.json()).msg); setTimeout(loadOverview, 3000);
+    }
+    async function loadOpsMetrics() {
+      const metricsNode = document.getElementById("ops-metrics");
+      const eventsNode = document.getElementById("ops-events");
+      try {
+        const [metricsResponse, eventsResponse] = await Promise.all([
+          fetch("/api/ops/metrics", { credentials: "same-origin" }),
+          fetch("/api/events?limit=8", { credentials: "same-origin" })
+        ]);
+        if (!metricsResponse.ok || !eventsResponse.ok) throw new Error("운영 지표 조회 실패");
+        const m = await metricsResponse.json();
+        const events = (await eventsResponse.json()).items || [];
+        const queue = m.queue_by_status || {}, pipeline = m.pipeline_by_stage || {};
+        const cards = [
+          ["제작 큐 대기", queue.pending || 0],
+          ["실행 중", queue.running || 0],
+          ["실패 격리", queue.failed || 0],
+          ["검수 대기", pipeline["최종컨펌 대기"] || 0],
+          ["최근 24시간 이벤트", m.events_last_24h || 0]
+        ];
+        metricsNode.replaceChildren();
+        cards.forEach(([label, value]) => {
+          const card = document.createElement("div"); card.className = "ops-metric";
+          const name = document.createElement("div"); name.className = "label"; name.textContent = label;
+          const number = document.createElement("div"); number.className = "value"; number.textContent = Number(value).toLocaleString();
+          card.append(name, number); metricsNode.append(card);
+        });
+        eventsNode.replaceChildren();
+        if (!events.length) {
+          const empty = document.createElement("div"); empty.style.cssText = "color:#64748B;font-size:12px;"; empty.textContent = "아직 기록된 이벤트가 없습니다."; eventsNode.append(empty);
+        } else {
+          events.forEach(event => {
+            const row = document.createElement("div"); row.className = "event-row";
+            const name = document.createElement("span"); name.className = "event-name"; name.textContent = event.event_type;
+            const meta = document.createElement("span"); meta.className = "event-meta";
+            meta.textContent = [event.entity_type, event.entity_id ? "#" + event.entity_id : "", event.occurred_at].filter(Boolean).join(" · ");
+            row.append(name, meta); eventsNode.append(row);
+          });
+        }
+        document.getElementById("ops-updated").textContent = "마지막 갱신: " + new Date().toLocaleTimeString("ko-KR");
+      } catch (_) {
+        document.getElementById("ops-updated").textContent = "운영 지표를 불러오지 못했습니다.";
+      }
     }
     async function loadOverview() {
       const r = await fetch("/api/overview"); const d = await r.json(); const chs = d.channels || []; allJobs = d.jobs || [];
