@@ -279,9 +279,6 @@ def auto_produce_top_trends(count=3):
     radar_db = trend_radar.init_radar_db()
     radar_db.row_factory = sqlite3.Row
     try:
-        top_rows = [dict(row) for row in radar_db.execute(
-            "SELECT * FROM trend_recommendations WHERE period_type='daily' AND is_global_top10 > 0 ORDER BY is_global_top10 ASC"
-        ).fetchall()]
         channels = {row["name"]: row["persona"] for row in radar_db.execute("SELECT name, persona FROM channels")}
     finally:
         radar_db.close()
