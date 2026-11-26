@@ -2,10 +2,33 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import sqlite3, os, time, threading
+from streamlit_auth import is_auth_configured, verify_streamlit_password
 from datetime import datetime, timedelta
 import video_maker, yt_uploader
 
 st.set_page_config(page_title="NEXUS STUDIO PRO", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
+
+# The Streamlit app is a separate entry point from the FastAPI browser studio.
+# Fail closed before creating directories, opening the database, or starting workers.
+if not is_auth_configured():
+    st.error("Streamlit 인증 설정이 없습니다. NEXUS_API_PASSWORD를 12자 이상으로 설정해 주세요.")
+    st.stop()
+
+if not st.session_state.get("nexus_streamlit_authenticated", False):
+    st.title("⚡ NEXUS STUDIO PRO")
+    st.subheader("운영자 로그인")
+    st.caption("로컬 스튜디오 접근을 위해 API와 동일한 운영자 비밀번호가 필요합니다.")
+    with st.form("nexus_streamlit_login"):
+        password = st.text_input("운영자 비밀번호", type="password")
+        submitted = st.form_submit_button("로그인", type="primary", use_container_width=True)
+    if submitted:
+        if verify_streamlit_password(password):
+            st.session_state["nexus_streamlit_authenticated"] = True
+            st.rerun()
+        else:
+            st.error("비밀번호가 올바르지 않습니다.")
+    st.stop()
+
 
 st.markdown("""
 <style>
@@ -148,6 +171,9 @@ q_file_cnt = len([x for x in open("topics.txt", encoding="utf-8").read().splitli
 with st.sidebar:
     st.markdown("### ⚡ NEXUS STUDIO")
     st.caption("Autonomous Short-Form Engine")
+    if st.button("로그아웃", use_container_width=True):
+        st.session_state.pop("nexus_streamlit_authenticated", None)
+        st.rerun()
     st.divider()
     if st.button("⚡ 전 채널 1편씩 즉시 일괄 생성", type="primary", use_container_width=True):
         with st.spinner("전 채널 시네마틱 숏폼 일괄 렌더링 중..."):
