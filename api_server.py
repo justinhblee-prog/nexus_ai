@@ -169,7 +169,8 @@ def get_oa_key():
     finally:
         db.close()
 
-def run_make_video(ch_name: str, persona: str, topic: str):
+def run_make_video(ch_name: str, persona: str, topic: str, queue_id: int | None = None,
+                   lease_token: str | None = None):
     if not topic or not topic.strip():
         raise ValueError("topic must not be empty")
     started = time.monotonic()
@@ -181,6 +182,8 @@ def run_make_video(ch_name: str, persona: str, topic: str):
                      payload={"channel": ch_name, "checks": qa["checks"], "errors": qa["errors"]})
         if not qa["ok"]:
             raise RuntimeError("Video QA failed: " + ", ".join(qa["errors"]))
+        if queue_id is not None and not is_topic_lease_current(queue_id, lease_token):
+            raise RuntimeError("Queue lease was lost before the render result could be committed")
         db = get_db()
         try:
             cur = db.execute("INSERT INTO pipeline_jobs (channel_name, title, script, video_path, stage, created_at) VALUES (?,?,?,?,?,?)",
@@ -336,17 +339,33 @@ def claim_next_topic(lease_seconds: int = 900):
     finally:
         db.close()
 
+def is_topic_lease_current(queue_id: int, lease_token: str | None) -> bool:
+    if not lease_token:
+        return False
+    db = get_db()
+    try:
+        row = db.execute(
+            """SELECT 1 FROM topic_queue
+               WHERE id=? AND status='running' AND lease_token=? AND lease_until>?""",
+            (queue_id, lease_token, int(time.time())),
+        ).fetchone()
+        return row is not None
+    finally:
+        db.close()
+
+
 def renew_topic_lease(queue_id: int, lease_token: str, lease_seconds: int = 900) -> bool:
-    """Extend a running job only when the caller still owns its fencing token."""
+    """Extend a running job only when the caller still owns an unexpired fencing token."""
     if not lease_token or lease_seconds < 1:
         return False
     db = get_db()
     try:
+        now = int(time.time())
         cur = db.execute(
             """UPDATE topic_queue SET lease_until=?, updated_at=?
-               WHERE id=? AND status='running' AND lease_token=?""",
-            (int(time.time()) + lease_seconds, datetime.now().isoformat(timespec="seconds"),
-             queue_id, lease_token),
+               WHERE id=? AND status='running' AND lease_token=? AND lease_until>?""",
+            (now + lease_seconds, datetime.now().isoformat(timespec="seconds"),
+             queue_id, lease_token, now),
         )
         db.commit()
         return cur.rowcount == 1
@@ -374,8 +393,8 @@ def finish_topic(queue_id: int, lease_token: str, error: str | None = None, max_
     try:
         db.execute("BEGIN IMMEDIATE")
         row = db.execute(
-            "SELECT attempts, topic, source FROM topic_queue WHERE id=? AND status='running' AND lease_token=?",
-            (queue_id, lease_token),
+            "SELECT attempts, topic, source FROM topic_queue WHERE id=? AND status='running' AND lease_token=? AND lease_until>?",
+            (queue_id, lease_token, int(time.time())),
         ).fetchone()
         if not row:
             db.rollback()
@@ -489,7 +508,8 @@ def watch_topics_loop():
                     )
                     heartbeat.start()
                     try:
-                        run_make_video(channel["name"], channel["persona"], item["topic"])
+                        run_make_video(channel["name"], channel["persona"], item["topic"],
+                           queue_id=item["id"], lease_token=item["lease_token"])
                     finally:
                         heartbeat_stop.set()
                         heartbeat.join(timeout=2)
@@ -559,8 +579,8 @@ def finish_daily_schedule(schedule_key: str, lease_token: str, error: str | None
     try:
         db.execute("BEGIN IMMEDIATE")
         row = db.execute(
-            "SELECT attempts FROM scheduler_runs WHERE schedule_key=? AND status='running' AND lease_token=?",
-            (schedule_key, lease_token),
+            "SELECT attempts FROM scheduler_runs WHERE schedule_key=? AND status='running' AND lease_token=? AND lease_until>?",
+            (schedule_key, lease_token, int(time.time())),
         ).fetchone()
         if not row:
             db.rollback()
