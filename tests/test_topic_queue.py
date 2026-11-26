@@ -491,7 +491,10 @@ class DurableTopicQueueTests(unittest.TestCase):
             db.commit()
         finally:
             db.close()
-        scan_meta = {"status": "failed", "item_count": 0}
+        scan_meta = {
+            "status": "failed", "item_count": 0,
+            "source_summary": {"Google News KR": {"status": "failed", "error": "timeout"}},
+        }
         with patch.object(self.api.trend_radar, "init_radar_db", self.api.get_db, create=True), \
              patch.object(self.api.trend_radar, "get_scan_status", return_value=scan_meta, create=True), \
              patch.object(self.api.trend_radar, "get_source_health", return_value=[], create=True), \
@@ -501,6 +504,8 @@ class DurableTopicQueueTests(unittest.TestCase):
         self.assertEqual(result["data_status"], "stale")
         self.assertFalse(result["global_ranking_available"])
         self.assertEqual(result["items"][0]["topic"], "cached source topic")
+        self.assertEqual(result["items"][0]["source_status"], "failed")
+        self.assertTrue(result["items"][0]["source_is_stale"])
 
     def test_manual_api_create_routes_through_durable_queue(self):
         request = self.api.CreateReq(channel_name="Future Leak", topic="API queued topic")
