@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import trend_radar
 
@@ -65,6 +66,40 @@ class TrendRadarSmokeTests(unittest.TestCase):
             trend_radar.match_ch("AI chip breakthrough"),
             trend_radar.match_ch("AI chip breakthrough"),
         )
+
+    def test_scan_persists_per_source_health_even_when_one_feed_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            previous_path = trend_radar.DB_PATH
+            trend_radar.DB_PATH = os.path.join(directory, "studio_data.db")
+            try:
+                def fake_parse(geo, label, url):
+                    if label == "Google News JP":
+                        return [], "timeout"
+                    item = (geo, f"{label} headline", label, f"https://example.test/{geo.lower()}", None)
+                    return [item], None
+
+                with patch.object(trend_radar, "_fetch_hn", return_value=(
+                    [("US", "HN headline", "Hacker News", "https://news.ycombinator.com/", 25)], None
+                )), patch.object(trend_radar, "_parse_rss_safe", side_effect=fake_parse):
+                    items = trend_radar.scan_global_trends("daily")
+
+                connection = trend_radar.init_radar_db()
+                try:
+                    health = {
+                        row[0]: (row[1], row[2], row[3])
+                        for row in connection.execute(
+                            "SELECT source_name, last_status, item_count, consecutive_failures FROM source_health"
+                        )
+                    }
+                finally:
+                    connection.close()
+            finally:
+                trend_radar.DB_PATH = previous_path
+        self.assertEqual(len(items), 5)
+        self.assertEqual(len(health), 6)
+        self.assertEqual(health["Google News JP"], ("failed", 0, 1))
+        self.assertEqual(health["Google News KR"], ("success", 1, 0))
+        self.assertEqual(health["Hacker News"], ("success", 1, 0))
 
     def test_unknown_period_is_rejected(self):
         with self.assertRaises(ValueError):
