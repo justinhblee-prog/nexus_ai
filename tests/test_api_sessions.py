@@ -1,8 +1,11 @@
 import importlib
+import asyncio
 import os
 import sys
 import types
 import unittest
+from starlette.requests import Request
+from starlette.responses import Response
 from unittest.mock import patch
 
 
@@ -43,6 +46,39 @@ class SignedSessionTests(unittest.TestCase):
         self.assertFalse(self.api.verify_session_cookie("not-a-session", now=now))
         self.assertFalse(self.api.verify_session_cookie(None, now=now))
 
+    def _request(self, path, method='GET', cookie=None, origin=None):
+        headers = []
+        if cookie:
+            headers.append((b'cookie', f'nexus_session={cookie}'.encode('ascii')))
+        if origin:
+            headers.append((b'origin', origin.encode('ascii')))
+        scope = {
+            'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1',
+            'method': method, 'scheme': 'http', 'path': path, 'raw_path': path.encode('ascii'),
+            'query_string': b'', 'headers': headers, 'server': ('testserver', 80),
+            'client': ('127.0.0.1', 12345),
+        }
+        return Request(scope)
+
+    def test_api_and_output_require_a_valid_session(self):
+        async def next_response(_request):
+            return Response(status_code=204)
+        cookie = self.api.create_session_cookie(now=1_800_000_000)
+        with patch.object(self.api.time, 'time', return_value=1_800_000_001):
+            denied_api = asyncio.run(self.api.enforce_local_origin_and_session(self._request('/api/overview'), next_response))
+            denied_output = asyncio.run(self.api.enforce_local_origin_and_session(self._request('/output/preview.mp4'), next_response))
+            allowed_api = asyncio.run(self.api.enforce_local_origin_and_session(self._request('/api/overview', cookie=cookie), next_response))
+        self.assertEqual(denied_api.status_code, 401)
+        self.assertEqual(denied_output.status_code, 401)
+        self.assertEqual(allowed_api.status_code, 204)
+
+    def test_session_status_is_public_and_foreign_mutations_are_blocked(self):
+        async def next_response(_request):
+            return Response(status_code=204)
+        status = asyncio.run(self.api.enforce_local_origin_and_session(self._request('/api/session/status'), next_response))
+        foreign = asyncio.run(self.api.enforce_local_origin_and_session(self._request('/api/queue', method='POST', origin='https://attacker.example'), next_response))
+        self.assertEqual(status.status_code, 204)
+        self.assertEqual(foreign.status_code, 403)
     def test_auth_fails_closed_without_configuration(self):
         with patch.object(self.api, "API_PASSWORD", ""), patch.object(self.api, "SESSION_SECRET", ""):
             self.assertFalse(self.api.auth_is_configured())
