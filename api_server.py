@@ -798,8 +798,30 @@ def create_all():
 
 @app.post("/api/queue")
 def save_queue(req: QueueReq):
-    lines = [line.strip() for line in req.topics_text.splitlines() if line.strip()]
-    added = sum(enqueue_topic(line, source="api") for line in lines)
+    topics_text = req.topics_text or ""
+    if len(topics_text) > 20000:
+        raise HTTPException(status_code=413, detail="Queue payload exceeds 20,000 characters")
+    lines = [line.strip() for line in topics_text.splitlines() if line.strip()]
+    if len(lines) > 100:
+        raise HTTPException(status_code=400, detail="A single queue request may contain at most 100 topics")
+    db = get_db()
+    try:
+        known_channels = {row["name"] for row in db.execute("SELECT name FROM channels")}
+    finally:
+        db.close()
+    for line in lines:
+        if "|" in line:
+            channel_name, topic = [part.strip() for part in line.split("|", 1)]
+            if not channel_name or not topic:
+                raise HTTPException(status_code=400, detail="Queue lines must be 'channel | topic' or 'topic'")
+            if channel_name not in known_channels:
+                raise HTTPException(status_code=400, detail=f"Unknown channel: {channel_name}")
+        if len(line) > 2000:
+            raise HTTPException(status_code=400, detail="Each topic must be 2,000 characters or fewer")
+    try:
+        added = sum(enqueue_topic(line, source="api") for line in lines)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "queued": added, "msg": f"{added}건을 채널별 내구성 제작 큐에 등록했습니다."}
 
 @app.post("/api/approve/{job_id}")
