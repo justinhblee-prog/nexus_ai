@@ -30,7 +30,7 @@ The repository ignores `.env`. Never commit it or paste its values into an issue
 
 - Streamlit requires the same `NEXUS_API_PASSWORD`; passwords shorter than 12 characters fail closed.
 - Password comparison uses `hmac.compare_digest`.
-- The authentication gate runs before directory creation, database opening, or the topic watcher startup.
+- The authentication gate runs before directory creation or database opening. Streamlit does not run a competing `topics.txt` watcher; the FastAPI process owns the legacy-file importer and durable SQLite queue.
 - Successful authentication is stored in server-side Streamlit session state. The UI provides an explicit logout action.
 - Streamlit's session is separate from the FastAPI signed cookie; signing in to one interface does not sign in to the other.
 
