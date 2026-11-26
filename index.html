@@ -402,8 +402,10 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
         const score = item.source_score == null
           ? "원천 순위 #" + rank
           : escapeHtml(item.source_score_label || "원천 점수") + " " + escapeHtml(item.source_score);
-        const stale = item.source_is_stale
-          ? "<span class='badge b-gold'>이전 수집 데이터</span>" : "";
+        const stale = item.source_status === "failed"
+          ? "<span class='badge b-gold'>이전 수집 데이터</span>"
+          : item.source_status === "unknown"
+            ? "<span class='badge b-ch'>수집 상태 미확인</span>" : "";
         return "<div onclick='openRadarById(" + Number(item.id) + ")' class='r-card'>" +
           "<div style='display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;'>" +
           "<div><span class='badge b-blue'>" + escapeHtml(item.region) + " · #" + rank + "</span> " +
