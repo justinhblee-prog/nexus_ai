@@ -1,3 +1,4 @@
+"""Validated Korean scripts and sentence segmentation for Shorts production."""
 import re
 
 
@@ -12,9 +13,6 @@ def split_manual_script(script):
     if not 4 <= len(sentences) <= 8:
         raise ValueError("edited script must contain between 4 and 8 sentences")
     return sentences
-
-
-"""Validated Korean fallback scripts for short-form video production."""
 
 
 def fallback_script(channel_name, topic):
