@@ -129,6 +129,7 @@ def init_app_db():
             attempts INTEGER NOT NULL DEFAULT 0,
             available_at INTEGER NOT NULL,
             lease_until INTEGER,
+            lease_token TEXT,
             last_error TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
@@ -149,6 +150,9 @@ def init_app_db():
             created_at TEXT NOT NULL
         );
     """)
+    queue_columns = {row["name"] for row in db.execute("PRAGMA table_info(topic_queue)")}
+    if "lease_token" not in queue_columns:
+        db.execute("ALTER TABLE topic_queue ADD COLUMN lease_token TEXT")
     db.executescript("INSERT OR IGNORE INTO channels (name, platform, yt_id, persona) VALUES\n        ('Brain Glitch', 'YouTube', '', '심리 전문가 톤'),\n        ('Silent Signals', 'YouTube', '', '인간관계 전문가 톤'),\n        ('Unseen Truth', 'YouTube', '', '팩트체크 전문가 톤'),\n        ('Dark Files Global', 'YouTube', '', '미스터리 다큐 톤'),\n        ('99% Missed', 'YouTube', '', '생활 정보 전문가 톤'),\n        ('Money Glitch', 'YouTube', '', '경제 분석가 톤'),\n        ('Secret Vault 24', 'YouTube', '', '자산·습관 전문가 톤'),\n        ('Future Leak', 'YouTube', '', 'AI·기술 분석가 톤'),\n        ('30Sec Shift', 'YouTube', '', '건강 정보 전문가 톤'),\n        ('Why Nobody Tells', 'YouTube', '', '지식 큐레이터 톤');")
     db.commit()
     db.close()
@@ -293,7 +297,7 @@ def claim_next_topic(lease_seconds: int = 900):
     try:
         db.execute("BEGIN IMMEDIATE")
         db.execute(
-            """UPDATE topic_queue SET status='failed', lease_until=NULL,
+            """UPDATE topic_queue SET status='failed', lease_until=NULL, lease_token=NULL,
                last_error=COALESCE(last_error, 'Worker lease expired after maximum attempts'),
                updated_at=?
                WHERE status='running' AND lease_until < ? AND attempts >= 3""",
@@ -309,13 +313,15 @@ def claim_next_topic(lease_seconds: int = 900):
         if not row:
             db.commit()
             return None
+        lease_token = secrets.token_urlsafe(24)
         db.execute(
             """UPDATE topic_queue SET status='running', attempts=attempts+1,
-               lease_until=?, updated_at=? WHERE id=?""",
-            (now + lease_seconds, datetime.now().isoformat(timespec="seconds"), row["id"]),
+               lease_until=?, lease_token=?, updated_at=? WHERE id=?""",
+            (now + lease_seconds, lease_token, datetime.now().isoformat(timespec="seconds"), row["id"]),
         )
         claimed = dict(row)
         claimed["attempts"] += 1
+        claimed["lease_token"] = lease_token
         db.commit()
         record_event("queue.claimed", entity_type="topic_queue", entity_id=claimed["id"],
                      payload={"channel": claimed["channel_name"], "attempt": claimed["attempts"]})
@@ -326,30 +332,38 @@ def claim_next_topic(lease_seconds: int = 900):
     finally:
         db.close()
 
-def finish_topic(queue_id: int, error: str | None = None, max_attempts: int = 3):
+def finish_topic(queue_id: int, lease_token: str, error: str | None = None, max_attempts: int = 3):
+    """Finish only the current lease owner; stale workers cannot overwrite a newer attempt."""
+    if not lease_token:
+        return False
     db = get_db()
     try:
-        row = db.execute("SELECT attempts, topic, source FROM topic_queue WHERE id=?", (queue_id,)).fetchone()
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute(
+            "SELECT attempts, topic, source FROM topic_queue WHERE id=? AND status='running' AND lease_token=?",
+            (queue_id, lease_token),
+        ).fetchone()
         if not row:
-            return
+            db.rollback()
+            return False
         now = int(time.time())
         stamp = datetime.now().isoformat(timespec="seconds")
         if error is None:
             db.execute(
-                "UPDATE topic_queue SET status='completed', lease_until=NULL, last_error=NULL, updated_at=? WHERE id=?",
-                (stamp, queue_id),
+                "UPDATE topic_queue SET status='completed', lease_until=NULL, lease_token=NULL, last_error=NULL, updated_at=? WHERE id=? AND lease_token=?",
+                (stamp, queue_id, lease_token),
             )
         elif row["attempts"] >= max_attempts:
             db.execute(
-                "UPDATE topic_queue SET status='failed', lease_until=NULL, last_error=?, updated_at=? WHERE id=?",
-                (error[:2000], stamp, queue_id),
+                "UPDATE topic_queue SET status='failed', lease_until=NULL, lease_token=NULL, last_error=?, updated_at=? WHERE id=? AND lease_token=?",
+                (error[:2000], stamp, queue_id, lease_token),
             )
         else:
             delay = min(3600, 30 * (2 ** max(0, row["attempts"] - 1)))
             db.execute(
-                """UPDATE topic_queue SET status='pending', lease_until=NULL,
-                   available_at=?, last_error=?, updated_at=? WHERE id=?""",
-                (now + delay, error[:2000], stamp, queue_id),
+                """UPDATE topic_queue SET status='pending', lease_until=NULL, lease_token=NULL,
+                   available_at=?, last_error=?, updated_at=? WHERE id=? AND lease_token=?""",
+                (now + delay, error[:2000], stamp, queue_id, lease_token),
             )
         if error is None and row["source"] == "daily_radar":
             db.execute(
@@ -435,12 +449,12 @@ def watch_topics_loop():
                     run_make_video(channel["name"], channel["persona"], item["topic"])
                 finally:
                     db.close()
-                finish_topic(item["id"])
+                finish_topic(item["id"], item["lease_token"])
         except Exception as exc:
             logger.exception("Topic queue worker failed")
             if "item" in locals() and item:
                 try:
-                    finish_topic(item["id"], str(exc))
+                    finish_topic(item["id"], item["lease_token"], str(exc))
                 except Exception:
                     logger.exception("Could not update failed queue item")
         time.sleep(5)
