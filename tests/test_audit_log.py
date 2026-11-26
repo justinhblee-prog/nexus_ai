@@ -37,6 +37,7 @@ class AuditLogTests(unittest.TestCase):
 
     def test_metrics_cover_existing_queue_scheduler_and_pipeline_tables(self):
         import sqlite3
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         conn = sqlite3.connect(self.db_path)
         conn.executescript("""
             CREATE TABLE topic_queue(status TEXT);
