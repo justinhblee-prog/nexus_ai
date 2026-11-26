@@ -56,6 +56,7 @@ class NexusUiContractTests(unittest.TestCase):
     def test_review_edits_trigger_regeneration_and_disable_approval_until_ready(self):
         self.assertIn('["최종컨펌 대기", "반려(수정 필요)", "재제작 실패"]', self.script)
         self.assertIn("수정 후 재제작", self.html)
+        self.assertIn("수정 대본은 4~8문장", self.html)
         self.assertIn("if (response.ok) { activeJobId = null; await loadOverview(); }", self.script)
         self.assertIn('"재제작 대기"', self.script)
         self.assertIn('"재제작 실패"', self.script)
