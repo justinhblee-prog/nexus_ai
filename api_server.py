@@ -781,7 +781,7 @@ def update_job(job_id: int, req: UpdateJobReq):
         if job["stage"] not in ("최종컨펌 대기", "반려(수정 필요)"):
             raise HTTPException(status_code=409, detail="검수 대기 또는 반려 상태의 작업만 수정할 수 있습니다.")
         resubmitted = job["stage"] == "반려(수정 필요)"
-        next_stage = "최종컨펌 대기" if resubmitted else "최종컨펌 대기"
+        next_stage = "최종컨펌 대기"
         cur = db.execute(
             "UPDATE pipeline_jobs SET title=?, script=?, stage=? WHERE id=? AND stage IN ('최종컨펌 대기','반려(수정 필요)')",
             (title, script, next_stage, job_id),
