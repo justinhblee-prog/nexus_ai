@@ -46,8 +46,11 @@ def verify_session_cookie(cookie: str | None, now: int | None = None) -> bool:
 
 # The compose file binds host ports to loopback; CORS is limited to local UI origins.
 LOCAL_UI_ORIGINS = {
+    # Container-internal defaults (8502/8503) and isolated host-published ports.
     "http://127.0.0.1:8502", "http://localhost:8502",
     "http://127.0.0.1:8503", "http://localhost:8503",
+    "http://127.0.0.1:28502", "http://localhost:28502",
+    "http://127.0.0.1:28503", "http://localhost:28503",
 }
 app.add_middleware(
     CORSMiddleware,
