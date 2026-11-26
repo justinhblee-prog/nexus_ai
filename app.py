@@ -301,7 +301,21 @@ with t3:
             with st.container(border=True):
                 st.markdown(f"#### ✍️ 메타데이터 & 대본 검수 (`{ch_n}`)")
                 et = st.text_input("유튜브 업로드 제목", value=jb["title"])
-                st.text_area("전체 내레이션 대본 확인", value=jb["script"], height=320)
+                edited_script = st.text_area("전체 내레이션 대본 확인", value=jb["script"], height=320)
+                if st.button("💾 검수 내용 저장", use_container_width=True):
+                    resubmitted = jb["stage"] == "반려(수정 필요)"
+                    if resubmitted:
+                        conn.execute("UPDATE pipeline_jobs SET title=?, script=?, stage='최종컨펌 대기' WHERE id=?",
+                                     (et, edited_script, int(jb["id"])))
+                    else:
+                        conn.execute("UPDATE pipeline_jobs SET title=?, script=? WHERE id=?",
+                                     (et, edited_script, int(jb["id"])))
+                    conn.commit()
+                    if resubmitted:
+                        record_event("review.resubmitted", entity_type="pipeline_job", entity_id=int(jb["id"]),
+                                     payload={"channel": ch_n, "source": "streamlit"})
+                    st.success("검수 내용이 저장되었습니다.")
+                    st.rerun()
                 c1 = st.checkbox("AI 생성 콘텐츠 라벨 적용 및 1차 비공개(Private) 안전 업로드 동의", value=True)
                 safe_channel = "".join(ch for ch in ch_n if ch.isalnum() or ch in ("-", "_"))
                 token_ok = os.path.exists(f"tokens/yt_token_{safe_channel}.json")
