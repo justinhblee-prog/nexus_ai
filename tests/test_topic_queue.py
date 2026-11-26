@@ -119,6 +119,74 @@ class DurableTopicQueueTests(unittest.TestCase):
         self.assertIsNone(queue["lease_token"])
         self.assertIsNotNone(produced)
 
+    def test_edited_job_regenerates_in_place_before_final_review(self):
+        db = self.api.get_db()
+        try:
+            db.execute(
+                "INSERT INTO pipeline_jobs (channel_name,title,script,video_path,stage,created_at) VALUES (?,?,?,?,?,?)",
+                ("Future Leak", "Old title", "Old script", "output/old.mp4", "반려(수정 필요)", "now"),
+            )
+            db.commit()
+        finally:
+            db.close()
+        revised_title = "Revised title"
+        revised_script = "첫째 문장입니다. 둘째 문장입니다. 셋째 문장입니다. 넷째 문장입니다."
+        queue_id = self.api.enqueue_job_regeneration(1, revised_title, revised_script)
+        self.assertEqual(self._stage_for_test(1), "재제작 대기")
+        item = self.api.claim_next_topic(lease_seconds=60)
+        self.assertEqual(item["id"], queue_id)
+        with patch.object(self.api.video_maker, "render_pro_short",
+                          return_value=("output/revised.mp4", revised_title, revised_script), create=True) as render, \
+             patch.object(self.api, "validate_video", return_value={"ok": True, "checks": {}, "errors": []}):
+            job_id = self.api.run_make_video(
+                "Future Leak", "persona", item["topic"],
+                queue_id=item["id"], lease_token=item["lease_token"],
+                script_override=item["script_override"], title_override=item["title_override"],
+                target_job_id=item["target_job_id"],
+            )
+        self.assertEqual(job_id, 1)
+        self.assertEqual(render.call_args.kwargs["script_override"], revised_script)
+        self.assertEqual(render.call_args.kwargs["title_override"], revised_title)
+        db = self.api.get_db()
+        try:
+            job = db.execute("SELECT title, script, video_path, stage FROM pipeline_jobs WHERE id=1").fetchone()
+            queue = db.execute("SELECT status FROM topic_queue WHERE id=?", (queue_id,)).fetchone()
+        finally:
+            db.close()
+        self.assertEqual(tuple(job), (revised_title, revised_script, "output/revised.mp4", "최종컨펌 대기"))
+        self.assertEqual(queue["status"], "completed")
+
+    def _stage_for_test(self, job_id):
+        db = self.api.get_db()
+        try:
+            return db.execute("SELECT stage FROM pipeline_jobs WHERE id=?", (job_id,)).fetchone()[0]
+        finally:
+            db.close()
+
+    def test_failed_regeneration_moves_job_to_retryable_failure_state(self):
+        db = self.api.get_db()
+        try:
+            db.execute(
+                "INSERT INTO pipeline_jobs (channel_name,title,script,video_path,stage,created_at) VALUES (?,?,?,?,?,?)",
+                ("Future Leak", "Old title", "Old script", "output/old.mp4", "반려(수정 필요)", "now"),
+            )
+            db.commit()
+        finally:
+            db.close()
+        queue_id = self.api.enqueue_job_regeneration(
+            1, "Revised title",
+            "첫째 문장입니다. 둘째 문장입니다. 셋째 문장입니다. 넷째 문장입니다.",
+        )
+        item = self.api.claim_next_topic(lease_seconds=60)
+        db = self.api.get_db()
+        try:
+            db.execute("UPDATE topic_queue SET attempts=3 WHERE id=?", (queue_id,))
+            db.commit()
+        finally:
+            db.close()
+        self.assertTrue(self.api.finish_topic(queue_id, item["lease_token"], "render failed"))
+        self.assertEqual(self._stage_for_test(1), "재제작 실패")
+
     def test_stale_render_cannot_commit_pipeline_job(self):
         self.api.enqueue_topic("Future Leak | stale render", source="test")
         item = self.api.claim_next_topic(lease_seconds=60)
@@ -175,6 +243,9 @@ class DurableTopicQueueTests(unittest.TestCase):
         finally:
             db.close()
         self.assertIn("lease_token", columns)
+        self.assertIn("title_override", columns)
+        self.assertIn("script_override", columns)
+        self.assertIn("target_job_id", columns)
 
     def test_concurrent_connections_cannot_claim_the_same_queue_item(self):
         self.api.enqueue_topic("Future Leak | one shared queue item", source="test")
