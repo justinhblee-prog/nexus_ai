@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 import sqlite3, os, time, threading
 from streamlit_auth import is_auth_configured, verify_streamlit_password
-from audit_log import record_event
+from audit_log import safe_record_event as record_event
 from datetime import datetime, timedelta
 import video_maker, yt_uploader
 
