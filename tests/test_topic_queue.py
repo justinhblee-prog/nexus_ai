@@ -163,6 +163,30 @@ class DurableTopicQueueTests(unittest.TestCase):
         finally:
             db.close()
 
+    def test_expired_max_attempt_regeneration_lease_marks_job_failed(self):
+        db = self.api.get_db()
+        try:
+            db.execute(
+                "INSERT INTO pipeline_jobs (channel_name,title,script,video_path,stage,created_at) VALUES (?,?,?,?,?,?)",
+                ("Future Leak", "Old title", "Old script", "output/old.mp4", "반려(수정 필요)", "now"),
+            )
+            db.commit()
+        finally:
+            db.close()
+        queue_id = self.api.enqueue_job_regeneration(
+            1, "Revised title",
+            "첫째 문장입니다. 둘째 문장입니다. 셋째 문장입니다. 넷째 문장입니다.",
+        )
+        item = self.api.claim_next_topic(lease_seconds=60)
+        db = self.api.get_db()
+        try:
+            db.execute("UPDATE topic_queue SET lease_until=0, attempts=3 WHERE id=?", (queue_id,))
+            db.commit()
+        finally:
+            db.close()
+        self.assertIsNone(self.api.claim_next_topic())
+        self.assertEqual(self._stage_for_test(1), "재제작 실패")
+
     def test_failed_regeneration_moves_job_to_retryable_failure_state(self):
         db = self.api.get_db()
         try:
