@@ -125,7 +125,7 @@ class ApiReviewGuardTests(unittest.TestCase):
         with patch.object(self.api, "validate_video",
                           return_value={"ok": True, "checks": {}, "errors": []}), \
              patch.object(self.api.yt_uploader, "upload_to_youtube",
-                          return_value=(True, "private upload confirmed"), create=True) as upload:
+                          return_value=(True, "비공개 업로드 성공! 영상 ID: abc123 👉 https://www.youtube.com/watch?v=abc123"), create=True) as upload:
             with ThreadPoolExecutor(max_workers=8) as pool:
                 results = list(pool.map(approve, range(8)))
         successes = [result for result in results if isinstance(result, dict) and result.get("ok")]
@@ -133,7 +133,40 @@ class ApiReviewGuardTests(unittest.TestCase):
         self.assertEqual(len(successes), 1)
         self.assertEqual(len(conflicts), 7)
         self.assertEqual(self._stage(1), "업로드 완료(비공개)")
+        db = self.api.get_db()
+        try:
+            uploaded = db.execute("SELECT youtube_video_id, privacy_status FROM pipeline_jobs WHERE id=1").fetchone()
+        finally:
+            db.close()
+        self.assertEqual(uploaded["youtube_video_id"], "abc123")
+        self.assertEqual(uploaded["privacy_status"], "private")
         upload.assert_called_once()
+
+    def test_unverified_upload_persists_provider_id_and_never_marks_private(self):
+        os.makedirs("output", exist_ok=True)
+        video_path = os.path.join("output", "uncertain.mp4")
+        with open(video_path, "wb") as handle:
+            handle.write(b"x" * 2048)
+        db = self.api.get_db()
+        try:
+            db.execute("UPDATE pipeline_jobs SET video_path=? WHERE id=1", (video_path,))
+            db.commit()
+        finally:
+            db.close()
+        with patch.object(self.api, "validate_video",
+                          return_value={"ok": True, "checks": {}, "errors": []}), \
+             patch.object(self.api.yt_uploader, "upload_to_youtube",
+                          return_value=(False, "UPLOAD_CREATED_PRIVACY_UNVERIFIED:video987:public"), create=True):
+            result = self.api.approve_job(1)
+        self.assertFalse(result["ok"])
+        self.assertEqual(self._stage(1), "업로드 상태 확인 필요")
+        db = self.api.get_db()
+        try:
+            uploaded = db.execute("SELECT youtube_video_id, privacy_status FROM pipeline_jobs WHERE id=1").fetchone()
+        finally:
+            db.close()
+        self.assertEqual(uploaded["youtube_video_id"], "video987")
+        self.assertEqual(uploaded["privacy_status"], "public")
 
     def test_delete_guards_protect_uploading_and_regenerating_jobs(self):
         with self.assertRaises(HTTPException) as uploading:
