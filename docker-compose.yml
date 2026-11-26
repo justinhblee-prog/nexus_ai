@@ -2,6 +2,10 @@ services:
   shorts-center:
     build: .
     container_name: nexus_shorts_center
+    environment:
+      NEXUS_API_PASSWORD: ${NEXUS_API_PASSWORD:-}
+      NEXUS_SESSION_SECRET: ${NEXUS_SESSION_SECRET:-}
+      NEXUS_COOKIE_SECURE: ${NEXUS_COOKIE_SECURE:-false}
     ports:
       - "127.0.0.1:8502:8502"
       - "127.0.0.1:8503:8503"
