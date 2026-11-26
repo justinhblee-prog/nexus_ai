@@ -1,3 +1,7 @@
+> ⚠️ **LEGACY DOCUMENT — DO NOT USE AS CURRENT OPERATING INSTRUCTIONS.** This file contains historical architecture, endpoint, and Docker guidance that may not match the current repository. Use [docs/PROJECT_HANDOVER_CURRENT.md](docs/PROJECT_HANDOVER_CURRENT.md) for verified current ports, authentication, queue ownership, QA, upload safety, backup, and recovery instructions. The historical content below is retained for reference only.
+
+---
+
 $doc1 = @'
 # 📑 NEXUS STUDIO PRO (V5.0) — 통합 기획·설계·개발 인수인계서
 
