@@ -150,3 +150,7 @@ GitHub Actions [run #217](https://github.com/justinhblee-prog/nexus_ai/actions/r
 - PR #1은 Draft/Open 상태로 유지합니다.
 - `main` 직접 수정, 병합, 운영 배포, 강제 푸시, 이력 재작성은 하지 않습니다.
 - 로컬 기존 DB·영상·토큰·환경설정은 저장소 복구를 이유로 삭제하거나 초기화하지 않습니다.
+
+## 11. Product design baseline
+
+The product design decisions carried forward across repository migration are recorded in [docs/NEXUS_PRODUCT_DESIGN_BASELINE.md](NEXUS_PRODUCT_DESIGN_BASELINE.md). This is the source of truth for the single Monochrome default theme, the four additional comparison themes, the seven-workspace navigation, and the existing Dashboard reference assets. Do not substitute a new theme list or dashboard layout.
