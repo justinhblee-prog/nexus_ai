@@ -140,6 +140,10 @@ def init_app_db():
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS auto_produced_topics (
+            topic TEXT PRIMARY KEY,
+            created_at TEXT NOT NULL
+        );
     """)
     db.executescript("INSERT OR IGNORE INTO channels (name, platform, yt_id, persona) VALUES\n        ('Brain Glitch', 'YouTube', '', '심리 전문가 톤'),\n        ('Silent Signals', 'YouTube', '', '인간관계 전문가 톤'),\n        ('Unseen Truth', 'YouTube', '', '팩트체크 전문가 톤'),\n        ('Dark Files Global', 'YouTube', '', '미스터리 다큐 톤'),\n        ('99% Missed', 'YouTube', '', '생활 정보 전문가 톤'),\n        ('Money Glitch', 'YouTube', '', '경제 분석가 톤'),\n        ('Secret Vault 24', 'YouTube', '', '자산·습관 전문가 톤'),\n        ('Future Leak', 'YouTube', '', 'AI·기술 분석가 톤'),\n        ('30Sec Shift', 'YouTube', '', '건강 정보 전문가 톤'),\n        ('Why Nobody Tells', 'YouTube', '', '지식 큐레이터 톤');")
     db.commit()
@@ -183,28 +187,47 @@ def run_make_video(ch_name: str, persona: str, topic: str):
         raise
 
 def auto_produce_top_trends(count=3):
-    db = trend_radar.init_radar_db()
-    db.row_factory = sqlite3.Row
-    made = 0
+    """Queue daily radar picks durably; the queue worker performs the actual renders."""
+    radar_db = trend_radar.init_radar_db()
+    radar_db.row_factory = sqlite3.Row
     try:
-        top_rows = db.execute("SELECT * FROM trend_recommendations WHERE period_type='daily' AND is_global_top10 > 0 ORDER BY is_global_top10 ASC").fetchall()
-        for r in top_rows:
-            if made >= count:
-                break
-            exists = db.execute("SELECT 1 FROM auto_produced_topics WHERE topic=?", (r["topic"],)).fetchone()
-            if exists:
-                continue
-            ch_row = db.execute("SELECT * FROM channels WHERE name=?", (r["matched_channel"],)).fetchone()
-            if not ch_row:
-                logger.warning("Skipping trend with unknown channel: %s", r["matched_channel"])
-                continue
-            run_make_video(r["matched_channel"], ch_row["persona"], r["topic"])
-            db.execute("INSERT OR IGNORE INTO auto_produced_topics VALUES (?, ?)", (r["topic"], datetime.now().strftime("%Y-%m-%d %H:%M")))
-            db.commit()
-            made += 1
-        return made
+        top_rows = [dict(row) for row in radar_db.execute(
+            "SELECT * FROM trend_recommendations WHERE period_type='daily' AND is_global_top10 > 0 ORDER BY is_global_top10 ASC"
+        ).fetchall()]
+        channels = {row["name"]: row["persona"] for row in radar_db.execute("SELECT name, persona FROM channels")}
+    finally:
+        radar_db.close()
+
+    db = get_db()
+    try:
+        produced = {row[0] for row in db.execute("SELECT topic FROM auto_produced_topics")}
+        queued = {row[0] for row in db.execute(
+            "SELECT topic FROM topic_queue WHERE source='daily_radar'"
+        )}
     finally:
         db.close()
+
+    date_key = datetime.now().strftime("%Y-%m-%d")
+    queued_count = 0
+    for trend in top_rows:
+        if queued_count >= count:
+            break
+        topic = trend["topic"]
+        channel = trend["matched_channel"]
+        if topic in produced or topic in queued:
+            continue
+        if channel not in channels:
+            logger.warning("Skipping trend with unknown channel: %s", channel)
+            continue
+        added = enqueue_topic(
+            f"{channel} | {topic}",
+            source="daily_radar",
+            idempotency_key=f"daily-radar:{date_key}:{topic}",
+        )
+        if added:
+            queued.add(topic)
+            queued_count += 1
+    return queued_count
 
 
 def enqueue_topic(topic_line: str, source: str = "api", idempotency_key: str | None = None):
@@ -291,7 +314,7 @@ def claim_next_topic(lease_seconds: int = 900):
 def finish_topic(queue_id: int, error: str | None = None, max_attempts: int = 3):
     db = get_db()
     try:
-        row = db.execute("SELECT attempts FROM topic_queue WHERE id=?", (queue_id,)).fetchone()
+        row = db.execute("SELECT attempts, topic, source FROM topic_queue WHERE id=?", (queue_id,)).fetchone()
         if not row:
             return
         now = int(time.time())
@@ -312,6 +335,11 @@ def finish_topic(queue_id: int, error: str | None = None, max_attempts: int = 3)
                 """UPDATE topic_queue SET status='pending', lease_until=NULL,
                    available_at=?, last_error=?, updated_at=? WHERE id=?""",
                 (now + delay, error[:2000], stamp, queue_id),
+            )
+        if error is None and row["source"] == "daily_radar":
+            db.execute(
+                "INSERT OR IGNORE INTO auto_produced_topics (topic, created_at) VALUES (?, ?)",
+                (row["topic"], stamp),
             )
         db.commit()
         if error is None:
