@@ -138,7 +138,8 @@ def auto_radar_and_scheduler_loop():
 @app.on_event("startup")
 def startup_event():
     init_app_db()
-    trend_radar.init_radar_db()
+    radar_db = trend_radar.init_radar_db()
+    radar_db.close()
     threading.Thread(target=watch_topics_loop, daemon=True).start()
     threading.Thread(target=auto_radar_and_scheduler_loop, daemon=True).start()
 
