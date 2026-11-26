@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import types
+from concurrent.futures import ThreadPoolExecutor
 import unittest
 from unittest.mock import patch
 
@@ -102,6 +103,37 @@ class ApiReviewGuardTests(unittest.TestCase):
             )
         self.assertEqual(caught.exception.status_code, 400)
         self.assertEqual(self._stage(1), "최종컨펌 대기")
+
+    def test_concurrent_api_approvals_upload_only_once(self):
+        os.makedirs("output", exist_ok=True)
+        video_path = os.path.join("output", "approval.mp4")
+        with open(video_path, "wb") as handle:
+            handle.write(b"x" * 2048)
+        db = self.api.get_db()
+        try:
+            db.execute("UPDATE pipeline_jobs SET video_path=? WHERE id=1", (video_path,))
+            db.commit()
+        finally:
+            db.close()
+
+        def approve(_):
+            try:
+                return self.api.approve_job(1)
+            except HTTPException as exc:
+                return exc.status_code
+
+        with patch.object(self.api, "validate_video",
+                          return_value={"ok": True, "checks": {}, "errors": []}), \
+             patch.object(self.api.yt_uploader, "upload_to_youtube",
+                          return_value=(True, "private upload confirmed"), create=True) as upload:
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                results = list(pool.map(approve, range(8)))
+        successes = [result for result in results if isinstance(result, dict) and result.get("ok")]
+        conflicts = [result for result in results if result == 409]
+        self.assertEqual(len(successes), 1)
+        self.assertEqual(len(conflicts), 7)
+        self.assertEqual(self._stage(1), "업로드 완료(비공개)")
+        upload.assert_called_once()
 
     def test_delete_guards_protect_uploading_and_regenerating_jobs(self):
         with self.assertRaises(HTTPException) as uploading:
