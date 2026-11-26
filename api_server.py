@@ -227,7 +227,7 @@ def run_make_video(ch_name: str, persona: str, topic: str, queue_id: int | None 
                     raise RuntimeError("Regeneration target is no longer awaiting a replacement render")
                 job_id = target_job_id
             else:
-                if lease["target_job_id"] is not None:
+                if queue_id is not None and lease["target_job_id"] is not None:
                     db.rollback()
                     raise RuntimeError("Queued regeneration target was not supplied to the renderer")
                 cur = db.execute("INSERT INTO pipeline_jobs (channel_name, title, script, video_path, stage, created_at) VALUES (?,?,?,?,?,?)",
