@@ -46,6 +46,13 @@ class AuditLogTests(unittest.TestCase):
             INSERT INTO scheduler_runs VALUES ('completed');
             CREATE TABLE pipeline_jobs(stage TEXT);
             INSERT INTO pipeline_jobs VALUES ('최종컨펌 대기'), ('업로드 완료(비공개)');
+            CREATE TABLE source_health(source_name TEXT, region TEXT, last_attempt_at TEXT,
+                last_success_at TEXT, last_status TEXT, item_count INTEGER,
+                consecutive_failures INTEGER, last_error TEXT);
+            INSERT INTO source_health VALUES ('Google News KR', 'KR', '2026-11-26T12:00:00',
+                '2026-11-26T12:00:00', 'success', 8, 0, NULL);
+            INSERT INTO source_health VALUES ('BBC News', 'GB', '2026-11-26T12:00:00',
+                NULL, 'failed', 0, 2, 'timeout');
         """)
         conn.commit()
         conn.close()
@@ -56,6 +63,8 @@ class AuditLogTests(unittest.TestCase):
         self.assertEqual(metrics["pipeline_by_stage"], {"최종컨펌 대기": 1, "업로드 완료(비공개)": 1})
         self.assertEqual(metrics["events_last_24h"], 1)
         self.assertEqual(metrics["latest_event"]["event_type"], "scheduler.completed")
+        self.assertEqual(metrics["source_health_summary"], {"success": 1, "failed": 1})
+        self.assertEqual(len(metrics["sources"]), 2)
 
     def test_invalid_event_type_is_rejected(self):
         with self.assertRaises(ValueError):
