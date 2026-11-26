@@ -275,7 +275,16 @@ def run_make_video(ch_name: str, persona: str, topic: str, queue_id: int | None 
         raise
 
 def auto_produce_top_trends(count=3):
-    """Queue daily radar picks durably; the queue worker performs the actual renders."""
+    """Queue fresh daily source-ranked picks durably; the queue worker performs the renders."""
+    daily_scan = trend_radar.get_scan_status("daily")
+    if not daily_scan or daily_scan.get("status") == "failed":
+        return 0
+    fresh_sources = sorted(
+        name for name, details in (daily_scan.get("source_summary") or {}).items()
+        if details.get("status") == "success"
+    )
+    if not fresh_sources:
+        return 0
     radar_db = trend_radar.init_radar_db()
     radar_db.row_factory = sqlite3.Row
     try:
@@ -297,12 +306,14 @@ def auto_produce_top_trends(count=3):
     radar_db = trend_radar.init_radar_db()
     radar_db.row_factory = sqlite3.Row
     try:
+        placeholders = ",".join("?" for _ in fresh_sources)
         top_rows = [dict(row) for row in radar_db.execute(
-            """SELECT * FROM trend_recommendations
-               WHERE period_type='daily'
-               ORDER BY source_rank ASC,
-                 CASE region WHEN 'KR' THEN 0 WHEN 'US' THEN 1 WHEN 'JP' THEN 2 ELSE 3 END,
-                 source_name ASC"""
+            f"""SELECT * FROM trend_recommendations
+                WHERE period_type='daily' AND source_name IN ({placeholders})
+                ORDER BY source_rank ASC,
+                  CASE region WHEN 'KR' THEN 0 WHEN 'US' THEN 1 WHEN 'JP' THEN 2 ELSE 3 END,
+                  source_name ASC""",
+            fresh_sources,
         ).fetchall()]
     finally:
         radar_db.close()
