@@ -116,6 +116,8 @@ def init_app_db():
             script TEXT NOT NULL DEFAULT '',
             video_path TEXT NOT NULL DEFAULT '',
             stage TEXT NOT NULL DEFAULT '최종컨펌 대기',
+            youtube_video_id TEXT,
+            privacy_status TEXT,
             created_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_pipeline_jobs_created
@@ -168,6 +170,11 @@ def init_app_db():
     scheduler_columns = {row["name"] for row in db.execute("PRAGMA table_info(scheduler_runs)")}
     if "lease_token" not in scheduler_columns:
         db.execute("ALTER TABLE scheduler_runs ADD COLUMN lease_token TEXT")
+    pipeline_columns = {row["name"] for row in db.execute("PRAGMA table_info(pipeline_jobs)")}
+    if "youtube_video_id" not in pipeline_columns:
+        db.execute("ALTER TABLE pipeline_jobs ADD COLUMN youtube_video_id TEXT")
+    if "privacy_status" not in pipeline_columns:
+        db.execute("ALTER TABLE pipeline_jobs ADD COLUMN privacy_status TEXT")
     db.executescript("INSERT OR IGNORE INTO channels (name, platform, yt_id, persona) VALUES\n        ('Brain Glitch', 'YouTube', '', '심리 전문가 톤'),\n        ('Silent Signals', 'YouTube', '', '인간관계 전문가 톤'),\n        ('Unseen Truth', 'YouTube', '', '팩트체크 전문가 톤'),\n        ('Dark Files Global', 'YouTube', '', '미스터리 다큐 톤'),\n        ('99% Missed', 'YouTube', '', '생활 정보 전문가 톤'),\n        ('Money Glitch', 'YouTube', '', '경제 분석가 톤'),\n        ('Secret Vault 24', 'YouTube', '', '자산·습관 전문가 톤'),\n        ('Future Leak', 'YouTube', '', 'AI·기술 분석가 톤'),\n        ('30Sec Shift', 'YouTube', '', '건강 정보 전문가 톤'),\n        ('Why Nobody Tells', 'YouTube', '', '지식 큐레이터 톤');")
     db.commit()
     db.close()
@@ -221,7 +228,8 @@ def run_make_video(ch_name: str, persona: str, topic: str, queue_id: int | None 
                     db.rollback()
                     raise RuntimeError("Regeneration target does not match the claimed queue item")
                 updated = db.execute(
-                    """UPDATE pipeline_jobs SET title=?, script=?, video_path=?, stage='최종컨펌 대기'
+                    """UPDATE pipeline_jobs SET title=?, script=?, video_path=?, stage='최종컨펌 대기',
+                       youtube_video_id=NULL, privacy_status=NULL
                        WHERE id=? AND channel_name=? AND stage='재제작 대기'""",
                     (title, script, mp4, target_job_id, ch_name),
                 )
@@ -878,6 +886,22 @@ def save_queue(req: QueueReq):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "queued": added, "msg": f"{added}건을 채널별 내구성 제작 큐에 등록했습니다."}
 
+def _upload_result_metadata(ok: bool, message: str):
+    """Extract only the provider-confirmed video ID and privacy state from the upload adapter result."""
+    if ok:
+        marker = "영상 ID: "
+        video_id = message.split(marker, 1)[1].split()[0] if marker in message else None
+        return video_id, "private" if video_id else "unverified"
+    if message.startswith("UPLOAD_CREATED_PRIVACY_UNVERIFIED:"):
+        parts = message.split(":", 2)
+        video_id = parts[1] if len(parts) > 1 and parts[1] != "unknown" else None
+        privacy = parts[2] if len(parts) > 2 else "unknown"
+        return video_id, privacy
+    if message.startswith("UPLOAD_RESULT_UNCERTAIN:"):
+        return None, "unknown"
+    return None, None
+
+
 @app.post("/api/approve/{job_id}")
 def approve_job(job_id: int):
     db = get_db()
@@ -913,13 +937,17 @@ def approve_job(job_id: int):
                  payload={"channel": jb["channel_name"], "approval_source": "api"})
     ok, msg = yt_uploader.upload_to_youtube(jb["channel_name"], video_path, jb["title"], jb["script"])
     privacy_unverified = msg.startswith("UPLOAD_CREATED_PRIVACY_UNVERIFIED:") or msg.startswith("UPLOAD_RESULT_UNCERTAIN:")
+    video_id, privacy_status = _upload_result_metadata(ok, msg)
     event_type = "upload.completed" if ok else ("upload.privacy_unverified" if privacy_unverified else "upload.failed")
     record_event(event_type, entity_type="pipeline_job", entity_id=job_id,
-                 payload={"channel": jb["channel_name"], "privacy_status": "private" if ok else "unverified"})
+                 payload={"channel": jb["channel_name"], "video_id": video_id,
+                          "privacy_status": privacy_status})
     db = get_db()
     try:
-        db.execute("UPDATE pipeline_jobs SET stage=? WHERE id=?",
-                   (upload_result_stage(ok, privacy_unverified), job_id))
+        db.execute(
+            "UPDATE pipeline_jobs SET stage=?, youtube_video_id=?, privacy_status=? WHERE id=?",
+            (upload_result_stage(ok, privacy_unverified), video_id, privacy_status, job_id),
+        )
         db.commit()
     finally:
         db.close()
