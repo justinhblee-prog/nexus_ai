@@ -77,8 +77,20 @@ class SignedSessionTests(unittest.TestCase):
             return Response(status_code=204)
         status = asyncio.run(self.api.enforce_local_origin_and_session(self._request('/api/session/status'), next_response))
         foreign = asyncio.run(self.api.enforce_local_origin_and_session(self._request('/api/queue', method='POST', origin='https://attacker.example'), next_response))
+        cookie = self.api.create_session_cookie(now=1_800_000_000)
+        with patch.object(self.api.time, 'time', return_value=1_800_000_001):
+            allowed_api_port = asyncio.run(self.api.enforce_local_origin_and_session(
+                self._request('/api/queue', method='POST', origin='http://127.0.0.1:28503', cookie=cookie),
+                next_response,
+            ))
+            allowed_streamlit_port = asyncio.run(self.api.enforce_local_origin_and_session(
+                self._request('/api/queue', method='POST', origin='http://localhost:28502', cookie=cookie),
+                next_response,
+            ))
         self.assertEqual(status.status_code, 204)
         self.assertEqual(foreign.status_code, 403)
+        self.assertEqual(allowed_api_port.status_code, 204)
+        self.assertEqual(allowed_streamlit_port.status_code, 204)
     def test_auth_fails_closed_without_configuration(self):
         with patch.object(self.api, "API_PASSWORD", ""), patch.object(self.api, "SESSION_SECRET", ""):
             self.assertFalse(self.api.auth_is_configured())
