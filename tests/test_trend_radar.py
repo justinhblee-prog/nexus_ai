@@ -199,7 +199,7 @@ class TrendRadarSmokeTests(unittest.TestCase):
                 trend_radar.DB_PATH = previous_path
         self.assertEqual([item["topic"] for item in items], ["New KR story"])
         self.assertIn("New KR story", topics)
-        self.assertIn("Old Hacker News", topics)
+        self.assertIn("Old HN story", topics)
         self.assertIn("Old Google News US", topics)
         self.assertEqual(scan["status"], "partial")
 
