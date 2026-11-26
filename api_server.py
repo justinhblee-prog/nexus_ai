@@ -141,6 +141,7 @@ def init_app_db():
             status TEXT NOT NULL,
             attempts INTEGER NOT NULL DEFAULT 0,
             lease_until INTEGER,
+            lease_token TEXT,
             last_error TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
@@ -153,6 +154,9 @@ def init_app_db():
     queue_columns = {row["name"] for row in db.execute("PRAGMA table_info(topic_queue)")}
     if "lease_token" not in queue_columns:
         db.execute("ALTER TABLE topic_queue ADD COLUMN lease_token TEXT")
+    scheduler_columns = {row["name"] for row in db.execute("PRAGMA table_info(scheduler_runs)")}
+    if "lease_token" not in scheduler_columns:
+        db.execute("ALTER TABLE scheduler_runs ADD COLUMN lease_token TEXT")
     db.executescript("INSERT OR IGNORE INTO channels (name, platform, yt_id, persona) VALUES\n        ('Brain Glitch', 'YouTube', '', '심리 전문가 톤'),\n        ('Silent Signals', 'YouTube', '', '인간관계 전문가 톤'),\n        ('Unseen Truth', 'YouTube', '', '팩트체크 전문가 톤'),\n        ('Dark Files Global', 'YouTube', '', '미스터리 다큐 톤'),\n        ('99% Missed', 'YouTube', '', '생활 정보 전문가 톤'),\n        ('Money Glitch', 'YouTube', '', '경제 분석가 톤'),\n        ('Secret Vault 24', 'YouTube', '', '자산·습관 전문가 톤'),\n        ('Future Leak', 'YouTube', '', 'AI·기술 분석가 톤'),\n        ('30Sec Shift', 'YouTube', '', '건강 정보 전문가 톤'),\n        ('Why Nobody Tells', 'YouTube', '', '지식 큐레이터 톤');")
     db.commit()
     db.close()
@@ -503,67 +507,80 @@ def watch_topics_loop():
 
 
 def claim_daily_schedule(schedule_key: str, lease_seconds: int = 21600, max_attempts: int = 3):
-    """Persistently claim one daily production run across process restarts/replicas."""
+    """Persistently claim one daily production run and return its fencing token."""
     now = int(time.time())
     stamp = datetime.now().isoformat(timespec="seconds")
+    lease_token = secrets.token_urlsafe(24)
     db = get_db()
     try:
         db.execute("BEGIN IMMEDIATE")
         row = db.execute("SELECT * FROM scheduler_runs WHERE schedule_key=?", (schedule_key,)).fetchone()
         if row and row["status"] == "completed":
             db.commit()
-            return False
+            return None
         if row and row["status"] == "running" and row["lease_until"] and row["lease_until"] > now:
             db.commit()
-            return False
+            return None
         if row and row["attempts"] >= max_attempts:
             db.execute(
-                "UPDATE scheduler_runs SET status='failed', lease_until=NULL, updated_at=? WHERE schedule_key=?",
+                "UPDATE scheduler_runs SET status='failed', lease_until=NULL, lease_token=NULL, updated_at=? WHERE schedule_key=?",
                 (stamp, schedule_key),
             )
             db.commit()
-            return False
+            return None
         if row:
             db.execute(
                 """UPDATE scheduler_runs SET status='running', attempts=attempts+1,
-                   lease_until=?, last_error=NULL, updated_at=? WHERE schedule_key=?""",
-                (now + lease_seconds, stamp, schedule_key),
+                   lease_until=?, lease_token=?, last_error=NULL, updated_at=? WHERE schedule_key=?""",
+                (now + lease_seconds, lease_token, stamp, schedule_key),
             )
         else:
             db.execute(
                 """INSERT INTO scheduler_runs
-                   (schedule_key, status, attempts, lease_until, created_at, updated_at)
-                   VALUES (?, 'running', 1, ?, ?, ?)""",
-                (schedule_key, now + lease_seconds, stamp, stamp),
+                   (schedule_key, status, attempts, lease_until, lease_token, created_at, updated_at)
+                   VALUES (?, 'running', 1, ?, ?, ?, ?)""",
+                (schedule_key, now + lease_seconds, lease_token, stamp, stamp),
             )
         db.commit()
         record_event("scheduler.started", entity_type="scheduler_run", entity_id=schedule_key,
                      payload={"attempt": (row["attempts"] + 1) if row else 1})
-        return True
+        return lease_token
     except Exception:
         db.rollback()
         raise
     finally:
         db.close()
 
-def finish_daily_schedule(schedule_key: str, error: str | None = None):
+def finish_daily_schedule(schedule_key: str, lease_token: str, error: str | None = None):
+    """Finish only the currently leased scheduler attempt."""
+    if not lease_token:
+        return False
     db = get_db()
     try:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute(
+            "SELECT attempts FROM scheduler_runs WHERE schedule_key=? AND status='running' AND lease_token=?",
+            (schedule_key, lease_token),
+        ).fetchone()
+        if not row:
+            db.rollback()
+            return False
         stamp = datetime.now().isoformat(timespec="seconds")
         if error is None:
             db.execute(
-                "UPDATE scheduler_runs SET status='completed', lease_until=NULL, last_error=NULL, updated_at=? WHERE schedule_key=?",
-                (stamp, schedule_key),
+                "UPDATE scheduler_runs SET status='completed', lease_until=NULL, lease_token=NULL, last_error=NULL, updated_at=? WHERE schedule_key=? AND lease_token=?",
+                (stamp, schedule_key, lease_token),
             )
         else:
             db.execute(
-                "UPDATE scheduler_runs SET status='failed', lease_until=NULL, last_error=?, updated_at=? WHERE schedule_key=?",
-                (error[:2000], stamp, schedule_key),
+                "UPDATE scheduler_runs SET status='failed', lease_until=NULL, lease_token=NULL, last_error=?, updated_at=? WHERE schedule_key=? AND lease_token=?",
+                (error[:2000], stamp, schedule_key, lease_token),
             )
         db.commit()
         record_event("scheduler.failed" if error else "scheduler.completed",
                      entity_type="scheduler_run", entity_id=schedule_key,
                      payload={"error_type": "scheduler_error"} if error else {"status": "completed"})
+        return True
     finally:
         db.close()
 
@@ -575,12 +592,13 @@ def auto_radar_and_scheduler_loop():
             trend_radar.scan_global_trends("weekly")
             now = datetime.now()
             today_str = now.strftime("%Y-%m-%d")
-            if AUTO_PRODUCE_ENABLED and now.hour >= 8 and claim_daily_schedule(today_str):
+            schedule_token = claim_daily_schedule(today_str) if AUTO_PRODUCE_ENABLED and now.hour >= 8 else None
+            if schedule_token:
                 try:
                     auto_produce_top_trends(count=3)
-                    finish_daily_schedule(today_str)
+                    finish_daily_schedule(today_str, schedule_token)
                 except Exception as exc:
-                    finish_daily_schedule(today_str, str(exc))
+                    finish_daily_schedule(today_str, schedule_token, str(exc))
                     raise
         except Exception:
             logger.exception("Radar scheduler failed")
