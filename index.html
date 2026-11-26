@@ -244,6 +244,7 @@ select,input,textarea{background:var(--surface);color:var(--text);border-color:v
           <div style="display:flex;justify-content:space-between;font-size:12px;"><span id="editor-channel" style="font-weight:800;color:#38BDF8;">선택된 작업 없음</span><span id="editor-stage" style="color:#94A3B8;">-</span></div>
           <input id="editor-title" type="text" style="width:100%;font-weight:700;" />
           <textarea id="editor-script" rows="9" style="width:100%;line-height:1.6;"></textarea>
+          <p id="editor-hint" style="font-size:11px;color:var(--muted);">수정 대본은 4~8문장으로 구성해야 하며, 저장 후 영상이 재제작되고 다시 검수 대기 상태가 됩니다.</p>
           <input id="reject-note" type="text" maxlength="2000" placeholder="반려 사유 (선택)" style="width:100%;" />
           <div style="display:flex;gap:8px;"><button onclick="saveJobEdit()" id="btn-save-edit" class="btn-dark" style="flex:1;">↻ 수정 후 재제작</button><button onclick="rejectJob()" id="btn-reject" class="btn-red" style="flex:1;">↩ 반려 및 수정 요청</button><button onclick="approveUpload()" id="btn-approve" class="btn-green" style="flex:1;">✅ 최종 승인 및 업로드</button></div>
         </div>
@@ -584,6 +585,10 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
       document.getElementById("editor-script").disabled = !editable;
       document.getElementById("btn-save-edit").disabled = !editable;
       document.getElementById("btn-save-edit").textContent = editable ? "↻ 수정 후 재제작" : "재제작 진행 중";
+      const hint = document.getElementById("editor-hint");
+      if (hint) hint.textContent = editable
+        ? "수정 대본은 4~8문장으로 구성해야 합니다. 저장하면 기존 작업 ID로 새 영상을 만들고 QA 후 다시 검수 대기합니다."
+        : "업로드 또는 재제작 진행 중에는 편집할 수 없습니다.";
       document.getElementById("preview-video").src = jb.video_path ? "/" + jb.video_path.replace(/^\//, "") : "";
       renderJobs();
     }
