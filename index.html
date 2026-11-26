@@ -507,6 +507,46 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
         document.getElementById("ops-updated").textContent = "운영 지표를 불러오지 못했습니다.";
       }
     }
+    async function loadAnalyticsSummary() {
+      const root = document.getElementById("nexus-analytics-kpis");
+      const platformNode = document.getElementById("nexus-analytics-platform");
+      const discoveryNode = document.getElementById("nexus-analytics-discovery");
+      if (!root || !platformNode || !discoveryNode) return;
+      try {
+        const response = await fetch("/api/analytics/summary", { credentials: "same-origin" });
+        if (!response.ok) throw new Error("Analytics summary request failed: " + response.status);
+        analyticsSummary = await response.json();
+        const production = analyticsSummary.production || {};
+        const publishing = analyticsSummary.publishing || {};
+        const cards = [
+          ["전체 제작 작업", production.jobs_total || 0],
+          ["최종 검수 대기", (production.by_stage || {})["최종컨펌 대기"] || 0],
+          ["수정 재제작 대기", publishing.regeneration_pending || 0],
+          ["비공개 업로드 완료", publishing.private_uploads || 0],
+          ["업로드 상태 확인", publishing.privacy_unverified || 0]
+        ];
+        root.replaceChildren();
+        cards.forEach(([label, value]) => {
+          const card = document.createElement("div"); card.className = "ops-metric";
+          const name = document.createElement("div"); name.className = "label"; name.textContent = label;
+          const number = document.createElement("div"); number.className = "value"; number.textContent = Number(value).toLocaleString();
+          card.append(name, number); root.append(card);
+        });
+        const metrics = analyticsSummary.platform_metrics || {};
+        platformNode.textContent = metrics.status === "not_connected"
+          ? "YouTube 읽기 전용 분석 권한이 연결되지 않았습니다. 조회수·구독자·참여율·수익은 추정하지 않고 비워 둡니다. " + (metrics.note || "")
+          : "플랫폼 분석 상태: " + String(metrics.status || "unknown");
+        const discovery = analyticsSummary.discovery || {};
+        const daily = discovery.daily_scan || {};
+        const weekly = discovery.weekly_scan || {};
+        discoveryNode.textContent = "Discovery 수집 상태 · 일간: " + (daily.status || "미수집") +
+          " (" + (daily.item_count ?? 0) + "건), 주간: " + (weekly.status || "미수집") +
+          " (" + (weekly.item_count ?? 0) + "건). 비교 가능한 글로벌 인기 점수는 아직 산출하지 않습니다.";
+      } catch (error) {
+        platformNode.textContent = "분석 요약을 불러오지 못했습니다: " + error.message;
+      }
+    }
+
     async function loadOverview() {
       const r = await fetch("/api/overview"); if (!r.ok) throw new Error("overview API request failed: " + r.status); const d = await r.json(); const chs = d.channels || []; allChannels = chs; allJobs = d.jobs || []; queuePending = Number.isFinite(Number(d.queue_pending)) ? Number(d.queue_pending) : 0;
       document.getElementById("kpi-trends").textContent = allJobs.length + queuePending;
