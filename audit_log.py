@@ -103,12 +103,30 @@ def get_ops_metrics(db_path="data/studio_data.db", now=None):
         source_summary = {}
         for source in sources:
             source_summary[source["last_status"]] = source_summary.get(source["last_status"], 0) + 1
+        radar_scans = {}
+        if "radar_scans" in tables:
+            for period in ("daily", "weekly"):
+                scan = conn.execute(
+                    """SELECT period_type, started_at, completed_at, status, item_count,
+                              successful_sources, failed_sources
+                       FROM radar_scans WHERE period_type=? ORDER BY id DESC LIMIT 1""",
+                    (period,),
+                ).fetchone()
+                radar_scans[period] = dict(scan) if scan else None
+        oldest_pending = None
+        if "topic_queue" in tables:
+            row = conn.execute(
+                "SELECT MIN(created_at) FROM topic_queue WHERE status='pending'"
+            ).fetchone()
+            oldest_pending = row[0] if row else None
         return {
             "queue_by_status": grouped("topic_queue", "status"),
             "scheduler_by_status": grouped("scheduler_runs", "status"),
             "pipeline_by_stage": grouped("pipeline_jobs", "stage"),
             "source_health_summary": source_summary,
             "sources": sources,
+            "radar_scans": radar_scans,
+            "oldest_pending_queue_created_at": oldest_pending,
             "events_last_24h": recent_events,
             "latest_event": dict(latest) if latest else None,
         }
