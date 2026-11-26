@@ -286,6 +286,24 @@ class DurableTopicQueueTests(unittest.TestCase):
         self.assertEqual(sum(results), 1)
         self.assertEqual(len(self._rows()), 1)
 
+    def test_batch_queue_rejects_unknown_channels_and_malformed_lines(self):
+        with self.assertRaises(Exception) as unknown:
+            self.api.save_queue(self.api.QueueReq(topics_text="Missing Channel | topic"))
+        self.assertEqual(getattr(unknown.exception, "status_code", None), 400)
+        with self.assertRaises(Exception) as malformed:
+            self.api.save_queue(self.api.QueueReq(topics_text="Future Leak | "))
+        self.assertEqual(getattr(malformed.exception, "status_code", None), 400)
+        self.assertEqual(len(self._rows()), 0)
+
+    def test_batch_queue_enforces_payload_and_item_limits(self):
+        with self.assertRaises(Exception) as oversized:
+            self.api.save_queue(self.api.QueueReq(topics_text="x" * 20001))
+        self.assertEqual(getattr(oversized.exception, "status_code", None), 413)
+        with self.assertRaises(Exception) as too_many:
+            self.api.save_queue(self.api.QueueReq(topics_text="\n".join(f"topic {i}" for i in range(101))))
+        self.assertEqual(getattr(too_many.exception, "status_code", None), 400)
+        self.assertEqual(len(self._rows()), 0)
+
     def test_manual_api_create_routes_through_durable_queue(self):
         request = self.api.CreateReq(channel_name="Future Leak", topic="API queued topic")
         result = self.api.create_single(request)
