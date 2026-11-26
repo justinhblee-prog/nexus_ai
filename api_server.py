@@ -1,4 +1,4 @@
-import os, time, sqlite3, threading
+import os, time, sqlite3, threading, logging
 from datetime import datetime
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,8 +7,17 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import video_maker, yt_uploader, trend_radar
 
-app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+logger = logging.getLogger("nexus.api")
+
+app = FastAPI(title="NEXUS STUDIO PRO API")
+# The compose file binds host ports to loopback; CORS is limited to local UI origins.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://127.0.0.1:8502", "http://localhost:8502", "http://127.0.0.1:8503", "http://localhost:8503"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+)
 os.makedirs("export", exist_ok=True)
 os.makedirs("output", exist_ok=True)
 app.mount("/output", StaticFiles(directory="output"), name="output")
@@ -17,9 +26,44 @@ RADAR_INTERVAL_SEC = 300
 AUTO_PRODUCE_ENABLED = True
 
 def get_db():
-    conn = sqlite3.connect("data/studio_data.db", check_same_thread=False)
+    os.makedirs("data", exist_ok=True)
+    conn = sqlite3.connect("data/studio_data.db", check_same_thread=False, timeout=30)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=30000")
     return conn
+
+def init_app_db():
+    """Create the core application tables without overwriting existing user data."""
+    db = get_db()
+    db.executescript("""
+        CREATE TABLE IF NOT EXISTS channels (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            platform TEXT NOT NULL DEFAULT 'YouTube',
+            yt_id TEXT NOT NULL DEFAULT '',
+            persona TEXT NOT NULL DEFAULT '전문가 톤',
+            subs INTEGER NOT NULL DEFAULT 0,
+            views INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS pipeline_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_name TEXT NOT NULL,
+            title TEXT NOT NULL,
+            script TEXT NOT NULL DEFAULT '',
+            video_path TEXT NOT NULL DEFAULT '',
+            stage TEXT NOT NULL DEFAULT '최종컨펌 대기',
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_pipeline_jobs_created
+            ON pipeline_jobs(id DESC);
+    """)
+    db.commit()
+    db.close()
 
 def get_oa_key():
     r = get_db().execute("SELECT value FROM settings WHERE key='oa'").fetchone()
@@ -71,7 +115,7 @@ def watch_topics_loop():
                             for c in chs:
                                 run_make_video(c["name"], c["persona"], line)
         except Exception:
-            pass
+            logger.exception("Topic queue worker failed")
         time.sleep(15)
 
 def auto_radar_and_scheduler_loop():
@@ -87,11 +131,12 @@ def auto_radar_and_scheduler_loop():
                 auto_produce_top_trends(count=3)
                 last_auto_date = today_str
         except Exception:
-            pass
+            logger.exception("Radar scheduler failed")
         time.sleep(RADAR_INTERVAL_SEC)
 
 @app.on_event("startup")
 def startup_event():
+    init_app_db()
     trend_radar.init_radar_db()
     threading.Thread(target=watch_topics_loop, daemon=True).start()
     threading.Thread(target=auto_radar_and_scheduler_loop, daemon=True).start()
@@ -204,7 +249,8 @@ def bulk_delete_jobs(req: BulkDelReq):
     placeholders = ",".join("?" for _ in req.job_ids)
     db.execute(f"DELETE FROM pipeline_jobs WHERE id IN ({placeholders})", req.job_ids)
     db.commit()
-    return {"ok": True, "msg": f"{Lgn(req.job_ids)} 건의 작업이 삭제되었습니다."}
+    deleted = db.execute("SELECT changes()").fetchone()[0]
+    return {"ok": True, "msg": f"{deleted}건의 작업이 삭제되었습니다."}
 
 @app.delete("/api/jobs/{job_id}")
 def delete_job(job_id: int):
