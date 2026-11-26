@@ -12,7 +12,7 @@ PR: [#1 — Draft](https://github.com/justinhblee-prog/nexus_ai/pull/1)
 - 동일 컨테이너에서 FastAPI(Uvicorn, 8503)와 Streamlit(8502)을 실행합니다.
 - 호스트 포트는 기본 `127.0.0.1:28502`(Streamlit), `127.0.0.1:28503`(FastAPI)에만 바인딩합니다. 기존 서비스의 8502/8503 포트와 겹치지 않게 분리했으며, LAN/공용 인터넷에 직접 노출하지 않습니다.
 - 현재 Compose는 저장소 루트를 컨테이너의 `/app`에 바인드 마운트합니다.
-- FastAPI 프로세스가 `topics.txt` 호환 입력을 SQLite 큐로 가져오고 작업을 소비합니다. Streamlit에는 별도의 파일 감시자가 없습니다. 두 프로세스가 동일 파일을 동시에 비우는 경쟁 상태를 방지하기 위한 구조입니다.
+- FastAPI 프로세스가 `topics.txt` 호환 입력을 SQLite 큐로 가져오고 작업을 소비합니다. FastAPI와 Streamlit의 단건·전체 제작 버튼, 일일 레이더도 모두 같은 SQLite 큐에 등록합니다. 대기/실행 중 동일 채널·주제의 중복 등록을 거부합니다. Streamlit에는 별도의 파일 감시자나 직접 렌더링 경로가 없습니다.
 - 기본 DB는 `data/studio_data.db`, 렌더 결과는 `output/`, YouTube OAuth 토큰과 클라이언트 비밀 파일은 `tokens/`에 둡니다.
 
 ## 2. 접속 주소
