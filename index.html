@@ -159,7 +159,7 @@
   <script>
     let currentPeriod = "daily", currentRankFilter = "TOP10", allRadarItems = [], allJobs = [], activeJobId = null, selectedModalItem = null;
 
-    let studioStarted = false;
+    let studioStarted = false, opsRefreshTimer = null;
     async function checkSession() {
       const overlay = document.getElementById("auth-overlay");
       const error = document.getElementById("auth-error");
@@ -206,6 +206,7 @@
     async function logoutStudio() {
       await fetch("/api/session/logout", { method: "POST", credentials: "same-origin" });
       studioStarted = false;
+      if (opsRefreshTimer !== null) { window.clearInterval(opsRefreshTimer); opsRefreshTimer = null; }
       document.getElementById("auth-overlay").hidden = false;
       document.getElementById("auth-password").focus();
     }
@@ -215,7 +216,7 @@
       loadRadar("daily");
       loadOverview();
       loadOpsMetrics();
-      window.setInterval(loadOpsMetrics, 15000);
+      if (opsRefreshTimer === null) opsRefreshTimer = window.setInterval(loadOpsMetrics, 15000);
     }
 
     function setScanningState(on) {
