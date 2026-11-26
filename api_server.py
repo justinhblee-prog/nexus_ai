@@ -895,7 +895,8 @@ def _upload_result_metadata(ok: bool, message: str):
     if message.startswith("UPLOAD_CREATED_PRIVACY_UNVERIFIED:"):
         parts = message.split(":", 2)
         video_id = parts[1] if len(parts) > 1 and parts[1] != "unknown" else None
-        privacy = parts[2] if len(parts) > 2 else "unknown"
+        reported_privacy = parts[2] if len(parts) > 2 else "unknown"
+        privacy = reported_privacy if reported_privacy in ("private", "public", "unlisted", "unknown") else "unknown"
         return video_id, privacy
     if message.startswith("UPLOAD_RESULT_UNCERTAIN:"):
         return None, "unknown"
@@ -938,6 +939,11 @@ def approve_job(job_id: int):
     ok, msg = yt_uploader.upload_to_youtube(jb["channel_name"], video_path, jb["title"], jb["script"])
     privacy_unverified = msg.startswith("UPLOAD_CREATED_PRIVACY_UNVERIFIED:") or msg.startswith("UPLOAD_RESULT_UNCERTAIN:")
     video_id, privacy_status = _upload_result_metadata(ok, msg)
+    if ok and (not video_id or privacy_status != "private"):
+        ok = False
+        privacy_unverified = True
+        privacy_status = privacy_status or "unknown"
+        msg = f"UPLOAD_CREATED_PRIVACY_UNVERIFIED:{video_id or 'unknown'}:{privacy_status}"
     event_type = "upload.completed" if ok else ("upload.privacy_unverified" if privacy_unverified else "upload.failed")
     record_event(event_type, entity_type="pipeline_job", entity_id=job_id,
                  payload={"channel": jb["channel_name"], "video_id": video_id,
