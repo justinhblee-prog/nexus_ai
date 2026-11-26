@@ -627,6 +627,7 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
       const response = await fetch("/api/approve/" + activeJobId, { method: "POST" });
       const result = await response.json();
       alert(result.msg || result.detail || "업로드 결과를 확인하지 못했습니다.");
+      activeJobId = null;
       await loadOverview();
     }
     async function createSingleVideo() {
