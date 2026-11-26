@@ -87,7 +87,7 @@ class ApiReviewGuardTests(unittest.TestCase):
         finally:
             db.close()
         with patch.object(self.api, "validate_video", return_value={"ok": False, "errors": ["h264_video"]}), \
-             patch.object(self.api.yt_uploader, "upload_to_youtube") as upload:
+             patch.object(self.api.yt_uploader, "upload_to_youtube", create=True) as upload:
             with self.assertRaises(HTTPException) as caught:
                 self.api.approve_job(1)
         self.assertEqual(caught.exception.status_code, 409)
