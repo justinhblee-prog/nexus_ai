@@ -321,20 +321,28 @@ with t3:
                         st.rerun()
                 else:
                     st.caption(f"🟢 `{ch_n}` 유튜브 API 토큰 연결됨")
-                    if st.button("✅ 최종 컨펌 승인 및 유튜브 비공개 업로드", type="primary", use_container_width=True):
+                    if jb["stage"] == "업로드 상태 확인 필요":
+                        st.warning("YouTube 업로드는 생성됐지만 Private 상태를 확인하지 못했습니다. 중복 업로드를 막기 위해 재시도를 차단했습니다.")
+                    if st.button("✅ 최종 컨펌 승인 및 유튜브 비공개 업로드", type="primary", use_container_width=True,
+                                 disabled=jb["stage"] != "최종컨펌 대기"):
                         if c1:
                             record_event("review.approved", entity_type="pipeline_job", entity_id=int(jb["id"]),
                                  payload={"channel": ch_n, "approval_source": "streamlit"})
                             with st.spinner("YouTube Studio로 영상 전송 중..."):
                                 ok, msg = yt_uploader.upload_to_youtube(ch_n, jb["video_path"], et, jb["script"])
-                            record_event("upload.completed" if ok else "upload.failed",
-                                         entity_type="pipeline_job", entity_id=int(jb["id"]),
-                                         payload={"channel": ch_n, "privacy_status": "private" if ok else None})
+                            privacy_unverified = msg.startswith("UPLOAD_CREATED_PRIVACY_UNVERIFIED:")
+                            event_type = "upload.completed" if ok else ("upload.privacy_unverified" if privacy_unverified else "upload.failed")
+                            record_event(event_type, entity_type="pipeline_job", entity_id=int(jb["id"]),
+                                         payload={"channel": ch_n, "privacy_status": "private" if ok else "unverified"})
                             if ok:
-                                conn.execute("UPDATE pipeline_jobs SET title=?, stage='업로드 완료(비공개)' WHERE id=?", (et, int(jb["id"])))
+                                conn.execute("UPDATE pipeline_jobs SET title=?, stage='업로드 완료(비공개)' WHERE id=?", (et, int(jb["id"]))
                                 conn.commit()
                                 st.success(msg)
                                 st.balloons()
+                            elif privacy_unverified:
+                                conn.execute("UPDATE pipeline_jobs SET stage='업로드 상태 확인 필요' WHERE id=?", (int(jb["id"]),))
+                                conn.commit()
+                                st.error("업로드된 영상의 Private 상태를 확인하지 못했습니다. 중복 업로드를 방지하기 위해 재시도를 차단했습니다.")
                             else:
                                 st.error(f"업로드 실패: {msg}")
         with w_right:
