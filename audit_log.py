@@ -115,10 +115,12 @@ def get_ops_metrics(db_path="data/studio_data.db", now=None):
                 radar_scans[period] = dict(scan) if scan else None
         oldest_pending = None
         if "topic_queue" in tables:
-            row = conn.execute(
-                "SELECT MIN(created_at) FROM topic_queue WHERE status='pending'"
-            ).fetchone()
-            oldest_pending = row[0] if row else None
+            queue_columns = {row[1] for row in conn.execute("PRAGMA table_info(topic_queue)")}
+            if "created_at" in queue_columns:
+                row = conn.execute(
+                    "SELECT MIN(created_at) FROM topic_queue WHERE status='pending'"
+                ).fetchone()
+                oldest_pending = row[0] if row else None
         return {
             "queue_by_status": grouped("topic_queue", "status"),
             "scheduler_by_status": grouped("scheduler_runs", "status"),
