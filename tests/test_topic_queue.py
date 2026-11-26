@@ -158,6 +158,15 @@ class DurableTopicQueueTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["status"], "pending")
 
+    def test_concurrent_duplicate_enqueue_has_single_winner(self):
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(
+                lambda _: self.api.enqueue_topic("Future Leak | concurrent topic", source="manual"),
+                range(8),
+            ))
+        self.assertEqual(sum(results), 1)
+        self.assertEqual(len(self._rows()), 1)
+
     def test_manual_api_create_routes_through_durable_queue(self):
         request = self.api.CreateReq(channel_name="Future Leak", topic="API queued topic")
         result = self.api.create_single(request)
