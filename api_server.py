@@ -9,6 +9,7 @@ import video_maker, yt_uploader, trend_radar
 from audit_log import safe_record_event as record_event, list_events, get_ops_metrics
 from video_qa import validate_video
 from script_templates import split_manual_script
+from review_workflow import claim_upload, upload_result_stage
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("nexus.api")
