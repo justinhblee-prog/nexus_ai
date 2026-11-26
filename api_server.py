@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 import video_maker, yt_uploader, trend_radar
-from audit_log import record_event, list_events, get_ops_metrics
+from audit_log import safe_record_event as record_event, list_events, get_ops_metrics
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("nexus.api")
