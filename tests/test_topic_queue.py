@@ -151,12 +151,47 @@ class DurableTopicQueueTests(unittest.TestCase):
         self.assertEqual(sum(bool(result) for result in results), 1)
 
     def test_daily_scheduler_claim_is_idempotent_and_recovers_failed_run(self):
-        self.assertTrue(self.api.claim_daily_schedule("2026-11-26", lease_seconds=1))
+        first_token = self.api.claim_daily_schedule("2026-11-26", lease_seconds=60)
+        self.assertTrue(first_token)
         self.assertFalse(self.api.claim_daily_schedule("2026-11-26"))
-        self.api.finish_daily_schedule("2026-11-26", "temporary failure")
-        self.assertTrue(self.api.claim_daily_schedule("2026-11-26"))
-        self.api.finish_daily_schedule("2026-11-26")
+        self.assertTrue(self.api.finish_daily_schedule("2026-11-26", first_token, "temporary failure"))
+        second_token = self.api.claim_daily_schedule("2026-11-26")
+        self.assertTrue(second_token)
+        self.assertTrue(self.api.finish_daily_schedule("2026-11-26", second_token))
         self.assertFalse(self.api.claim_daily_schedule("2026-11-26"))
+
+    def test_stale_scheduler_owner_cannot_finish_reclaimed_run(self):
+        first_token = self.api.claim_daily_schedule("fenced-day", lease_seconds=60)
+        db = self.api.get_db()
+        try:
+            db.execute("UPDATE scheduler_runs SET lease_until=0 WHERE schedule_key='fenced-day'")
+            db.commit()
+        finally:
+            db.close()
+        second_token = self.api.claim_daily_schedule("fenced-day", lease_seconds=60)
+        self.assertNotEqual(first_token, second_token)
+        self.assertFalse(self.api.finish_daily_schedule("fenced-day", first_token))
+        self.assertTrue(self.api.finish_daily_schedule("fenced-day", second_token))
+
+    def test_existing_scheduler_schema_is_migrated_with_lease_token(self):
+        db = self.api.get_db()
+        try:
+            db.execute("DROP TABLE scheduler_runs")
+            db.execute("""CREATE TABLE scheduler_runs (
+                schedule_key TEXT PRIMARY KEY, status TEXT NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0, lease_until INTEGER,
+                last_error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            )""")
+            db.commit()
+        finally:
+            db.close()
+        self.api.init_app_db()
+        db = self.api.get_db()
+        try:
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(scheduler_runs)")}
+        finally:
+            db.close()
+        self.assertIn("lease_token", columns)
 
     def test_daily_radar_picks_enter_durable_queue_before_rendering(self):
         db = self.api.get_db()
