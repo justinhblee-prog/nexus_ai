@@ -452,6 +452,17 @@ class DurableTopicQueueTests(unittest.TestCase):
         self.assertEqual(getattr(too_many.exception, "status_code", None), 400)
         self.assertEqual(len(self._rows()), 0)
 
+    def test_radar_scan_endpoint_reports_actual_partial_results(self):
+        scan_meta = {"status": "partial", "successful_sources": 4, "failed_sources": 2}
+        with patch.object(self.api.trend_radar, "scan_global_trends",
+                          return_value=[{"topic": "source item"}], create=True), \
+             patch.object(self.api.trend_radar, "get_scan_status",
+                          return_value=scan_meta, create=True):
+            result = self.api.run_radar_scan("daily")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["fetched_count"], 1)
+        self.assertEqual(result["scan"]["status"], "partial")
+
     def test_analytics_summary_never_invents_platform_performance(self):
         db = self.api.get_db()
         try:
