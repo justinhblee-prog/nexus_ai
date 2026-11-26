@@ -623,7 +623,7 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
       });
       const result = await r.json();
       alert(result.msg || result.detail || "반려 요청을 처리하지 못했습니다.");
-      if (r.ok) { activeJobId = null; loadOverview(); }
+      if (r.ok) { await loadOverview(); }
     }
     async function approveUpload() {
       if (!activeJobId) return;
