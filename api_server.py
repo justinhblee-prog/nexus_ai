@@ -879,8 +879,14 @@ def get_radar(period: str = "daily"):
         conn.close()
     scan = trend_radar.get_scan_status(period)
     source_health = trend_radar.get_source_health()
+    source_summary = (scan or {}).get("source_summary") or {}
+    for row in rows:
+        source_state = source_summary.get(row.get("source_name"), {})
+        row["source_status"] = source_state.get("status", "unknown")
+        row["source_error"] = source_state.get("error")
+        row["source_is_stale"] = row["source_status"] != "success"
     data_status = "not_scanned" if not scan else (
-        "fresh" if scan["status"] in ("success", "partial") else "stale"
+        "fresh" if scan["status"] == "success" else ("partial" if scan["status"] == "partial" else "stale")
     )
     return {
         "period": period,
