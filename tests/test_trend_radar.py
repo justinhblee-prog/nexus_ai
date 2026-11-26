@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -23,6 +24,7 @@ class TrendRadarSmokeTests(unittest.TestCase):
                     self.assertIn("trend_recommendations", tables)
                     self.assertIn("auto_produced_topics", tables)
                     self.assertIn("source_health", tables)
+                    self.assertIn("radar_scans", tables)
                 finally:
                     connection.close()
             finally:
@@ -91,6 +93,7 @@ class TrendRadarSmokeTests(unittest.TestCase):
                             "SELECT source_name, last_status, item_count, consecutive_failures FROM source_health"
                         )
                     }
+                    scan = trend_radar.get_scan_status("daily")
                 finally:
                     connection.close()
             finally:
@@ -100,7 +103,6 @@ class TrendRadarSmokeTests(unittest.TestCase):
         self.assertEqual(health["Google News JP"], ("failed", 0, 1))
         self.assertEqual(health["Google News KR"], ("success", 1, 0))
         self.assertEqual(health["Hacker News"], ("success", 1, 0))
-        scan = trend_radar.get_scan_status("daily")
         self.assertEqual(scan["status"], "partial")
         self.assertEqual(scan["successful_sources"], 5)
         self.assertEqual(scan["failed_sources"], 1)
@@ -117,6 +119,7 @@ class TrendRadarSmokeTests(unittest.TestCase):
                 )):
                     trend_radar.scan_global_trends("daily")
                 conn = trend_radar.init_radar_db()
+                conn.row_factory = sqlite3.Row
                 try:
                     rows = [dict(row) for row in conn.execute(
                         """SELECT source_name, source_score, source_score_label, viral_score,
