@@ -5,6 +5,7 @@ import sqlite3, os, time, threading
 from streamlit_auth import is_auth_configured, verify_streamlit_password
 from audit_log import safe_record_event as record_event
 from video_qa import validate_video
+from review_workflow import claim_upload, upload_result_stage
 from datetime import datetime, timedelta
 import video_maker, yt_uploader
 
@@ -340,30 +341,36 @@ with t3:
                     if st.button("✅ 최종 컨펌 승인 및 유튜브 비공개 업로드", type="primary", use_container_width=True,
                                  disabled=jb["stage"] != "최종컨펌 대기"):
                         if c1:
+                            if not claim_upload(conn, int(jb["id"])):
+                                st.error("다른 요청에서 이미 검수 또는 업로드를 처리하고 있습니다.")
+                                st.rerun()
+                            conn.commit()
                             record_event("review.approved", entity_type="pipeline_job", entity_id=int(jb["id"]),
-                                 payload={"channel": ch_n, "approval_source": "streamlit"})
+                                         payload={"channel": ch_n, "approval_source": "streamlit"})
                             with st.spinner("YouTube Studio로 영상 전송 중..."):
                                 ok, msg = yt_uploader.upload_to_youtube(ch_n, jb["video_path"], et, jb["script"])
-                            privacy_unverified = msg.startswith("UPLOAD_CREATED_PRIVACY_UNVERIFIED:")
+                            privacy_unverified = msg.startswith("UPLOAD_CREATED_PRIVACY_UNVERIFIED:") or msg.startswith("UPLOAD_RESULT_UNCERTAIN:")
                             event_type = "upload.completed" if ok else ("upload.privacy_unverified" if privacy_unverified else "upload.failed")
                             record_event(event_type, entity_type="pipeline_job", entity_id=int(jb["id"]),
                                          payload={"channel": ch_n, "privacy_status": "private" if ok else "unverified"})
+                            conn.execute("UPDATE pipeline_jobs SET title=?, stage=? WHERE id=?",
+                                         (et, upload_result_stage(ok, privacy_unverified), int(jb["id"])))
+                            conn.commit()
                             if ok:
-                                conn.execute("UPDATE pipeline_jobs SET title=?, stage='업로드 완료(비공개)' WHERE id=?", (et, int(jb["id"])))
-                                conn.commit()
                                 st.success(msg)
                                 st.balloons()
                             elif privacy_unverified:
-                                conn.execute("UPDATE pipeline_jobs SET stage='업로드 상태 확인 필요' WHERE id=?", (int(jb["id"]),))
-                                conn.commit()
-                                st.error("업로드된 영상의 Private 상태를 확인하지 못했습니다. 중복 업로드를 방지하기 위해 재시도를 차단했습니다.")
+                                st.error("업로드 결과 또는 Private 상태를 확인하지 못했습니다. 중복 업로드를 방지하기 위해 재시도를 차단했습니다.")
                             else:
                                 st.error(f"업로드 실패: {msg}")
         reject_note = st.text_input("반려 사유 (선택)", max_chars=2000, key=f"reject-note-{int(jb['id'])}")
         if st.button("↩ 반려 및 수정 요청", use_container_width=True,
                      disabled=jb["stage"] != "최종컨펌 대기"):
-            conn.execute("UPDATE pipeline_jobs SET stage='반려(수정 필요)' WHERE id=?", (int(jb["id"]),))
+            cur = conn.execute("UPDATE pipeline_jobs SET stage='반려(수정 필요)' WHERE id=? AND stage='최종컨펌 대기'", (int(jb["id"]),))
             conn.commit()
+            if cur.rowcount != 1:
+                st.error("다른 요청에서 이미 검수 또는 업로드를 처리하고 있습니다.")
+                st.rerun()
             record_event("review.rejected", entity_type="pipeline_job", entity_id=int(jb["id"]),
                          payload={"channel": ch_n, "note": reject_note.strip(), "source": "streamlit"})
             st.success("반려 및 수정 요청이 기록되었습니다.")
