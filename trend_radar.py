@@ -22,6 +22,12 @@ def init_radar_db():
     conn.execute("""CREATE TABLE IF NOT EXISTS auto_produced_topics (
         topic TEXT PRIMARY KEY, created_at TEXT
     )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS source_health (
+        source_name TEXT PRIMARY KEY, region TEXT NOT NULL, source_url TEXT NOT NULL,
+        last_attempt_at TEXT, last_success_at TEXT, last_status TEXT NOT NULL DEFAULT 'unknown',
+        item_count INTEGER NOT NULL DEFAULT 0, consecutive_failures INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT
+    )""")
     conn.commit()
     return conn
 
@@ -46,6 +52,7 @@ def _local_name(tag):
 
 def _parse_rss_safe(geo, label, url):
     items = []
+    error = None
     try:
         response = requests.get(url, headers=HTTP_HEADERS, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
@@ -66,8 +73,28 @@ def _parse_rss_safe(geo, label, url):
             if len(items) >= 12:
                 break
     except (requests.RequestException, ET.ParseError, ValueError) as exc:
-        print(f"RSS source unavailable [{label}]: {exc}")
-    return items
+        error = f"{type(exc).__name__}: {str(exc)[:300]}"
+        print(f"RSS source unavailable [{label}]: {error}")
+    return items, error
+
+
+def record_source_health(conn, region, source_name, source_url, success, item_count, error=None, now=None):
+    stamp = now or datetime.now().isoformat(timespec="seconds")
+    previous = conn.execute(
+        "SELECT last_success_at, consecutive_failures FROM source_health WHERE source_name=?",
+        (source_name,),
+    ).fetchone()
+    last_success = stamp if success else (previous[0] if previous else None)
+    failures = 0 if success else ((previous[1] if previous else 0) + 1)
+    conn.execute(
+        """INSERT OR REPLACE INTO source_health
+           (source_name, region, source_url, last_attempt_at, last_success_at, last_status,
+            item_count, consecutive_failures, last_error)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (source_name, region, source_url, stamp, last_success,
+         "success" if success else "failed", int(item_count), failures,
+         None if success else (str(error or "no_items")[:500])),
+    )
 
 
 def _fetch_hn():
@@ -77,8 +104,9 @@ def _fetch_hn():
         response.raise_for_status()
         story_ids = response.json()[:12]
     except (requests.RequestException, ValueError) as exc:
-        print(f"Hacker News top stories unavailable: {exc}")
-        return []
+        error = f"{type(exc).__name__}: {str(exc)[:300]}"
+        print(f"Hacker News top stories unavailable: {error}")
+        return [], error
 
     def fetch_one(story_id):
         try:
@@ -93,7 +121,8 @@ def _fetch_hn():
         return None
 
     with ThreadPoolExecutor(max_workers=8) as executor:
-        return [item for item in executor.map(fetch_one, story_ids) if item]
+        items = [item for item in executor.map(fetch_one, story_ids) if item]
+    return items, None
 
 
 def scan_global_trends(period_type="daily"):
@@ -107,12 +136,17 @@ def scan_global_trends(period_type="daily"):
         ("GB", "Google News UK", "https://news.google.com/rss?hl=en-GB&gl=GB&ceid=GB:en"),
         ("GB", "BBC News", "https://feeds.bbci.co.uk/news/rss.xml"),
     ]
-    by_geo = {"KR": [], "US": _fetch_hn(), "JP": [], "GB": []}
+    by_geo = {"KR": [], "US": [], "JP": [], "GB": []}
+    hn_items, hn_error = _fetch_hn()
+    by_geo["US"] = hn_items
+    source_results = [("US", "Hacker News", "https://hacker-news.firebaseio.com/v0/topstories.json",
+                       hn_items, hn_error)]
     with ThreadPoolExecutor(max_workers=len(feeds)) as executor:
         futures = [executor.submit(_parse_rss_safe, geo, label, url) for geo, label, url in feeds]
-        for future in futures:
-            for item in future.result():
-                geo = item[0]
+        for future, (geo, label, url) in zip(futures, feeds):
+            items, error = future.result()
+            source_results.append((geo, label, url, items, error))
+            for item in items:
                 if not any(existing[1] == item[1] for existing in by_geo[geo]):
                     by_geo[geo].append(item)
 
@@ -138,9 +172,12 @@ def scan_global_trends(period_type="daily"):
 
     conn = init_radar_db()
     try:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        for region, source_name, source_url, items, error in source_results:
+            record_source_health(conn, region, source_name, source_url,
+                                 success=error is None, item_count=len(items), error=error, now=now)
         if all_items:
             conn.execute("DELETE FROM trend_recommendations WHERE period_type=?", (period_type,))
-            now = datetime.now().strftime("%Y-%m-%d %H:%M")
             for item in all_items:
                 reason = f"[{item['region']} #{item['rank_no']}] {item['source_name']} source ranking"
                 conn.execute(
@@ -154,7 +191,7 @@ def scan_global_trends(period_type="daily"):
                      item["est_views"], item["avg_cat_views"], item["growth_pct"], item["viral_score"],
                      reason, now),
                 )
-            conn.commit()
+        conn.commit()
         return all_items
     finally:
         conn.close()
