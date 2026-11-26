@@ -254,6 +254,15 @@ def enqueue_topic(topic_line: str, source: str = "api", idempotency_key: str | N
         stamp = datetime.now().isoformat(timespec="seconds")
         added = 0
         for name in channels:
+            # Repeated UI clicks must not create concurrent copies of the same channel/topic.
+            active = db.execute(
+                """SELECT 1 FROM topic_queue
+                   WHERE channel_name=? AND topic=? AND status IN ('pending', 'running')
+                   LIMIT 1""",
+                (name, topic),
+            ).fetchone()
+            if active:
+                continue
             key = f"{idempotency_key or uuid.uuid4().hex}:{name}"
             cur = db.execute(
                 """INSERT OR IGNORE INTO topic_queue
@@ -647,7 +656,7 @@ def set_radar_interval(minutes: int):
     return {"ok": True, "msg": f"자동 수집 주기가 {minutes}분위로 변경되었습니다."}
 
 @app.post("/api/create")
-def create_single(req: CreateReq, bg: BackgroundTasks):
+def create_single(req: CreateReq):
     if not req.channel_name.strip() or not req.topic.strip():
         raise HTTPException(status_code=400, detail="channel_name and topic are required")
     db = get_db()
@@ -657,19 +666,23 @@ def create_single(req: CreateReq, bg: BackgroundTasks):
         db.close()
     if not ch:
         raise HTTPException(status_code=404, detail="Unknown channel")
-    bg.add_task(run_make_video, req.channel_name, ch["persona"], req.topic)
-    return {"ok": True, "msg": f"[{req.channel_name}] 아나운서 음성 영상제작이 시작되었습니다!"}
+    queued = enqueue_topic(f"{req.channel_name} | {req.topic}", source="api_create")
+    return {"ok": True, "queued": queued, "msg": f"[{req.channel_name}] 제작 요청을 내구성 큐에 등록했습니다."}
 
 @app.post("/api/create-all")
-def create_all(bg: BackgroundTasks):
+def create_all():
     db = get_db()
     try:
         channels = db.execute("SELECT * FROM channels").fetchall()
     finally:
         db.close()
+    queued = 0
     for ch in channels:
-        bg.add_task(run_make_video, ch["name"], ch["persona"], "오늘의 글로벌 핵심 트렌드")
-    return {"ok": True, "msg": "전 채널 일괄제작이 시작되었습니다!"}
+        queued += enqueue_topic(
+            f"{ch['name']} | 오늘의 글로벌 핵심 트렌드",
+            source="api_create_all",
+        )
+    return {"ok": True, "queued": queued, "msg": f"전 채널 제작 요청 {queued}건을 내구성 큐에 등록했습니다."}
 
 @app.post("/api/queue")
 def save_queue(req: QueueReq):
