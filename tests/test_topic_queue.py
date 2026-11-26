@@ -372,6 +372,10 @@ class DurableTopicQueueTests(unittest.TestCase):
             db.close()
 
         with patch.object(self.api.trend_radar, "init_radar_db", self.api.get_db, create=True), \
+             patch.object(self.api.trend_radar, "get_scan_status", return_value={
+                 "status": "partial",
+                 "source_summary": {"Google News KR": {"status": "success"}},
+             }, create=True), \
              patch.object(self.api, "run_make_video", side_effect=AssertionError("must use durable queue")):
             self.assertEqual(self.api.auto_produce_top_trends(count=3), 1)
             self.assertEqual(self.api.auto_produce_top_trends(count=3), 0)
