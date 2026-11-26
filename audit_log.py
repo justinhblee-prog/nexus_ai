@@ -102,3 +102,13 @@ def get_ops_metrics(db_path="data/studio_data.db", now=None):
         }
     finally:
         conn.close()
+
+
+def safe_record_event(*args, **kwargs):
+    """Audit failures must not change queue, render, scheduler, or upload outcomes."""
+    import logging
+    try:
+        return record_event(*args, **kwargs)
+    except Exception:
+        logging.getLogger("nexus.audit").exception("Could not persist operational audit event")
+        return None
