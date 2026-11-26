@@ -8,6 +8,7 @@ from pydantic import BaseModel
 import video_maker, yt_uploader, trend_radar
 from audit_log import safe_record_event as record_event, list_events, get_ops_metrics
 from video_qa import validate_video
+from script_templates import split_manual_script
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("nexus.api")
@@ -130,6 +131,9 @@ def init_app_db():
             available_at INTEGER NOT NULL,
             lease_until INTEGER,
             lease_token TEXT,
+            title_override TEXT,
+            script_override TEXT,
+            target_job_id INTEGER,
             last_error TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
@@ -154,6 +158,12 @@ def init_app_db():
     queue_columns = {row["name"] for row in db.execute("PRAGMA table_info(topic_queue)")}
     if "lease_token" not in queue_columns:
         db.execute("ALTER TABLE topic_queue ADD COLUMN lease_token TEXT")
+    if "title_override" not in queue_columns:
+        db.execute("ALTER TABLE topic_queue ADD COLUMN title_override TEXT")
+    if "script_override" not in queue_columns:
+        db.execute("ALTER TABLE topic_queue ADD COLUMN script_override TEXT")
+    if "target_job_id" not in queue_columns:
+        db.execute("ALTER TABLE topic_queue ADD COLUMN target_job_id INTEGER")
     scheduler_columns = {row["name"] for row in db.execute("PRAGMA table_info(scheduler_runs)")}
     if "lease_token" not in scheduler_columns:
         db.execute("ALTER TABLE scheduler_runs ADD COLUMN lease_token TEXT")
@@ -170,13 +180,20 @@ def get_oa_key():
         db.close()
 
 def run_make_video(ch_name: str, persona: str, topic: str, queue_id: int | None = None,
-                   lease_token: str | None = None):
+                   lease_token: str | None = None, script_override: str | None = None,
+                   title_override: str | None = None, target_job_id: int | None = None):
     if not topic or not topic.strip():
         raise ValueError("topic must not be empty")
     started = time.monotonic()
     record_event("render.started", entity_type="render", payload={"channel": ch_name, "topic_length": len(topic)})
     try:
-        mp4, title, script = video_maker.render_pro_short(ch_name, persona, topic, get_oa_key())
+        if script_override is None:
+            mp4, title, script = video_maker.render_pro_short(ch_name, persona, topic, get_oa_key())
+        else:
+            mp4, title, script = video_maker.render_pro_short(
+                ch_name, persona, topic, get_oa_key(),
+                script_override=script_override, title_override=title_override,
+            )
         qa = validate_video(mp4)
         record_event("qa.passed" if qa["ok"] else "qa.failed", entity_type="render",
                      payload={"channel": ch_name, "checks": qa["checks"], "errors": qa["errors"]})
@@ -189,16 +206,33 @@ def run_make_video(ch_name: str, persona: str, topic: str, queue_id: int | None 
                     raise RuntimeError("Queue lease token is required to commit a queued render")
                 db.execute("BEGIN IMMEDIATE")
                 lease = db.execute(
-                    """SELECT topic, source FROM topic_queue
+                    """SELECT topic, source, target_job_id FROM topic_queue
                        WHERE id=? AND status='running' AND lease_token=? AND lease_until>?""",
                     (queue_id, lease_token, int(time.time())),
                 ).fetchone()
                 if not lease:
                     db.rollback()
                     raise RuntimeError("Queue lease was lost before the render result could be committed")
-            cur = db.execute("INSERT INTO pipeline_jobs (channel_name, title, script, video_path, stage, created_at) VALUES (?,?,?,?,?,?)",
-                             (ch_name, title, script, mp4, "최종컨펌 대기", datetime.now().strftime("%Y-%m-%d %H:%M")))
-            job_id = cur.lastrowid
+            if target_job_id is not None:
+                if lease["target_job_id"] != target_job_id:
+                    db.rollback()
+                    raise RuntimeError("Regeneration target does not match the claimed queue item")
+                updated = db.execute(
+                    """UPDATE pipeline_jobs SET title=?, script=?, video_path=?, stage='최종컨펌 대기'
+                       WHERE id=? AND channel_name=? AND stage='재제작 대기'""",
+                    (title, script, mp4, target_job_id, ch_name),
+                )
+                if updated.rowcount != 1:
+                    db.rollback()
+                    raise RuntimeError("Regeneration target is no longer awaiting a replacement render")
+                job_id = target_job_id
+            else:
+                if lease["target_job_id"] is not None:
+                    db.rollback()
+                    raise RuntimeError("Queued regeneration target was not supplied to the renderer")
+                cur = db.execute("INSERT INTO pipeline_jobs (channel_name, title, script, video_path, stage, created_at) VALUES (?,?,?,?,?,?)",
+                                 (ch_name, title, script, mp4, "최종컨펌 대기", datetime.now().strftime("%Y-%m-%d %H:%M")))
+                job_id = cur.lastrowid
             if queue_id is not None:
                 finished = db.execute(
                     """UPDATE topic_queue SET status='completed', lease_until=NULL, lease_token=NULL,
@@ -406,7 +440,7 @@ def finish_topic(queue_id: int, lease_token: str, error: str | None = None, max_
     try:
         db.execute("BEGIN IMMEDIATE")
         row = db.execute(
-            "SELECT attempts, topic, source FROM topic_queue WHERE id=? AND status='running' AND lease_token=? AND lease_until>?",
+            "SELECT attempts, topic, source, target_job_id FROM topic_queue WHERE id=? AND status='running' AND lease_token=? AND lease_until>?",
             (queue_id, lease_token, int(time.time())),
         ).fetchone()
         if not row:
@@ -424,6 +458,11 @@ def finish_topic(queue_id: int, lease_token: str, error: str | None = None, max_
                 "UPDATE topic_queue SET status='failed', lease_until=NULL, lease_token=NULL, last_error=?, updated_at=? WHERE id=? AND lease_token=?",
                 (error[:2000], stamp, queue_id, lease_token),
             )
+            if row["target_job_id"] is not None:
+                db.execute(
+                    "UPDATE pipeline_jobs SET stage='재제작 실패' WHERE id=? AND stage='재제작 대기'",
+                    (row["target_job_id"],),
+                )
         else:
             delay = min(3600, 30 * (2 ** max(0, row["attempts"] - 1)))
             db.execute(
@@ -522,7 +561,10 @@ def watch_topics_loop():
                     heartbeat.start()
                     try:
                         run_make_video(channel["name"], channel["persona"], item["topic"],
-                           queue_id=item["id"], lease_token=item["lease_token"])
+                           queue_id=item["id"], lease_token=item["lease_token"],
+                           script_override=item.get("script_override"),
+                           title_override=item.get("title_override"),
+                           target_job_id=item.get("target_job_id"))
                     finally:
                         heartbeat_stop.set()
                         heartbeat.join(timeout=2)
