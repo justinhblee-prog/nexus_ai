@@ -91,6 +91,15 @@ def init_app_db():
         );
         CREATE INDEX IF NOT EXISTS idx_topic_queue_claim
             ON topic_queue(status, available_at, lease_until, id);
+        CREATE TABLE IF NOT EXISTS scheduler_runs (
+            schedule_key TEXT PRIMARY KEY,
+            status TEXT NOT NULL,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            lease_until INTEGER,
+            last_error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
     """)
     db.executescript("INSERT OR IGNORE INTO channels (name, platform, yt_id, persona) VALUES\n        ('Brain Glitch', 'YouTube', '', '심리 전문가 톤'),\n        ('Silent Signals', 'YouTube', '', '인간관계 전문가 톤'),\n        ('Unseen Truth', 'YouTube', '', '팩트체크 전문가 톤'),\n        ('Dark Files Global', 'YouTube', '', '미스터리 다큐 톤'),\n        ('99% Missed', 'YouTube', '', '생활 정보 전문가 톤'),\n        ('Money Glitch', 'YouTube', '', '경제 분석가 톤'),\n        ('Secret Vault 24', 'YouTube', '', '자산·습관 전문가 톤'),\n        ('Future Leak', 'YouTube', '', 'AI·기술 분석가 톤'),\n        ('30Sec Shift', 'YouTube', '', '건강 정보 전문가 톤'),\n        ('Why Nobody Tells', 'YouTube', '', '지식 큐레이터 톤');")
     db.commit()
@@ -316,8 +325,68 @@ def watch_topics_loop():
                     logger.exception("Could not update failed queue item")
         time.sleep(5)
 
+
+def claim_daily_schedule(schedule_key: str, lease_seconds: int = 21600, max_attempts: int = 3):
+    """Persistently claim one daily production run across process restarts/replicas."""
+    now = int(time.time())
+    stamp = datetime.now().isoformat(timespec="seconds")
+    db = get_db()
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute("SELECT * FROM scheduler_runs WHERE schedule_key=?", (schedule_key,)).fetchone()
+        if row and row["status"] == "completed":
+            db.commit()
+            return False
+        if row and row["status"] == "running" and row["lease_until"] and row["lease_until"] > now:
+            db.commit()
+            return False
+        if row and row["attempts"] >= max_attempts:
+            db.execute(
+                "UPDATE scheduler_runs SET status='failed', lease_until=NULL, updated_at=? WHERE schedule_key=?",
+                (stamp, schedule_key),
+            )
+            db.commit()
+            return False
+        if row:
+            db.execute(
+                """UPDATE scheduler_runs SET status='running', attempts=attempts+1,
+                   lease_until=?, last_error=NULL, updated_at=? WHERE schedule_key=?""",
+                (now + lease_seconds, stamp, schedule_key),
+            )
+        else:
+            db.execute(
+                """INSERT INTO scheduler_runs
+                   (schedule_key, status, attempts, lease_until, created_at, updated_at)
+                   VALUES (?, 'running', 1, ?, ?, ?)""",
+                (schedule_key, now + lease_seconds, stamp, stamp),
+            )
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+def finish_daily_schedule(schedule_key: str, error: str | None = None):
+    db = get_db()
+    try:
+        stamp = datetime.now().isoformat(timespec="seconds")
+        if error is None:
+            db.execute(
+                "UPDATE scheduler_runs SET status='completed', lease_until=NULL, last_error=NULL, updated_at=? WHERE schedule_key=?",
+                (stamp, schedule_key),
+            )
+        else:
+            db.execute(
+                "UPDATE scheduler_runs SET status='failed', lease_until=NULL, last_error=?, updated_at=? WHERE schedule_key=?",
+                (error[:2000], stamp, schedule_key),
+            )
+        db.commit()
+    finally:
+        db.close()
+
 def auto_radar_and_scheduler_loop():
-    last_auto_date = ""
     time.sleep(5)
     while True:
         try:
@@ -325,9 +394,13 @@ def auto_radar_and_scheduler_loop():
             trend_radar.scan_global_trends("weekly")
             now = datetime.now()
             today_str = now.strftime("%Y-%m-%d")
-            if AUTO_PRODUCE_ENABLED and now.hour == 8 and last_auto_date != today_str:
-                auto_produce_top_trends(count=3)
-                last_auto_date = today_str
+            if AUTO_PRODUCE_ENABLED and now.hour == 8 and claim_daily_schedule(today_str):
+                try:
+                    auto_produce_top_trends(count=3)
+                    finish_daily_schedule(today_str)
+                except Exception as exc:
+                    finish_daily_schedule(today_str, str(exc))
+                    raise
         except Exception:
             logger.exception("Radar scheduler failed")
         time.sleep(RADAR_INTERVAL_SEC)
