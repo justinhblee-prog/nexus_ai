@@ -116,6 +116,39 @@ class DurableTopicQueueTests(unittest.TestCase):
         self.api.finish_daily_schedule("2026-11-26")
         self.assertFalse(self.api.claim_daily_schedule("2026-11-26"))
 
+    def test_daily_radar_picks_enter_durable_queue_before_rendering(self):
+        db = self.api.get_db()
+        try:
+            db.execute("""CREATE TABLE trend_recommendations (
+                period_type TEXT, is_global_top10 INTEGER, topic TEXT, matched_channel TEXT
+            )""")
+            db.execute(
+                "INSERT INTO trend_recommendations VALUES ('daily', 1, 'durable radar topic', 'Future Leak')"
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        with patch.object(self.api.trend_radar, "init_radar_db", self.api.get_db, create=True), \
+             patch.object(self.api, "run_make_video", side_effect=AssertionError("must use durable queue")):
+            self.assertEqual(self.api.auto_produce_top_trends(count=3), 1)
+            self.assertEqual(self.api.auto_produce_top_trends(count=3), 0)
+
+        row = self._rows()[0]
+        self.assertEqual(row["source"], "daily_radar")
+        self.assertEqual(row["status"], "pending")
+        claimed = self.api.claim_next_topic()
+        self.assertEqual(claimed["topic"], "durable radar topic")
+        self.api.finish_topic(claimed["id"])
+        db = self.api.get_db()
+        try:
+            produced = db.execute(
+                "SELECT topic FROM auto_produced_topics WHERE topic='durable radar topic'"
+            ).fetchone()
+        finally:
+            db.close()
+        self.assertIsNotNone(produced)
+
     def test_legacy_file_import_is_idempotent_and_clears_after_commit(self):
         with open("topics.txt", "w", encoding="utf-8") as handle:
             handle.write("Future Leak | imported topic\n")
