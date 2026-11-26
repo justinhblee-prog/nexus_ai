@@ -459,12 +459,18 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
         const sources = m.sources || [];
         const sourceOk = sources.filter(source => source.last_status === "success").length;
         const sourceFailed = sources.filter(source => source.last_status !== "success").length;
+        const scans = m.radar_scans || {};
+        const scanLabel = scan => scan ? scan.status + " · " + (scan.item_count || 0) + "건" : "미수집";
         const cards = [
           ["제작 큐 대기", queue.pending || 0],
           ["실행 중", queue.running || 0],
           ["실패 격리", queue.failed || 0],
-          ["검수 대기", pipeline["최종컨펌 대기"] || 0],
+          ["최종 검수 대기", pipeline["최종컨펌 대기"] || 0],
+          ["수정 재제작 대기", pipeline["재제작 대기"] || 0],
+          ["수정 재제작 실패", pipeline["재제작 실패"] || 0],
           ["피드 정상 / 오류", sourceOk + " / " + sourceFailed],
+          ["일간 Discovery", scanLabel(scans.daily)],
+          ["주간 Discovery", scanLabel(scans.weekly)],
           ["최근 24시간 이벤트", m.events_last_24h || 0]
         ];
         metricsNode.replaceChildren();
@@ -565,7 +571,9 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
     }
     function selectJob(id) {
       activeJobId = id; const jb = allJobs.find(x => x.id === id); if (!jb) return;
-      document.getElementById("editor-channel").textContent = jb.channel_name; document.getElementById("editor-stage").textContent = jb.stage;
+      document.getElementById("editor-channel").textContent = jb.channel_name;
+      document.getElementById("editor-stage").textContent = jb.stage +
+        (jb.youtube_video_id ? " · YouTube ID " + jb.youtube_video_id + " · " + (jb.privacy_status || "privacy unknown") : "");
       document.getElementById("editor-title").value = jb.title; document.getElementById("editor-script").value = jb.script;
       const reviewable = jb.stage === "최종컨펌 대기";
       const editable = ["최종컨펌 대기", "반려(수정 필요)", "재제작 실패"].includes(jb.stage);
@@ -575,7 +583,7 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
       document.getElementById("editor-script").disabled = !editable;
       document.getElementById("btn-save-edit").disabled = !editable;
       document.getElementById("btn-save-edit").textContent = editable ? "↻ 수정 후 재제작" : "재제작 진행 중";
-      if (jb.video_path) document.getElementById("preview-video").src = "/" + jb.video_path.replace(/^\//, "");
+      document.getElementById("preview-video").src = jb.video_path ? "/" + jb.video_path.replace(/^\//, "") : "";
       renderJobs();
     }
     function toggleSelectAll(c) { document.querySelectorAll(".job-chk").forEach(x => x.checked = c); updateSelectedCount(); }
