@@ -295,6 +295,21 @@ def auto_produce_top_trends(count=3):
     finally:
         db.close()
 
+    # Source-local rank is comparable only within its own feed. Rotate by rank and region
+    # rather than inventing a cross-source "viral" score or global top-ten.
+    radar_db = trend_radar.init_radar_db()
+    radar_db.row_factory = sqlite3.Row
+    try:
+        top_rows = [dict(row) for row in radar_db.execute(
+            """SELECT * FROM trend_recommendations
+               WHERE period_type='daily'
+               ORDER BY source_rank ASC,
+                 CASE region WHEN 'KR' THEN 0 WHEN 'US' THEN 1 WHEN 'JP' THEN 2 ELSE 3 END,
+                 source_name ASC"""
+        ).fetchall()]
+    finally:
+        radar_db.close()
+
     date_key = datetime.now().strftime("%Y-%m-%d")
     queued_count = 0
     for trend in top_rows:
@@ -794,30 +809,45 @@ def get_radar(period: str = "daily"):
     conn = trend_radar.init_radar_db()
     conn.row_factory = sqlite3.Row
     try:
-        rows = [dict(r) for r in conn.execute("SELECT * FROM trend_recommendations WHERE period_type=? ORDER BY is_global_top10 DESC, viral_score DESC", (period,)).fetchall()]
+        rows = [dict(r) for r in conn.execute(
+            """SELECT * FROM trend_recommendations WHERE period_type=?
+               ORDER BY region, source_name, source_rank""",
+            (period,),
+        ).fetchall()]
     finally:
         conn.close()
-    if len(rows) < 20:
-        trend_radar.scan_global_trends(period)
-        conn = trend_radar.init_radar_db()
-        conn.row_factory = sqlite3.Row
-        try:
-            rows = [dict(r) for r in conn.execute("SELECT * FROM trend_recommendations WHERE period_type=? ORDER BY is_global_top10 DESC, viral_score DESC", (period,)).fetchall()]
-        finally:
-            conn.close()
-    return {"period": period, "items": rows}
+    scan = trend_radar.get_scan_status(period)
+    source_health = trend_radar.get_source_health()
+    data_status = "not_scanned" if not scan else (
+        "fresh" if scan["status"] in ("success", "partial") else "stale"
+    )
+    return {
+        "period": period,
+        "items": rows,
+        "scan": scan,
+        "source_health": source_health,
+        "data_status": data_status,
+        "global_ranking_available": False,
+        "ranking_note": "Source-local order only; cross-source popularity is not comparable.",
+    }
 
 @app.post("/api/radar/scan/{period}")
 def run_radar_scan(period: str = "daily"):
     if period not in ("daily", "weekly"):
         raise HTTPException(status_code=400, detail="period must be daily or weekly")
-    trend_radar.scan_global_trends(period)
-    return {"ok": True, "msg": "글로벌 4개국 40개 순위 & TOP 10 스캔 완료"}
+    items = trend_radar.scan_global_trends(period)
+    scan = trend_radar.get_scan_status(period)
+    return {
+        "ok": bool(scan and scan["status"] in ("success", "partial")),
+        "fetched_count": len(items),
+        "scan": scan,
+        "msg": f"Discovery scan finished: {len(items)} source-attributed items",
+    }
 
 @app.post("/api/radar/auto-produce-now")
 def trigger_auto_produce(bg: BackgroundTasks):
     bg.add_task(auto_produce_top_trends, 3)
-    return {"ok": True, "msg": "ꮀ로벌 종핹 TOP 10 상위 3편의 완전 자동 AI 영상제작이 시작되었습니다!"}
+    return {"ok": True, "msg": "지역별 원천 순위 후보 최대 3건을 제작 큐에 등록합니다."}
 
 @app.post("/api/radar/toggle-auto/{enabled}")
 def toggle_auto_produce(enabled: int):
