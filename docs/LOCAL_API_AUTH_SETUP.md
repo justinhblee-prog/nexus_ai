@@ -11,9 +11,10 @@ The FastAPI browser studio and the separate Streamlit interface both require the
    python -c "import secrets; print(secrets.token_urlsafe(48))"
    ```
 4. Keep `NEXUS_COOKIE_SECURE=false` for localhost HTTP. Set it to `true` only when using HTTPS.
-5. Start or update the stack using the repository's existing Docker Compose configuration. Do not remove volumes or reset the database.
-6. Sign in to the browser studio at `http://127.0.0.1:8503`.
-7. Sign in to the Streamlit studio at `http://127.0.0.1:8502` using the same password.
+5. The isolated Compose defaults are host ports `28503` (FastAPI) and `28502` (Streamlit), with container name `nexus_ai_shorts_center`. These defaults avoid colliding with the legacy `nexus_shorts_center` runtime on ports 8502/8503. Override `NEXUS_API_HOST_PORT` or `NEXUS_STREAMLIT_HOST_PORT` in `.env` only if the isolated ports are already occupied.
+6. Before starting, inspect existing containers and port usage; do not stop or remove the legacy runtime. Do not remove volumes or reset the database.
+7. Sign in to the browser studio at `http://127.0.0.1:28503`.
+8. Sign in to the Streamlit studio at `http://127.0.0.1:28502` using the same password.
 
 The repository ignores `.env`. Never commit it or paste its values into an issue, PR, or chat.
 
@@ -36,7 +37,7 @@ The repository ignores `.env`. Never commit it or paste its values into an issue
 
 ## Network and verification boundaries
 
-- Docker Compose binds ports `8502` and `8503` to `127.0.0.1`. Do not expose them publicly.
+- Docker Compose binds isolated host ports `28502` and `28503` to `127.0.0.1` by default (container ports remain `8502` and `8503`). Do not expose them publicly.
 - Automated unit tests cover the password helper and FastAPI session enforcement.
 - Local Docker startup, browser login, actual rendering, feed availability, and end-to-end OAuth/private upload still require verification on the Windows host. GitHub Actions success does not substitute for those local runtime checks.
 - YouTube upload remains a human-approved action and is configured to remain private. Public publishing is not automated.
