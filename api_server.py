@@ -655,6 +655,8 @@ def approve_job(job_id: int):
         db.close()
     if not jb:
         raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
+    if jb["stage"] != "최종컨펌 대기":
+        raise HTTPException(status_code=409, detail="이미 처리됐거나 업로드 상태 확인이 필요한 작업입니다.")
     output_root = os.path.realpath("output")
     video_path = os.path.realpath(jb["video_path"])
     if os.path.commonpath([output_root, video_path]) != output_root or not os.path.isfile(video_path):
@@ -662,12 +664,15 @@ def approve_job(job_id: int):
     record_event("review.approved", entity_type="pipeline_job", entity_id=job_id,
                  payload={"channel": jb["channel_name"], "approval_source": "api"})
     ok, msg = yt_uploader.upload_to_youtube(jb["channel_name"], video_path, jb["title"], jb["script"])
-    record_event("upload.completed" if ok else "upload.failed", entity_type="pipeline_job", entity_id=job_id,
-                 payload={"channel": jb["channel_name"], "privacy_status": "private" if ok else None})
-    if ok:
+    privacy_unverified = msg.startswith("UPLOAD_CREATED_PRIVACY_UNVERIFIED:")
+    event_type = "upload.completed" if ok else ("upload.privacy_unverified" if privacy_unverified else "upload.failed")
+    record_event(event_type, entity_type="pipeline_job", entity_id=job_id,
+                 payload={"channel": jb["channel_name"], "privacy_status": "private" if ok else "unverified"})
+    if ok or privacy_unverified:
         db = get_db()
         try:
-            db.execute("UPDATE pipeline_jobs SET stage='업로드 완료(비공개)' WHERE id=?", (job_id,))
+            stage = "업로드 완료(비공개)" if ok else "업로드 상태 확인 필요"
+            db.execute("UPDATE pipeline_jobs SET stage=? WHERE id=?", (stage, job_id))
             db.commit()
         finally:
             db.close()
