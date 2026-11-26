@@ -3,7 +3,7 @@ from io import BytesIO
 from datetime import datetime
 from openai import OpenAI
 import edge_tts
-from script_templates import fallback_script, normalize_script_payload
+from script_templates import fallback_script, normalize_script_payload, split_manual_script
 from gtts import gTTS
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from moviepy import ImageClip, AudioFileClip, concatenate_videoclips
@@ -85,12 +85,19 @@ def create_cinematic_bg(openai_key, image_prompt):
     draw.ellipse([(440, 980), (1380, 1920)], fill=(109, 40, 217))
     return base.filter(ImageFilter.GaussianBlur(radius=85))
 
-def render_pro_short(channel_name, persona, topic, openai_key=""):
+def render_pro_short(channel_name, persona, topic, openai_key="", script_override=None,
+                     title_override=None):
     os.makedirs("output", exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:18]
     mp4_path = f"output/studio_{ts}.mp4"
-    title, sentences, img_prompt = generate_script(channel_name, persona, topic, openai_key)
-    full_script = " ".join(sentences)
+    if script_override is not None:
+        sentences = split_manual_script(script_override)
+        title = (str(title_override or "").strip() or str(topic or "NEXUS Shorts").strip())[:100]
+        img_prompt = ""
+        full_script = script_override.strip()
+    else:
+        title, sentences, img_prompt = generate_script(channel_name, persona, topic, openai_key)
+        full_script = " ".join(sentences)
     master_bg = create_cinematic_bg(openai_key, img_prompt)
     font_sub = get_korean_font(62)
     font_badge = get_korean_font(34)
