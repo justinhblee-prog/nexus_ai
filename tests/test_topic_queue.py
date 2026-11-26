@@ -95,6 +95,24 @@ class DurableTopicQueueTests(unittest.TestCase):
         self.assertEqual(row["attempts"], 3)
 
 
+    def test_stale_render_cannot_commit_pipeline_job(self):
+        self.api.enqueue_topic("Future Leak | stale render", source="test")
+        item = self.api.claim_next_topic(lease_seconds=60)
+        with patch.object(self.api.video_maker, "render_pro_short",
+                          return_value=("output/stale.mp4", "Stale title", "Stale script"), create=True), \
+             patch.object(self.api, "validate_video", return_value={"ok": True, "checks": {}, "errors": []}):
+            with self.assertRaisesRegex(RuntimeError, "lease was lost"):
+                self.api.run_make_video(
+                    "Future Leak", "persona", "stale render",
+                    queue_id=item["id"], lease_token="not-the-current-token",
+                )
+        db = self.api.get_db()
+        try:
+            count = db.execute("SELECT COUNT(*) FROM pipeline_jobs").fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(count, 0)
+
     def test_stale_worker_cannot_finish_or_renew_reclaimed_lease(self):
         self.api.enqueue_topic("Future Leak | fenced lease", source="test")
         first = self.api.claim_next_topic(lease_seconds=60)
