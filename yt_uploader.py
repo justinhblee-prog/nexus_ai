@@ -49,6 +49,7 @@ def upload_to_youtube(channel_name, video_path, title, description="AI 자동 �
     if not os.path.isfile(video_path):
         return False, f"VIDEO_NOT_FOUND: {video_path}"
 
+    upload_started = False
     try:
         creds = Credentials.from_authorized_user_file(token_file, SCOPES)
         youtube = build("youtube", "v3", credentials=creds, cache_discovery=False)
@@ -66,12 +67,13 @@ def upload_to_youtube(channel_name, video_path, title, description="AI 자동 �
             },
         }
         media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/mp4")
+        upload_started = True
         response = youtube.videos().insert(part="snippet,status", body=body, media_body=media).execute()
         outcome, video_id, privacy_status = classify_upload_response(response)
         if outcome == "private":
             return True, f"비공개 업로드 성공! 영상 ID: {video_id} 👉 https://www.youtube.com/watch?v={video_id}"
-        if outcome == "privacy_unverified":
-            return False, f"UPLOAD_CREATED_PRIVACY_UNVERIFIED:{video_id}:{privacy_status or 'missing'}"
-        return False, "UPLOAD_RESPONSE_MISSING_VIDEO_ID"
+        return False, f"UPLOAD_CREATED_PRIVACY_UNVERIFIED:{video_id or 'unknown'}:{privacy_status or outcome}"
     except Exception as exc:
+        if upload_started:
+            return False, f"UPLOAD_RESULT_UNCERTAIN:{type(exc).__name__}"
         return False, f"YOUTUBE_UPLOAD_FAILED: {type(exc).__name__}: {exc}"
