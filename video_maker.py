@@ -3,6 +3,7 @@ from io import BytesIO
 from datetime import datetime
 from openai import OpenAI
 import edge_tts
+from script_templates import fallback_script, normalize_script_payload
 from gtts import gTTS
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from moviepy import ImageClip, AudioFileClip, concatenate_videoclips
@@ -56,19 +57,10 @@ def generate_script(channel_name, persona, topic, openai_key):
                 response_format={"type": "json_object"}
             )
             data = json.loads(next(iter(res.choices)).message.content)
-            return data["title"], data["sentences"], data.get("image_prompt", "")
+            return normalize_script_payload(data, channel_name, topic)
         except Exception:
             pass
-    title = f"99% Missed: {topic} #Shorts"
-    sentences = [
-        f"Wait! Do you know why {topic} is trending globally right now?",
-        "Top 1% experts are closely watching this exact shift.",
-        "Here are 3 key takeaways summarized in 30 seconds.",
-        "First, following the crowd never creates an asymmetric edge.",
-        "Second, small systems executed today compound into massive results.",
-        "Subscribe and save this so you never miss the next signal!"
-    ]
-    return title, sentences, ""
+    return fallback_script(channel_name, topic)
 
 def create_cinematic_bg(openai_key, image_prompt):
     if openai_key and image_prompt:
