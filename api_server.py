@@ -339,6 +339,7 @@ def import_legacy_topics_file():
         db.execute("BEGIN IMMEDIATE")
         stamp = datetime.now().isoformat(timespec="seconds")
         channels = [row["name"] for row in db.execute("SELECT name FROM channels ORDER BY id")]
+        added = 0
         for index, line in enumerate(lines):
             key = hashlib.sha256(f"{digest}:{index}:{line}".encode("utf-8")).hexdigest()
             channel_name, topic = (line.split("|", 1) if "|" in line else (None, line))
@@ -347,14 +348,18 @@ def import_legacy_topics_file():
             targets = [channel_name] if channel_name else channels
             for target in targets:
                 if topic and target:
-                    db.execute(
+                    cursor = db.execute(
                         """INSERT OR IGNORE INTO topic_queue
                            (idempotency_key, channel_name, topic, source, status, attempts,
                             available_at, created_at, updated_at)
                            VALUES (?, ?, ?, 'topics.txt', 'pending', 0, ?, ?, ?)""",
                         (f"{key}:{target}", target, topic, int(time.time()), stamp, stamp),
                     )
+                    added += max(0, cursor.rowcount)
         db.commit()
+        if added:
+            record_event("queue.enqueued", entity_type="topic_queue",
+                         payload={"source": "topics.txt", "channel_count": added})
     except Exception:
         db.rollback()
         raise
