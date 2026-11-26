@@ -1,6 +1,6 @@
 import os, time, sqlite3, threading, logging
 from datetime import datetime
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -67,8 +67,12 @@ def init_app_db():
     db.close()
 
 def get_oa_key():
-    r = get_db().execute("SELECT value FROM settings WHERE key='oa'").fetchone()
-    return r["value"] if r else ""
+    db = get_db()
+    try:
+        r = db.execute("SELECT value FROM settings WHERE key='oa'").fetchone()
+        return r["value"] if r else ""
+    finally:
+        db.close()
 
 def run_make_video(ch_name: str, persona: str, topic: str):
     mp4, title, script = video_maker.render_pro_short(ch_name, persona, topic, get_oa_key())
@@ -76,24 +80,31 @@ def run_make_video(ch_name: str, persona: str, topic: str):
     db.execute("INSERT INTO pipeline_jobs (channel_name, title, script, video_path, stage, created_at) VALUES (?,?,?,?,?,?)",
                (ch_name, title, script, mp4, "최종컨펌 대기", datetime.now().strftime("%Y-%m-%d %H:%M")))
     db.commit()
+    db.close()
 
 def auto_produce_top_trends(count=3):
     db = trend_radar.init_radar_db()
     db.row_factory = sqlite3.Row
-    top_rows = db.execute("SELECT * FROM trend_recommendations WHERE period_type='daily' AND is_global_top10 > 0 ORDER BY is_global_top10 ASC").fetchall()
     made = 0
-    for r in top_rows:
-        if made >= count:
-            break
-        exists = db.execute("SELECT 1 FROM auto_produced_topics WHERE topic=?", (r["topic"],)).fetchone()
-        if not exists:
+    try:
+        top_rows = db.execute("SELECT * FROM trend_recommendations WHERE period_type='daily' AND is_global_top10 > 0 ORDER BY is_global_top10 ASC").fetchall()
+        for r in top_rows:
+            if made >= count:
+                break
+            exists = db.execute("SELECT 1 FROM auto_produced_topics WHERE topic=?", (r["topic"],)).fetchone()
+            if exists:
+                continue
             ch_row = db.execute("SELECT * FROM channels WHERE name=?", (r["matched_channel"],)).fetchone()
-            persona = ch_row["persona"] if ch_row else "을문가 톤"
-            run_make_video(r["matched_channel"], persona, r["topic"])
+            if not ch_row:
+                logger.warning("Skipping trend with unknown channel: %s", r["matched_channel"])
+                continue
+            run_make_video(r["matched_channel"], ch_row["persona"], r["topic"])
             db.execute("INSERT OR IGNORE INTO auto_produced_topics VALUES (?, ?)", (r["topic"], datetime.now().strftime("%Y-%m-%d %H:%M")))
             db.commit()
             made += 1
-    return made
+        return made
+    finally:
+        db.close()
 
 def watch_topics_loop():
     while True:
@@ -173,16 +184,28 @@ def overview():
 
 @app.get("/api/radar/{period}")
 def get_radar(period: str = "daily"):
+    if period not in ("daily", "weekly"):
+        raise HTTPException(status_code=400, detail="period must be daily or weekly")
     conn = trend_radar.init_radar_db()
     conn.row_factory = sqlite3.Row
-    rows = [dict(r) for r in conn.execute("SELECT * FROM trend_recommendations WHERE period_type=? ORDER BY is_global_top10 DESC, viral_score DESC", (period,)).fetchall()]
+    try:
+        rows = [dict(r) for r in conn.execute("SELECT * FROM trend_recommendations WHERE period_type=? ORDER BY is_global_top10 DESC, viral_score DESC", (period,)).fetchall()]
+    finally:
+        conn.close()
     if len(rows) < 20:
         trend_radar.scan_global_trends(period)
-        rows = [dict(r) for r in conn.execute("SELECT * FROM trend_recommendations WHERE period_type=? ORDER BY is_global_top10 DESC, viral_score DESC", (period,)).fetchall()]
+        conn = trend_radar.init_radar_db()
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = [dict(r) for r in conn.execute("SELECT * FROM trend_recommendations WHERE period_type=? ORDER BY is_global_top10 DESC, viral_score DESC", (period,)).fetchall()]
+        finally:
+            conn.close()
     return {"period": period, "items": rows}
 
 @app.post("/api/radar/scan/{period}")
 def run_radar_scan(period: str = "daily"):
+    if period not in ("daily", "weekly"):
+        raise HTTPException(status_code=400, detail="period must be daily or weekly")
     trend_radar.scan_global_trends(period)
     return {"ok": True, "msg": "글로벌 4개국 40개 순위 & TOP 10 스캔 완료"}
 
@@ -200,21 +223,33 @@ def toggle_auto_produce(enabled: int):
 @app.post("/api/radar/interval/{minutes}")
 def set_radar_interval(minutes: int):
     global RADAR_INTERVAL_SEC
-    RADAR_INTERVAL_SEC = max(60, minutes * 60)
+    if minutes < 1 or minutes > 1440:
+        raise HTTPException(status_code=400, detail="minutes must be between 1 and 1440")
+    RADAR_INTERVAL_SEC = minutes * 60
     return {"ok": True, "msg": f"자동 수집 주기가 {minutes}분위로 변경되었습니다."}
 
 @app.post("/api/create")
 def create_single(req: CreateReq, bg: BackgroundTasks):
+    if not req.channel_name.strip() or not req.topic.strip():
+        raise HTTPException(status_code=400, detail="channel_name and topic are required")
     db = get_db()
-    ch = db.execute("SELECT * FROM channels WHERE name=?", (req.channel_name,)).fetchone()
-    persona = ch["persona"] if ch else "전문가 톤"
-    bg.add_task(run_make_video, req.channel_name, persona, req.topic)
+    try:
+        ch = db.execute("SELECT * FROM channels WHERE name=?", (req.channel_name,)).fetchone()
+    finally:
+        db.close()
+    if not ch:
+        raise HTTPException(status_code=404, detail="Unknown channel")
+    bg.add_task(run_make_video, req.channel_name, ch["persona"], req.topic)
     return {"ok": True, "msg": f"[{req.channel_name}] 아나운서 음성 영상제작이 시작되었습니다!"}
 
 @app.post("/api/create-all")
 def create_all(bg: BackgroundTasks):
     db = get_db()
-    for ch in db.execute("SELECT * FROM channels").fetchall():
+    try:
+        channels = db.execute("SELECT * FROM channels").fetchall()
+    finally:
+        db.close()
+    for ch in channels:
         bg.add_task(run_make_video, ch["name"], ch["persona"], "오늘의 글로벌 핵심 트렌드")
     return {"ok": True, "msg": "전 채널 일괄제작이 시작되었습니다!"}
 
@@ -227,13 +262,24 @@ def save_queue(req: QueueReq):
 @app.post("/api/approve/{job_id}")
 def approve_job(job_id: int):
     db = get_db()
-    jb = db.execute("SELECT * FROM pipeline_jobs WHERE id=?", (job_id,)).fetchone()
+    try:
+        jb = db.execute("SELECT * FROM pipeline_jobs WHERE id=?", (job_id,)).fetchone()
+    finally:
+        db.close()
     if not jb:
-        return {"ok": False, "msg": "작업을 찾을 수 없습니다."}
-    ok, msg = yt_uploader.upload_to_youtube(jb["channel_name"], jb["video_path"], jb["title"], jb["script"])
+        raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
+    output_root = os.path.realpath("output")
+    video_path = os.path.realpath(jb["video_path"])
+    if os.path.commonpath([output_root, video_path]) != output_root or not os.path.isfile(video_path):
+        raise HTTPException(status_code=400, detail="output 폴더 안의 실제 영상 파일만 업로드할 수 있습니다.")
+    ok, msg = yt_uploader.upload_to_youtube(jb["channel_name"], video_path, jb["title"], jb["script"])
     if ok:
-        db.execute("UPDATE pipeline_jobs SET stage='엄로드 완료(비공개)' WHERE id=?", (job_id,))
-        db.commit()
+        db = get_db()
+        try:
+            db.execute("UPDATE pipeline_jobs SET stage='업로드 완료(비공개)' WHERE id=?", (job_id,))
+            db.commit()
+        finally:
+            db.close()
     return {"ok": ok, "msg": msg}
 
 @app.put("/api/jobs/{job_id}")
