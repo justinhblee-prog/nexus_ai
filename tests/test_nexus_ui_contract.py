@@ -67,6 +67,11 @@ class NexusUiContractTests(unittest.TestCase):
         self.assertNotIn('getElementById("kpi-growth")', radar)
         self.assertIn("source_score", radar)
 
+    def test_operations_workspace_displays_radar_and_queue_freshness(self):
+        self.assertIn("radar_scans", self.script)
+        self.assertIn("oldest_pending_queue_created_at", self.script)
+        self.assertIn("수정 재제작 대기", self.script)
+
     def test_channel_chart_does_not_claim_unavailable_performance_metrics(self):
         self.assertIn("Channel Production Volume", self.script)
         self.assertNotIn("Global Trend Momentum", self.script)
