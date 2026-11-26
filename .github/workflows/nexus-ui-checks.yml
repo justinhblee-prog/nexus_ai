@@ -3,7 +3,6 @@ name: NEXUS UI and runtime validation
 on:
   pull_request:
     branches:
-      - "fix/shorts-runtime-security-bootstrap"
       - "feat/backend-followup-orchestration"
   push:
     branches:
