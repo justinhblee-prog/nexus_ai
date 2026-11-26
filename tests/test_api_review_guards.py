@@ -40,6 +40,8 @@ class ApiReviewGuardTests(unittest.TestCase):
                     ("Future Leak", "Pending", "script", "", "최종컨펌 대기", "now"),
                     ("Future Leak", "Rejected", "script", "", "반려(수정 필요)", "now"),
                     ("Future Leak", "Uploaded", "script", "", "업로드 완료(비공개)", "now"),
+                    ("Future Leak", "Uploading", "script", "", "업로드 진행 중", "now"),
+                    ("Future Leak", "Regenerating", "script", "", "재제작 대기", "now"),
                 ],
             )
             db.commit()
@@ -100,6 +102,19 @@ class ApiReviewGuardTests(unittest.TestCase):
             )
         self.assertEqual(caught.exception.status_code, 400)
         self.assertEqual(self._stage(1), "최종컨펌 대기")
+
+    def test_delete_guards_protect_uploading_and_regenerating_jobs(self):
+        with self.assertRaises(HTTPException) as uploading:
+            self.api.delete_job(4)
+        self.assertEqual(uploading.exception.status_code, 409)
+        with self.assertRaises(HTTPException) as regenerating:
+            self.api.delete_job(5)
+        self.assertEqual(regenerating.exception.status_code, 409)
+        result = self.api.bulk_delete_jobs(self.api.BulkDelReq(job_ids=[1, 4, 5, 5]))
+        self.assertEqual(result["deleted"], 1)
+        self.assertEqual(result["skipped"], 2)
+        self.assertEqual(self._stage(4), "업로드 진행 중")
+        self.assertEqual(self._stage(5), "재제작 대기")
 
     def test_failed_final_qa_blocks_upload_and_preserves_review_stage(self):
         os.makedirs("output", exist_ok=True)
