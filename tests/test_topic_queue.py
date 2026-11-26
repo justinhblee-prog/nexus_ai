@@ -95,6 +95,45 @@ class DurableTopicQueueTests(unittest.TestCase):
         self.assertEqual(row["attempts"], 3)
 
 
+    def test_stale_worker_cannot_finish_or_renew_reclaimed_lease(self):
+        self.api.enqueue_topic("Future Leak | fenced lease", source="test")
+        first = self.api.claim_next_topic(lease_seconds=60)
+        db = self.api.get_db()
+        try:
+            db.execute("UPDATE topic_queue SET lease_until=0 WHERE id=?", (first["id"],))
+            db.commit()
+        finally:
+            db.close()
+        second = self.api.claim_next_topic(lease_seconds=60)
+        self.assertNotEqual(first["lease_token"], second["lease_token"])
+        self.assertFalse(self.api.renew_topic_lease(first["id"], first["lease_token"]))
+        self.assertFalse(self.api.finish_topic(first["id"], first["lease_token"], "late failure"))
+        self.assertTrue(self.api.renew_topic_lease(second["id"], second["lease_token"], lease_seconds=120))
+        self.assertTrue(self.api.finish_topic(second["id"], second["lease_token"]))
+
+    def test_existing_queue_schema_is_migrated_with_lease_token(self):
+        db = self.api.get_db()
+        try:
+            db.execute("DROP TABLE topic_queue")
+            db.execute("""CREATE TABLE topic_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                idempotency_key TEXT NOT NULL UNIQUE,
+                channel_name TEXT, topic TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'api',
+                status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
+                available_at INTEGER NOT NULL, lease_until INTEGER, last_error TEXT,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            )""")
+            db.commit()
+        finally:
+            db.close()
+        self.api.init_app_db()
+        db = self.api.get_db()
+        try:
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(topic_queue)")}
+        finally:
+            db.close()
+        self.assertIn("lease_token", columns)
+
     def test_concurrent_connections_cannot_claim_the_same_queue_item(self):
         self.api.enqueue_topic("Future Leak | one shared queue item", source="test")
         with ThreadPoolExecutor(max_workers=8) as pool:
