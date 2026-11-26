@@ -132,7 +132,7 @@ docker compose stop
 
 ## 9. 검증 현황과 미완료 사항
 
-GitHub Actions에서 현재 코드 변경에 대해 Python compile, 브라우저 JavaScript 구문 검사, 36개 단위 테스트를 통과했습니다. 이 검증은 Windows 로컬 실행을 대신하지 않습니다.
+GitHub Actions [run #217](https://github.com/justinhblee-prog/nexus_ai/actions/runs/45835214093)에서 Docker Compose 설정 검증, Python compile, 브라우저 JavaScript 구문 검사, 40개 단위 테스트를 통과했습니다. 이 검증은 Windows 로컬 실행을 대신하지 않습니다.
 
 아직 Windows 호스트에서 직접 확인해야 하는 항목:
 - 기존 Docker 컨테이너와 현재 브랜치 코드의 안전한 연결 및 실제 로그인
