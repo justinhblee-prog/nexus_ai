@@ -54,5 +54,26 @@ class HostedWorkspaceMetricsContractTests(unittest.TestCase):
 
 
 
+    def test_topic_queue_ui_uses_server_storage_and_preserves_local_fallback(self):
+        html = (ROOT / "signup.html").read_text(encoding="utf-8")
+        self.assertIn('"/topic-queue"', html)
+        self.assertIn('method: "POST"', html)
+        self.assertIn('method: "DELETE"', html)
+        self.assertIn("서버 저장 · 이 계정의 워크스페이스 주제 큐", html)
+        self.assertIn("현재 브라우저 임시 저장을 사용합니다.", html)
+        self.assertIn("readSavedTopicQueue()", html)
+        self.assertIn("savedTopicQueueMode = serverAvailable ? \"server\" : \"local\"", html)
+
+    def test_topic_queue_schema_handoff_keeps_worker_and_account_boundaries(self):
+        spec = (ROOT / "docs" / "TOPIC_QUEUE_SERVER_PERSISTENCE.md").read_text(encoding="utf-8")
+        self.assertIn("REFERENCES auth.users(id) ON DELETE CASCADE", spec)
+        self.assertIn("REFERENCES public.workspaces(workspace_id) ON DELETE CASCADE", spec)
+        self.assertIn("ENABLE ROW LEVEL SECURITY", spec)
+        self.assertIn("private.has_workspace_role", spec)
+        self.assertIn("UNIQUE (workspace_id, user_id, normalized_topic)", spec)
+        self.assertNotIn("shorts_jobs", spec.split("## SQL", 1)[1].split("## Lifecycle", 1)[0].split("CREATE TABLE", 1)[1].split(");", 1)[0])
+
+
+
 if __name__ == "__main__":
     unittest.main()
