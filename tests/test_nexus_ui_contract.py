@@ -12,12 +12,34 @@ class NexusUiContractTests(unittest.TestCase):
             raise AssertionError("Browser studio script is missing")
         cls.script = scripts[-1]
 
-    def test_workspace_shell_starts_without_administrator_login(self):
+
+    def test_sample_data_and_layout_controls_are_real_independent_actions(self):
+        self.assertIn('addSample.onclick=addSampleData', self.script)
+        self.assertIn('removeSample.onclick=removeSampleData', self.script)
+        self.assertIn('layout.onchange=()=>setLayout(layout.value)', self.script)
+        self.assertIn('sel.onchange=()=>setTheme(sel.value)', self.script)
+        self.assertIn('function setLayout(t)', self.script)
+        self.assertIn('function setTheme(t)', self.script)
+        self.assertIn("NEXUS DESIGN THEMES v2", self.html)
+        self.assertIn('[data-layout="creator"] .nexus-shell', self.html)
+        self.assertIn('[data-layout="global"] .nexus-shell', self.html)
+        self.assertIn('[data-layout="executive"] .nexus-shell', self.html)
+
+    def test_discovery_enqueue_checks_http_response_before_success(self):
+        handler = self.script.split("async function produceFromModal()", 1)[1].split("async function loadOpsMetrics()", 1)[0]
+        self.assertIn("if (!response.ok) throw new Error", handler)
+        self.assertIn('credentials: "same-origin"', handler)
+
+    def test_workspace_shell_uses_secure_session_gate_and_static_preview_fallback(self):
         self.assertEqual(self.script.count("initNexusShell();"), 1)
         self.assertLess(self.script.index("initNexusShell();"), self.script.rindex("startStudio();"))
-        self.assertNotIn("관리자 로그인", self.html)
-        self.assertNotIn("loginStudio", self.script)
-        self.assertNotIn("checkSession", self.script)
+        self.assertIn("initializeNexusRuntime();", self.script)
+        self.assertIn('fetch("/api/session/status"', self.script)
+        self.assertIn('fetch("/api/session/login"', self.script)
+        self.assertIn('id="nexus-login-overlay"', self.html)
+        self.assertIn("미리보기 전용", self.script)
+        self.assertIn("session.required && !session.configured", self.script)
+        self.assertIn("session.required && !session.authenticated", self.script)
 
     def test_seven_workspaces_are_declared(self):
         for workspace in (
