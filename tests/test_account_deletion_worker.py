@@ -130,6 +130,7 @@ class AccountDeletionWorkerTests(unittest.TestCase):
         admin.list_account_deletion_active_leases.return_value = [{"lease_kind": "render"}]
         admin.update_account_deletion_request.return_value = True
         self.assertTrue(process_one_account_deletion(admin, "worker-1"))
+        admin.heartbeat_account_deletion_worker.assert_called_once_with("worker-1")
         admin.delete_account_workspace.assert_not_called()
         admin.delete_storage_object_in_bucket.assert_not_called()
         admin.update_account_deletion_request.assert_called_once_with(
