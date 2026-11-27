@@ -13,6 +13,8 @@ import requests
 
 
 YOUTUBE_SCOPES = (
+    "openid",
+    "email",
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",
     "https://www.googleapis.com/auth/yt-analytics.readonly",
@@ -90,7 +92,26 @@ class GoogleOAuthConfig:
             raise GoogleOAuthError("Google did not return an access token")
         return payload
 
-    def fetch_channel(self, access_token: str, http_get: Callable = requests.get) -> dict:
+    def fetch_account(self, access_token: str, http_get: Callable = requests.get) -> dict:
+        try:
+            response = http_get(
+                "https://openidconnect.googleapis.com/v1/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=10,
+            )
+        except requests.RequestException as exc:
+            raise GoogleOAuthError("Google account identity service is temporarily unavailable") from exc
+        if response.status_code != 200:
+            raise GoogleOAuthError("Google account identity could not be verified")
+        try:
+            account = response.json()
+        except ValueError as exc:
+            raise GoogleOAuthError("Google returned an invalid account response") from exc
+        if not account.get("sub"):
+            raise GoogleOAuthError("Google account subject is missing")
+        return {"account_id": account["sub"], "email": account.get("email", ""), "name": account.get("name", "")}
+
+    def fetch_channels(self, access_token: str, http_get: Callable = requests.get) -> list[dict]:
         try:
             response = http_get(
                 "https://youtube.googleapis.com/youtube/v3/channels",
@@ -106,14 +127,15 @@ class GoogleOAuthConfig:
             items = response.json().get("items", [])
         except ValueError as exc:
             raise GoogleOAuthError("YouTube returned an invalid channel response") from exc
-        if not items:
+        channels = []
+        for item in items:
+            channel_id = item.get("id")
+            title = (item.get("snippet") or {}).get("title")
+            if channel_id and title:
+                channels.append({"channel_id": channel_id, "title": title})
+        if not channels:
             raise GoogleOAuthError("No YouTube channel is available for this Google account")
-        channel = items[0]
-        channel_id = channel.get("id")
-        title = (channel.get("snippet") or {}).get("title")
-        if not channel_id or not title:
-            raise GoogleOAuthError("YouTube channel response is incomplete")
-        return {"channel_id": channel_id, "title": title}
+        return channels
 
     def revoke_refresh_token(self, refresh_token: str, http_post: Callable = requests.post):
         try:
