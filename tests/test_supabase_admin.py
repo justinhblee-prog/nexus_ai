@@ -77,6 +77,19 @@ class SupabaseAdminClientTests(unittest.TestCase):
 
 
 
+
+    def test_active_account_deletion_leases_use_service_role_rpc_and_validate_workspace_ids(self):
+        http = Mock()
+        response = Mock(status_code=200)
+        response.json.return_value = [{"workspace_id": "wsp_11111111-1111-4111-8111-111111111111", "lease_kind": "render"}]
+        http.return_value = response
+        client = SupabaseAdminRestClient(ENV, http_request=http)
+        rows = client.list_account_deletion_active_leases(["wsp_11111111-1111-4111-8111-111111111111"])
+        self.assertEqual(rows[0]["lease_kind"], "render")
+        self.assertIn("/rpc/list_account_deletion_active_leases", http.call_args.args[1])
+        with self.assertRaises(ValueError):
+            client.list_account_deletion_active_leases(["../../other-workspace"])
+
     def test_account_storage_inventory_uses_allowlisted_service_rpc(self):
         http = Mock()
         response = Mock(status_code=200)
