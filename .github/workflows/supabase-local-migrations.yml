@@ -56,8 +56,6 @@ jobs:
 
       - name: Validate privileged admin ACL operation in the isolated database
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes postgresql-client
           PGPASSWORD=postgres psql \
             --host 127.0.0.1 --port 54322 --username postgres --dbname postgres \
             --set ON_ERROR_STOP=1 --file supabase/operations/nexus_admin_anon_acl_hardening.sql
