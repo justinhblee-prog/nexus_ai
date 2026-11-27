@@ -322,6 +322,88 @@ class SupabaseAdminRestClient:
             raise SupabaseAdminError("Supabase media cleanup failed", response.status_code if 400 <= response.status_code < 500 else 502)
         return True
 
+
+    def list_account_deletion_storage_objects(self, user_id, limit=1000, offset=0):
+        """List Storage objects owned by one verified account via a service-only RPC."""
+        rows = self.rpc("list_account_deletion_storage_objects", {
+            "p_user_id": str(user_id),
+            "p_limit": max(1, min(int(limit), 1000)),
+            "p_offset": max(0, int(offset)),
+        }) or []
+        return rows
+
+    def delete_storage_object_in_bucket(self, bucket_id, object_name):
+        """Delete one exact object through the Storage API, never storage.objects SQL."""
+        if bucket_id not in {"acs-assets", "acs-gallery", "acs-outputs", "nexus-shorts"}:
+            raise ValueError("Storage bucket is not an approved NEXUS bucket")
+        if (
+            not isinstance(object_name, str)
+            or not object_name
+            or len(object_name) > 1024
+            or object_name.startswith("/")
+            or any(part in {"", ".", ".."} for part in object_name.split("/"))
+            or "\\\\" in object_name
+        ):
+            raise ValueError("Storage object path is invalid")
+        headers = {
+            "apikey": self.service_key,
+            "Authorization": f"Bearer {self.service_key}",
+            "Content-Type": "application/json",
+        }
+        try:
+            response = self.http_request(
+                "DELETE",
+                f"{self.base_url}/storage/v1/object/{quote(bucket_id, safe='')}",
+                json={"prefixes": [object_name]},
+                headers=headers,
+                timeout=20,
+            )
+        except requests.RequestException as exc:
+            raise SupabaseAdminError("Supabase account media cleanup is temporarily unavailable") from exc
+        if response.status_code not in (200, 204):
+            raise SupabaseAdminError("Supabase account media cleanup failed", response.status_code if 400 <= response.status_code < 500 else 502)
+        return True
+
+    def revoke_user_sessions(self, access_token):
+        """Revoke all refresh sessions using the authenticated user's own token."""
+        if not isinstance(access_token, str) or not access_token.strip():
+            raise ValueError("A verified user access token is required")
+        try:
+            response = self.http_request(
+                "POST",
+                f"{self.base_url}/auth/v1/logout",
+                params={"scope": "global"},
+                headers={
+                    "apikey": self.service_key,
+                    "Authorization": f"Bearer {access_token.strip()}",
+                },
+                timeout=12,
+            )
+        except requests.RequestException as exc:
+            raise SupabaseAdminError("Supabase session revocation is temporarily unavailable") from exc
+        if response.status_code not in (200, 204):
+            raise SupabaseAdminError("Supabase sessions could not be revoked", response.status_code if 400 <= response.status_code < 500 else 502)
+        return True
+
+    def delete_auth_user(self, user_id):
+        """Delete a Supabase Auth user after all external cleanup is verified."""
+        try:
+            response = self.http_request(
+                "DELETE",
+                f"{self.base_url}/auth/v1/admin/users/{quote(str(user_id), safe='')}",
+                headers={
+                    "apikey": self.service_key,
+                    "Authorization": f"Bearer {self.service_key}",
+                    "Accept": "application/json",
+                },
+                timeout=12,
+            )
+        except requests.RequestException as exc:
+            raise SupabaseAdminError("Supabase Auth account deletion is temporarily unavailable") from exc
+        if response.status_code not in (200, 204):
+            raise SupabaseAdminError("Supabase Auth account deletion failed", response.status_code if 400 <= response.status_code < 500 else 502)
+        return True
+
     def create_asset(self, payload):
         return self._call(
             "POST",
