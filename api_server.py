@@ -234,12 +234,14 @@ def hosted_workspace_jobs(workspace_id: str, request: Request):
     client = _hosted_rest_client(request)
     try:
         items = client.select("shorts_jobs", {
-            "select": "job_id,channel_id,topic,title,script,stage,approval_status,privacy_status,provider_video_id,created_at,updated_at",
+            "select": "job_id,channel_id,topic,title,script,stage,approval_status,privacy_status,output_storage_key,created_at,updated_at",
             "workspace_id": f"eq.{workspace_id}",
             "order": "created_at.desc",
             "limit": "100",
-        })
-        return {"items": items or []}
+        }) or []
+        for item in items:
+            item["has_preview"] = bool(item.pop("output_storage_key", None))
+        return {"items": items}
     except SupabaseRestError as exc:
         _hosted_rest_error(exc)
 
@@ -461,6 +463,25 @@ def hosted_youtube_disconnect(workspace_id: str, connection_id: UUID, request: R
         _hosted_rest_error(exc)
     except (GoogleOAuthError, SupabaseAdminError, TokenVaultError) as exc:
         raise HTTPException(status_code=502, detail="YouTube disconnection could not be completed safely") from exc
+
+
+@app.get("/api/hosted/jobs/{job_id}/preview")
+def hosted_job_preview(job_id: UUID, request: Request):
+    client = _hosted_rest_client(request)
+    try:
+        rows = client.select("shorts_jobs", {
+            "select": "job_id,workspace_id,output_storage_key",
+            "job_id": f"eq.{job_id}",
+            "limit": "1",
+        }) or []
+        if not rows or not rows[0].get("output_storage_key"):
+            raise HTTPException(status_code=404, detail="Rendered preview is not available")
+        signed_url = SupabaseAdminRestClient().create_signed_url(rows[0]["output_storage_key"], 300)
+        return {"signed_url": signed_url, "expires_in": 300}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+    except SupabaseAdminError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.post("/api/hosted/jobs/{job_id}/approve")
