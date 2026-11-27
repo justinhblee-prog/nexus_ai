@@ -3,7 +3,7 @@ import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-MIGRATION = ROOT / "supabase" / "migrations" / "20261127092500_nexus_shorts_workspace_domain.sql"
+MIGRATION = ROOT / "supabase" / "migrations" / "20261127092414_nexus_shorts_workspace_domain.sql"
 
 
 class ShortsWorkspaceDomainMigrationTests(unittest.TestCase):
