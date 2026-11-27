@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 from typing import Mapping
 from urllib.parse import quote
 
@@ -164,7 +165,7 @@ class SupabaseAdminRestClient:
         })
 
     def upload_storage_object(self, storage_key, content, content_type="video/mp4"):
-        if not storage_key.startswith("wsp_") or ".." in storage_key or storage_key.startswith("/"):
+        if not re.fullmatch(r"wsp_[0-9a-fA-F-]{36}/[0-9a-fA-F-]{36}/[0-9a-f]{32}\\.mp4", storage_key):
             raise ValueError("Storage key is invalid")
         url_path = quote(storage_key, safe="/")
         headers = {
