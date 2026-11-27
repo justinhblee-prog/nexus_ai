@@ -36,6 +36,15 @@ class HostedSignupPageContractTests(unittest.TestCase):
         self.assertIn('document.body.dataset.authenticated = "true"', self.html)
         self.assertIn(':root[data-layout="operations"]', self.html)
 
+    def test_hosted_workspace_trend_radar_uses_authenticated_tenant_route(self):
+        self.assertIn('id="trend-panel"', self.html)
+        self.assertIn('/trends', self.html)
+        self.assertIn('id="refresh-trends"', self.html)
+        self.assertIn('detail.textContent = region + item.topic', self.html)
+        self.assertIn('rel = "noopener noreferrer"', self.html)
+        self.assertIn('textContent = "주제 사용"', self.html)
+        self.assertIn('await loadWorkspaceTrends()', self.html)
+
     def test_hosted_job_cards_show_pipeline_stages_and_inline_private_preview(self):
         self.assertIn('queued: "제작 대기"', self.html)
         self.assertIn('rendering: "영상 렌더링"', self.html)
