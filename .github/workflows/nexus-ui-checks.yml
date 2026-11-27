@@ -25,7 +25,7 @@ jobs:
       - name: Validate Docker Compose configuration
         run: docker compose config --quiet
       - name: Compile application modules
-        run: python -m compileall -q hosted_auth.py supabase_rest.py supabase_admin.py youtube_oauth.py token_vault.py hosted_worker.py api_server.py app.py streamlit_auth.py audit_log.py video_qa.py upload_safety.py review_workflow.py script_templates.py trend_radar.py video_maker.py yt_uploader.py
+        run: python -m compileall -q hosted_auth.py supabase_rest.py supabase_admin.py youtube_oauth.py token_vault.py hosted_worker.py hosted_upload_worker.py api_server.py app.py streamlit_auth.py audit_log.py video_qa.py upload_safety.py review_workflow.py script_templates.py trend_radar.py video_maker.py yt_uploader.py
       - name: Validate browser studio JavaScript syntax
         run: |
           python -c "from pathlib import Path; import re; html=Path('index.html').read_text(encoding='utf-8'); scripts=re.findall(r'<script>(.*?)</script>', html, re.S); assert scripts; Path('/tmp/nexus-studio.js').write_text(scripts[-1], encoding='utf-8'); signup=Path('signup.html').read_text(encoding='utf-8'); modules=re.findall(r'<script type=\"module\">(.*?)</script>', signup, re.S); assert modules; Path('/tmp/nexus-signup.mjs').write_text(modules[-1], encoding='utf-8')"
