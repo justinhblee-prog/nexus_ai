@@ -9,8 +9,8 @@
 
 - 작업 브랜치: `feat/nexus-user-onboarding-web-oauth-20261127`
 - PR #11 현재 상태: Draft / Open / Unmerged. [PR #11](https://github.com/justinhblee-prog/nexus_ai/pull/11)
-- 최신 GitHub Actions [run 46043297014](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46043297014) 성공: **343 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, Playwright browser interaction smoke.
-- 최신 Supabase local migration validation [run 46043296979](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46043296979) 성공: **17개 migration 전체 적용**, `supabase db lint --fail-on error` 통과, `No schema errors found`.
+- 최신 GitHub Actions [run 46044437325](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46044437325) 성공: **343 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, Playwright browser interaction smoke.
+- 최신 Supabase local migration validation [run 46044437343](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46044437343) 성공: **17개 migration 전체 적용**, privileged ACL operation을 격리 local stack의 `supabase_admin` 역할로 실행/검증, `supabase db lint --fail-on error` 통과, `No schema errors found`.
 - 기존 PR #1, #5, #6, #7, #8, #9, #10은 Draft/Open으로 보존. PR #5와 #7은 이후 통합 PR에서 기능이 이어진 과거 브랜치로 PR 대화에 상태를 기록함.
 - Supabase `ai_studio` (`lmdhgqfqvfyymfrovaty`)는 ACTIVE_HEALTHY, PostgreSQL 17.11, Seoul region, Free plan. Live migration history는 14개이며 아래 8개 후속 migration은 아직 적용하지 않음.
 - Live Supabase에는 Auth 사용자/workspace/Shorts tenant 데이터가 없고, `public.shorts_topic_queue`, `public.public_trend_signals`, `public.public_trend_scans` 테이블도 아직 없음. 합성 사용자/데이터는 생성하지 않음.
@@ -58,7 +58,7 @@
 - Performance advisor: unindexed foreign keys 14건, unused indexes 26건. 14개 FK index coverage migration은 CI replay/lint 통과했으나 live 미적용. 26개 unused indexes는 workload 근거 없이 삭제하지 않음.
 - 14개 public tenant/legacy tables에 `anon` direct table grants가 존재하지만 RLS 정책은 authenticated 역할만 대상으로 함. 정규 migration은 이 14개 테이블과 `postgres`가 생성할 미래 public table의 anon defaults를 정리하도록 작성됨. 아직 live 미적용.
 - `storage.objects`에도 `anon` direct grants가 있으나 RLS가 켜져 있고 anon policy가 없으며 현재 Storage bucket은 모두 private. 이 grant는 defense-in-depth 정리 대상.
-- `postgres`는 `supabase_admin`의 member가 아니므로 일반 migration role로 `supabase_admin` default ACL 및 `storage.objects` owner grant를 수정할 수 없음. 별도 privileged operation은 `docs/SUPABASE_ADMIN_DEFAULT_PRIVILEGES.md`에 기록했고 아직 실행하지 않음.
+- `postgres`는 `supabase_admin`의 member가 아니므로 일반 migration role로 `supabase_admin` default ACL 및 `storage.objects` owner grant를 수정할 수 없음. 별도 operation `supabase/operations/nexus_admin_anon_acl_hardening.sql`은 CI의 격리 local stack에서 `supabase_admin` 역할로 실행·검증됨. Live 프로젝트에는 아직 실행하지 않음. 자세한 내용은 `docs/SUPABASE_ADMIN_DEFAULT_PRIVILEGES.md` 참조.
 - 이번 read-only 점검과 CI migration replay에서는 live DDL, migration, 데이터 변경을 수행하지 않음.
 
 ### 남은 릴리스 게이트
