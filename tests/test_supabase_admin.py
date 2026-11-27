@@ -243,6 +243,29 @@ class SupabaseAdminClientTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             client.has_active_connection_outside_workspaces("google-account", ["bad-id"])
 
+    def test_stale_public_trend_cleanup_is_limited_to_one_successful_source_and_period(self):
+        http = Mock()
+        http.return_value = Mock(status_code=204)
+        client = SupabaseAdminRestClient(ENV, http_request=http)
+        client.delete_stale_public_trend_signals(
+            "daily", "Google News KR", "2026-11-28T00:00:00"
+        )
+        self.assertEqual(http.call_args.args[0], "DELETE")
+        self.assertIn("/rest/v1/public_trend_signals", http.call_args.args[1])
+        self.assertEqual(http.call_args.kwargs["params"], {
+            "period_type": "eq.daily",
+            "source_name": "eq.Google News KR",
+            "created_at": "lt.2026-11-28T00:00:00",
+        })
+        self.assertEqual(http.call_args.kwargs["headers"]["Prefer"], "return=minimal")
+        for period, source, cutoff in (
+            ("monthly", "Feed", "2026-11-28T00:00:00"),
+            ("daily", "", "2026-11-28T00:00:00"),
+            ("weekly", "Feed", ""),
+        ):
+            with self.assertRaises(ValueError):
+                client.delete_stale_public_trend_signals(period, source, cutoff)
+
     def test_youtube_connection_inventory_is_workspace_scoped_and_excludes_tokens(self):
         http = Mock()
         response = Mock(status_code=200)
