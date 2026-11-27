@@ -34,6 +34,7 @@ _ALLOWED_TABLES = {
     "shorts_job_events",
     "shorts_analytics_snapshots",
     "shorts_assets",
+    "shorts_topic_queue",
 }
 
 
@@ -140,6 +141,9 @@ class SupabaseRestClient:
 
     def insert(self, table: str, payload: dict):
         return self._request("POST", table, payload=payload)
+
+    def delete(self, table: str, params: dict):
+        return self._request("DELETE", table, params=params)
 
     def update(self, table: str, params: dict, payload: dict):
         return self._request("PATCH", table, params=params, payload=payload)
