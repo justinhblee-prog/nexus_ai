@@ -23,7 +23,8 @@ Target: `feat/nexus-user-onboarding-web-oauth-20261127`, based on the current fu
 ## Phase B implementation delivered
 
 - Added workspace-scoped `youtube_connections`, `shorts_channels`, `shorts_jobs`, `shorts_job_events`, `shorts_analytics_snapshots`, and `shorts_assets` tables.
-- Added private `youtube_oauth_credentials` and `youtube_oauth_states` tables with RLS enabled, no client grants, and no client policies (intentional deny-by-default). Refresh tokens must be encrypted by the application before storage.
+- Added private `youtube_oauth_credentials` and `youtube_oauth_states` tables with RLS enabled, no client grants, and no client policies (intentional deny-by-default).
+- Added an AES-256-GCM token vault with authenticated associated data, ciphertext-only storage, strict 32-byte key validation, and versioned key rotation. Encryption keys are server-only environment values and are never committed.
 - Added role-aware RLS for owner/admin/editor/viewer access, restricted column-level mutation grants, and a trigger that permits approval-status changes only by workspace owners/admins.
 - Enforced private-only upload privacy and disallowed approved/uploading/published job stages until approval is recorded; published jobs also require provider video ID and upload timestamp.
 - Added a private workspace-role helper that derives identity from `auth.uid()`, not browser-supplied user IDs.
