@@ -34,5 +34,20 @@ class VercelFastApiEntrypointTests(unittest.TestCase):
         self.assertIn('NEXUS_HOSTED_UPLOAD_ENABLED: ${NEXUS_HOSTED_UPLOAD_ENABLED:-false}', compose)
 
 
+    def test_hosted_runtime_skips_local_media_and_analytics_imports(self):
+        api = (ROOT / "api_server.py").read_text(encoding="utf-8")
+        self.assertIn("if is_hosted_auth_enabled():", api)
+        hosted_start = api.index("if is_hosted_auth_enabled():")
+        local_import = api.index("import video_maker, trend_radar, youtube_analytics, yt_uploader", hosted_start)
+        self.assertLess(hosted_start, local_import)
+        hosted_branch = api[hosted_start:local_import]
+        self.assertIn('SimpleNamespace(', hosted_branch)
+        self.assertIn('DB_PATH=os.getenv("NEXUS_TREND_RADAR_DB_PATH", "data/studio_data.db")', hosted_branch)
+        self.assertNotIn("video_maker", hosted_branch)
+        self.assertNotIn("youtube_analytics", hosted_branch)
+        self.assertNotIn("yt_uploader", hosted_branch)
+
+
+
 if __name__ == "__main__":
     unittest.main()
