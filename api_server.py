@@ -325,6 +325,24 @@ def hosted_workspace_members(workspace_id: str, request: Request):
         _hosted_rest_error(exc)
 
 
+def has_recent_password_reauthentication(user, now=None, max_age_seconds=600):
+    current = time.time() if now is None else now
+    entries = user.get("amr") if isinstance(user, dict) else None
+    if not isinstance(entries, list):
+        return False
+    for entry in entries:
+        if not isinstance(entry, dict) or entry.get("method") != "password":
+            continue
+        timestamp = entry.get("timestamp")
+        if (
+            isinstance(timestamp, (int, float))
+            and not isinstance(timestamp, bool)
+            and current - max_age_seconds <= timestamp <= current + 30
+        ):
+            return True
+    return False
+
+
 def account_deletion_is_enabled():
     return (
         os.getenv("NEXUS_ACCOUNT_DELETION_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
@@ -502,15 +520,8 @@ def hosted_account_deletion_request(req: HostedAccountDeletionReq, request: Requ
     if not account_deletion_is_enabled():
         raise HTTPException(status_code=503, detail="Account deletion is not enabled for this deployment")
     user = request.state.hosted_user
-    auth_time = user.get("auth_time")
-    now = time.time()
-    if (
-        not isinstance(auth_time, (int, float))
-        or isinstance(auth_time, bool)
-        or auth_time > now + 30
-        or now - auth_time > 600
-    ):
-        raise HTTPException(status_code=403, detail="Fresh sign-in is required before account deletion")
+    if not has_recent_password_reauthentication(user):
+        raise HTTPException(status_code=403, detail="Fresh password sign-in is required before account deletion")
 
     preflight = hosted_account_deletion_preflight(request)
     if not preflight.get("preflight_clear"):
