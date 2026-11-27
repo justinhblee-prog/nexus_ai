@@ -398,6 +398,19 @@ def hosted_account_deletion_preflight(request: Request):
             if len(page) < 1000:
                 break
             offset += len(page)
+        connections = admin.list_youtube_connections_for_workspaces(deletion_workspace_ids)
+        credential_cleanup_count = len(connections)
+        provider_grants_to_revoke = 0
+        shared_provider_grants_preserved = 0
+        for connection in connections:
+            if connection.get("status") == "connected":
+                if admin.has_other_active_connections(
+                    connection.get("provider_account_id"),
+                    connection.get("connection_id"),
+                ):
+                    shared_provider_grants_preserved += 1
+                else:
+                    provider_grants_to_revoke += 1
         bucket_counts = {}
         shared_storage_count = 0
         for obj in storage_objects:
@@ -418,6 +431,11 @@ def hosted_account_deletion_preflight(request: Request):
             "workspaces": summaries,
             "owned_workspaces": [item for item in summaries if item["owned_by_current_user"]],
             "active_worker_lease_count": len(active_leases),
+            "youtube_oauth": {
+                "workspace_connections_to_clean": credential_cleanup_count,
+                "provider_grants_to_revoke": provider_grants_to_revoke,
+                "provider_grants_preserved_for_other_workspaces": shared_provider_grants_preserved,
+            },
             "storage": {
                 "owned_object_count": len(storage_objects),
                 "objects_by_bucket": bucket_counts,
