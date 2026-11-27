@@ -174,3 +174,34 @@ END;
 $function$;
 
 REVOKE ALL ON FUNCTION private.guard_shorts_job_approval() FROM PUBLIC, anon, authenticated;
+
+-- Enumerate account-owned objects without exposing storage.objects to clients.
+-- Actual bytes are always removed via the Supabase Storage API, not SQL.
+CREATE OR REPLACE FUNCTION public.list_account_deletion_storage_objects(
+  p_user_id uuid,
+  p_limit integer DEFAULT 1000,
+  p_offset integer DEFAULT 0
+)
+RETURNS TABLE(bucket_id text, name text, owner_id text, owner text)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $function$
+BEGIN
+  IF COALESCE((SELECT auth.jwt() ->> 'role'), '') <> 'service_role' THEN
+    RAISE EXCEPTION 'service_role required' USING ERRCODE = '42501';
+  END IF;
+  IF p_user_id IS NULL OR p_limit NOT BETWEEN 1 AND 1000 OR p_offset < 0 THEN
+    RAISE EXCEPTION 'Storage enumeration request is invalid' USING ERRCODE = '22023';
+  END IF;
+  RETURN QUERY
+  SELECT o.bucket_id, o.name, o.owner_id, o.owner::text
+  FROM storage.objects AS o
+  WHERE o.owner = p_user_id OR o.owner_id = p_user_id::text
+  ORDER BY o.bucket_id, o.name
+  LIMIT p_limit OFFSET p_offset;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.list_account_deletion_storage_objects(uuid,integer,integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.list_account_deletion_storage_objects(uuid,integer,integer) TO service_role;
