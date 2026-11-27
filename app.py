@@ -329,7 +329,7 @@ with t3:
                         st.rerun()
                 else:
                     st.caption(f"🟢 `{ch_n}` YouTube 업로드 토큰 연결됨")
-                    if not token_status.get("analytics"):
+                    if (not token_status.get("analytics") or token_status.get("error") or\n                            (token_status.get("expired") and not token_status.get("refreshable"))):
                         st.warning("YouTube Analytics 읽기 전용 권한이 없습니다. 실제 조회수/구독자/참여율을 보려면 다시 동의해 주세요.")
                         if st.button("🔐 Analytics 읽기 전용 권한 추가", key=f"analytics-oauth-link-{safe_channel}", use_container_width=True):
                             flow, url = yt_uploader.get_auth_url(ch_n)
