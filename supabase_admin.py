@@ -187,6 +187,47 @@ class SupabaseAdminRestClient:
             raise SupabaseAdminError("Rendered media could not be stored", response.status_code if 400 <= response.status_code < 500 else 502)
         return storage_key
 
+    def get_job_creator(self, job_id, workspace_id):
+        rows = self._call(
+            "GET",
+            "shorts_jobs",
+            params={
+                "select": "created_by",
+                "job_id": f"eq.{job_id}",
+                "workspace_id": f"eq.{workspace_id}",
+                "limit": "1",
+            },
+        ) or []
+        return rows[0]["created_by"] if rows else None
+
+    def delete_asset(self, storage_key):
+        return self._call(
+            "DELETE",
+            "shorts_assets",
+            params={"storage_key": f"eq.{storage_key}"},
+            prefer="return=minimal",
+        )
+
+    def delete_storage_object(self, storage_key):
+        headers = {
+            "apikey": self.service_key,
+            "Authorization": f"Bearer {self.service_key}",
+            "Content-Type": "application/json",
+        }
+        try:
+            response = self.http_request(
+                "DELETE",
+                f"{self.base_url}/storage/v1/object/nexus-shorts",
+                json={"prefixes": [storage_key]},
+                headers=headers,
+                timeout=20,
+            )
+        except requests.RequestException as exc:
+            raise SupabaseAdminError("Supabase media cleanup is temporarily unavailable") from exc
+        if response.status_code not in (200, 204):
+            raise SupabaseAdminError("Supabase media cleanup failed", response.status_code if 400 <= response.status_code < 500 else 502)
+        return True
+
     def create_asset(self, payload):
         return self._call(
             "POST",
