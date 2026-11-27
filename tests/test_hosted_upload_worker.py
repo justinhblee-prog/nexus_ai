@@ -3,7 +3,6 @@ from unittest.mock import Mock
 
 from hosted_upload_worker import DEFAULT_MAX_ATTEMPTS, process_one_upload
 from youtube_oauth import GoogleOAuthReauthRequired
-from unittest.mock import patch
 
 
 JOB = {
@@ -101,9 +100,10 @@ class HostedUploadWorkerTests(unittest.TestCase):
         }
         config = Mock()
         config.refresh_access_token.side_effect = GoogleOAuthReauthRequired("revoked")
-        with patch("hosted_upload_worker.GoogleOAuthConfig.from_env", return_value=config), \
-             patch("hosted_upload_worker.decrypt_refresh_token", return_value="refresh-token"):
-            processed = process_one_upload(admin, "upload-worker")
+        processed = process_one_upload(
+            admin, "upload-worker", oauth_config_factory=lambda: config,
+            decrypt_token=lambda ciphertext, version: "refresh-token",
+        )
         self.assertTrue(processed)
         admin.update_connection.assert_called_once_with(
             JOB["connection_id"], JOB["workspace_id"], {"status": "reauth_required"}
