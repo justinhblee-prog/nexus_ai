@@ -31,7 +31,7 @@ try {
     if (id === "global") {
       await page.waitForFunction(() => {
         const node = document.querySelector(".nexus-shell");
-        return node && getComputedStyle(node).gridTemplateColumns.trim().split(/\\s+/).length === 1;
+        return node && getComputedStyle(node).gridTemplateColumns.trim().split(/\s+/).length === 1;
       });
     } else {
       await page.waitForFunction(({ layout, expected }) => {
