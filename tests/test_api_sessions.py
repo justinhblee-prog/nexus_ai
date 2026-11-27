@@ -267,6 +267,28 @@ class SignedSessionTests(unittest.TestCase):
                 "eq.wsp_11111111-1111-4111-8111-111111111111",
             )
 
+    def test_hosted_workspace_channels_and_overview_are_scoped_to_user_jwt_and_workspace(self):
+        workspace_id = "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "role": "authenticated"},
+            hosted_access_token="user-a.verified.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.side_effect = [
+                [{"channel_id": "channel-a"}],
+                [{"channel_id": "channel-a", "is_active": True}],
+                [{"job_id": "job-a", "stage": "queued", "approval_status": "pending"}],
+            ]
+            channels = self.api.hosted_workspace_channels(workspace_id, request)
+            overview = self.api.hosted_workspace_overview(workspace_id, request)
+        self.assertEqual(channels["items"][0]["channel_id"], "channel-a")
+        self.assertEqual(overview["workspace_id"], workspace_id)
+        self.assertEqual(overview["channel_count"], 1)
+        self.assertEqual(overview["job_count"], 1)
+        self.assertEqual(client_type.call_args.args[0], "user-a.verified.jwt")
+        filters = [call.args[1] for call in client_type.return_value.select.call_args_list]
+        self.assertTrue(all(item["workspace_id"] == f"eq.{workspace_id}" for item in filters))
+
     def test_hosted_job_creation_uses_verified_identity_and_server_defaults(self):
         request = types.SimpleNamespace(state=types.SimpleNamespace(
             hosted_user={"user_id": "11111111-1111-4111-8111-111111111111", "role": "authenticated"},
