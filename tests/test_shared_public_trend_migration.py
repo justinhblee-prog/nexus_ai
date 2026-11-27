@@ -1,5 +1,4 @@
 from pathlib import Path
-import re
 import unittest
 
 
@@ -15,7 +14,7 @@ class SharedPublicTrendMigrationTests(unittest.TestCase):
     def setUpClass(cls):
         markdown = HANDOFF.read_text(encoding="utf-8")
         sql = markdown.split("```sql", 1)[1].split("```", 1)[0]
-        cls.sql = re.sub(r"\\s+", " ", sql).lower()
+        cls.sql = " ".join(sql.lower().split())
 
     def test_tables_are_shared_and_have_stable_source_keys(self):
         self.assertIn("create table if not exists public.public_trend_signals", self.sql)
@@ -30,7 +29,9 @@ class SharedPublicTrendMigrationTests(unittest.TestCase):
         self.assertIn("grant select on table public.public_trend_signals to authenticated", self.sql)
         self.assertIn("grant select, insert, update, delete on table public.public_trend_signals to service_role", self.sql)
         self.assertIn("create policy public_trend_signals_authenticated_read", self.sql)
-        self.assertNotRegex(self.sql, r"grant\\s+[^;]*\\b(insert|update|delete)\\b[^;]*to\\s+authenticated")
+        self.assertNotIn("grant insert", self.sql)
+        self.assertNotIn("grant update", self.sql)
+        self.assertNotIn("grant delete", self.sql)
 
     def test_source_links_are_https_only_and_scan_metadata_is_bounded(self):
         self.assertIn("source_url is null or source_url ~ '^https://'", self.sql)
