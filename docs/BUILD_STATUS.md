@@ -62,7 +62,7 @@
 
 ## 6. Git 안전 정책
 
-- PR #1, #5, #6 모두 Draft/Open 유지.
+- PR #1, #5, #6 모두 Draft/Open 유지. PR #5 최신 UI head: `b0c68d179717212dc7993c96786f14207b782557`; PR #6 backend head: `efbf2821555a2acc217c3adb982a78af67d5d316`.
 - main 변경, PR 병합, production deploy, force-push, 이력 재작성 금지.
 - YouTube 공개 업로드 및 자동 공개 전환 금지.
 - 사용자 데이터, DB, 영상, OAuth 토큰, .env를 삭제하거나 초기화하지 않음.
