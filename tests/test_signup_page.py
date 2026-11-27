@@ -45,6 +45,15 @@ class HostedSignupPageContractTests(unittest.TestCase):
         self.assertIn("회원가입 / 로그인", index)
 
 
+    def test_multi_workspace_selector_switches_active_tenant_and_refreshes_data(self):
+        self.assertIn('id="workspace-select"', self.html)
+        self.assertIn('id="workspace-picker"', self.html)
+        self.assertIn('workspaceSelect.appendChild(option)', self.html)
+        self.assertIn('activeWorkspaceId = workspace.workspace_id', self.html)
+        self.assertIn('activeWorkspaceRole = workspace.member_role', self.html)
+        self.assertIn('await loadConnections()', self.html)
+        self.assertIn('해당 워크스페이스의 채널과 작업만 표시됩니다.', self.html)
+
     def test_youtube_channel_connect_and_disconnect_controls_use_authenticated_api(self):
         self.assertIn('"/youtube/connections"', self.html)
         self.assertIn('"/youtube/connect"', self.html)
