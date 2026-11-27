@@ -50,7 +50,8 @@ class AccountDeletionSafetyMigrationTests(unittest.TestCase):
         self.assertIn("public.list_account_deletion_storage_objects(uuid,integer,integer,text[])", self.sql)
         self.assertIn("auth.jwt() ->> 'role'", self.sql)
         self.assertIn("service_role required", self.sql)
-        self.assertIn("o.owner = p_user_id or o.owner_id = p_user_id::text", self.sql)
+        self.assertIn("where o.owner = p_user_id", self.sql)
+        self.assertIn("or o.owner_id = p_user_id::text", self.sql)
         self.assertIn("limit p_limit offset p_offset", self.sql)
         self.assertIn("to service_role", self.sql)
 
