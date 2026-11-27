@@ -187,6 +187,25 @@ class AccountDeletionWorkerTests(unittest.TestCase):
             [("retry", "storage_cleanup"), ("completed", "complete")],
         )
 
+    def test_oauth_cleanup_fails_closed_when_revocation_intent_is_not_persisted(self):
+        admin = Mock()
+        admin.list_youtube_connections_for_workspaces.return_value = [{
+            "connection_id": "55555555-5555-4555-8555-555555555555",
+            "provider_account_id": "google-account",
+            "status": "connected",
+        }]
+        admin.get_account_deletion_oauth_state.return_value = None
+        admin.has_active_connection_outside_workspaces.return_value = False
+        admin.set_account_deletion_oauth_state.return_value = None
+        oauth = Mock()
+
+        with self.assertRaises(SupabaseAdminError):
+            _cleanup_oauth(admin, USER, [SOLE], Mock(return_value=oauth), Mock())
+
+        oauth.revoke_refresh_token.assert_not_called()
+        admin.get_credential.assert_not_called()
+        admin.delete_credential.assert_not_called()
+
     def test_oauth_cleanup_tries_another_credential_when_one_ciphertext_is_invalid(self):
         admin = Mock()
         admin.list_youtube_connections_for_workspaces.return_value = [
