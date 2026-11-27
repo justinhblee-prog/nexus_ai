@@ -42,7 +42,7 @@ BEGIN
   END IF;
   IF p_user_id IS NULL OR p_provider_account_hash IS NULL
      OR p_provider_account_hash !~ '^[0-9a-f]{64}$'
-     OR p_state NOT IN ('revocation_started','revoked','preserved','not_required') THEN
+     OR p_state IS NULL OR p_state NOT IN ('revocation_started','revoked','preserved','not_required') THEN
     RAISE EXCEPTION 'OAuth deletion state update is invalid' USING ERRCODE='22023';
   END IF;
   INSERT INTO private.account_deletion_oauth_states(user_id,provider_account_hash,state)
