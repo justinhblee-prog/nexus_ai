@@ -386,7 +386,8 @@ def hosted_account_deletion_preflight(request: Request):
                 "youtube_oauth": {},
                 "storage": {},
                 "blockers": [{"reason": "This account has more than 100 workspace memberships; support-assisted cleanup is required."}],
-                "account_deletion_enabled": account_deletion_is_enabled(),
+                "account_deletion_enabled": False,
+                "account_deletion_worker_online": False,
                 "account_deletion_reason": "Workspace inventory exceeds the safe automated deletion limit.",
             }
         for wid in workspace_ids:
@@ -448,6 +449,7 @@ def hosted_account_deletion_preflight(request: Request):
             if item["owned_by_current_user"] and item["member_count"] <= 1
         ]
         admin = SupabaseAdminRestClient()
+        worker_online = account_deletion_is_enabled() and admin.is_account_deletion_worker_online()
         active_leases = admin.list_account_deletion_active_leases(deletion_workspace_ids)
         if active_leases:
             blockers.append({
@@ -550,8 +552,9 @@ def hosted_account_deletion_preflight(request: Request):
                 "shared_workspace_object_blockers": shared_storage_count,
             },
             "blockers": blockers,
-            "account_deletion_enabled": account_deletion_is_enabled(),
-            "account_deletion_reason": None if account_deletion_is_enabled() else "Enable the hosted account deletion API and worker only after the reviewed migration is applied and all free-tier service configuration is verified.",
+            "account_deletion_enabled": worker_online,
+            "account_deletion_worker_online": worker_online,
+            "account_deletion_reason": None if worker_online else "The hosted account deletion API and a live cleanup worker must both be enabled after the reviewed migration is applied and free-tier service configuration is verified.",
         }
     except SupabaseRestError as exc:
         _hosted_rest_error(exc)
@@ -568,6 +571,8 @@ def hosted_account_deletion_request(req: HostedAccountDeletionReq, request: Requ
         raise HTTPException(status_code=403, detail="Fresh password sign-in is required before account deletion")
 
     preflight = hosted_account_deletion_preflight(request)
+    if not preflight.get("account_deletion_enabled"):
+        raise HTTPException(status_code=503, detail="The account deletion worker is not online; no deletion request was queued")
     if not preflight.get("preflight_clear"):
         raise HTTPException(status_code=409, detail={
             "message": "Resolve account deletion blockers before confirming deletion",
