@@ -387,6 +387,25 @@ BEGIN
 END;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.heartbeat_account_deletion_request(
+ p_user_id uuid,p_worker_id text,p_lease_seconds integer DEFAULT 180
+)
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
+AS $function$
+BEGIN
+ IF COALESCE((SELECT auth.jwt()->>'role'),'') <> 'service_role' THEN
+   RAISE EXCEPTION 'service_role required' USING ERRCODE='42501';
+ END IF;
+ IF p_user_id IS NULL OR p_worker_id IS NULL OR p_lease_seconds NOT BETWEEN 30 AND 900 THEN
+   RAISE EXCEPTION 'Account deletion heartbeat is invalid' USING ERRCODE='22023';
+ END IF;
+ UPDATE private.account_deletion_requests
+ SET lease_until=now()+make_interval(secs=>p_lease_seconds),updated_at=now()
+ WHERE user_id=p_user_id AND status='running' AND lease_owner=p_worker_id;
+ RETURN FOUND;
+END;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.update_account_deletion_request(
  p_user_id uuid,p_worker_id text,p_status text,p_phase text,p_error_code text DEFAULT NULL,p_retry_seconds integer DEFAULT 60
 )
@@ -450,10 +469,12 @@ GRANT EXECUTE ON FUNCTION public.count_account_deletion_private_user_rows(uuid) 
 REVOKE ALL ON FUNCTION public.enqueue_account_deletion(uuid,jsonb) FROM PUBLIC,anon,authenticated;
 REVOKE ALL ON FUNCTION public.claim_next_account_deletion_request(text,integer) FROM PUBLIC,anon,authenticated;
 REVOKE ALL ON FUNCTION public.mark_account_deletion_sessions_revoked(uuid) FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.heartbeat_account_deletion_request(uuid,text,integer) FROM PUBLIC,anon,authenticated;
 REVOKE ALL ON FUNCTION public.update_account_deletion_request(uuid,text,text,text,text,integer) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.enqueue_account_deletion(uuid,jsonb) TO service_role;
 GRANT EXECUTE ON FUNCTION public.claim_next_account_deletion_request(text,integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.mark_account_deletion_sessions_revoked(uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.heartbeat_account_deletion_request(uuid,text,integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.update_account_deletion_request(uuid,text,text,text,text,integer) TO service_role;
 
 
