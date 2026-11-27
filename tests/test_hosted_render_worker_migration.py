@@ -4,7 +4,7 @@ import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-MIGRATION = ROOT / "supabase" / "migrations" / "20261127094500_nexus_hosted_render_worker.sql"
+MIGRATION = ROOT / "supabase" / "migrations" / "20261127093911_nexus_hosted_render_worker.sql"
 
 
 class HostedRenderWorkerMigrationTests(unittest.TestCase):
