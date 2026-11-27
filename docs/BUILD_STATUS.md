@@ -187,3 +187,11 @@
 - Latest READY deployment record is `dpl_8WHbaquRhTogFcaYi6cynD7ayumg` at commit `f61159be418a2c24ecdcd28896bb98de1dbe8469`, which predates the completed shared-trend implementation.
 - A Preview-only deployment attempt for current branch head `715298de7466be1a29e5ed5a64cacc9c53a5b061` was rejected with HTTP 402 `api-deployments-free-per-day`, retryAfter 86400. No Production deployment or plan upgrade was attempted. Do not retry until the free daily quota resets.
 - PR #11 remains Draft/Open/unmerged. The current application-code commit `34d636ffe34b8766d842f7de80de99b748ddd440` has the passing 324-test CI result above; the later commits update documentation only.
+
+
+### Trend worker path correction and final CI — 2026-11-28
+
+- The collector now honors `NEXUS_TREND_RADAR_DB_PATH` rather than silently using the module default; the path is created on the persistent volume before scanning.
+- Added a regression test for environment-selected database path behavior.
+- Latest application-code head `fec1aef5f29a8ccce9a130656964a6e276b87749` passed GitHub Actions [run 46033122719](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46033122719): **325 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, and Playwright browser interaction smoke all passed.
+- PR #11 is still Draft/Open/unmerged. No live migration, worker activation, production deployment, or paid resource use.
