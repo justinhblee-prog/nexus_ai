@@ -208,7 +208,6 @@
               const approvalResult = await approval.json();
               if (!approval.ok) throw new Error(approvalResult.detail || "최종 승인에 실패했습니다.");
               await loadJobs();
-      await loadWorkspaceMembers();
               showMessage("최종 승인되었습니다. 업로드 워커가 활성화된 경우 비공개 업로드가 진행됩니다. 공개 전환은 YouTube Studio에서 직접 해야 합니다.", "success");
             } catch (error) {
               showMessage(error.message || "최종 승인에 실패했습니다.", "error");
@@ -296,6 +295,7 @@
         node.appendChild(row);
       }
       await loadJobs();
+      await loadWorkspaceMembers();
     }
 
     let currentUserId = "";
