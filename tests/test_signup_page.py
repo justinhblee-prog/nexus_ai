@@ -56,7 +56,8 @@ class HostedSignupPageContractTests(unittest.TestCase):
         self.assertIn('textContent = "제작 입력"', self.html)
         self.assertIn('renderSavedTopicQueue()', self.html)
         self.assertIn('const remainingQueue = queue.filter(item =>', self.html)
-        self.assertIn('서버·다른 기기와는 동기화되지 않습니다.', self.html)
+        self.assertIn('서버 저장형 주제 큐', self.html)
+        self.assertIn('브라우저 임시 저장', self.html)
 
     def test_hosted_job_cards_show_pipeline_stages_and_inline_private_preview(self):
         self.assertIn('queued: "제작 대기"', self.html)
