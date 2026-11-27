@@ -1,3 +1,5 @@
+import base64
+import json
 import unittest
 from unittest.mock import Mock
 
@@ -31,6 +33,11 @@ class HostedAuthConfigTests(unittest.TestCase):
             public_auth_config({**ENV, "NEXUS_SUPABASE_URL": "http://example.test"})
         with self.assertRaises(HostedAuthConfigurationError):
             public_auth_config({**ENV, "NEXUS_SUPABASE_PUBLISHABLE_KEY": "sb_secret_do_not_expose"})
+        legacy_service_role = "header." + base64.urlsafe_b64encode(
+            json.dumps({"role": "service_role"}).encode()
+        ).decode().rstrip("=") + ".signature"
+        with self.assertRaises(HostedAuthConfigurationError):
+            public_auth_config({**ENV, "NEXUS_SUPABASE_PUBLISHABLE_KEY": legacy_service_role})
 
     def test_bearer_header_is_parsed_strictly(self):
         self.assertEqual(extract_bearer_token("Bearer abc.def"), "abc.def")
