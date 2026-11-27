@@ -763,20 +763,28 @@ def serve_home():
 def session_status(request: Request):
     return {"configured": auth_is_configured(), "authenticated": verify_session_cookie(request.cookies.get(SESSION_COOKIE_NAME))}
 
+def session_cookie_is_secure(request: Request) -> bool:
+    """Use Secure cookies automatically on HTTPS while preserving local HTTP development."""
+    configured = os.getenv("NEXUS_COOKIE_SECURE", "auto").strip().lower()
+    if configured == "auto":
+        return request.url.scheme == "https"
+    return configured in ("1", "true", "yes", "on")
+
+
 @app.post("/api/session/login")
-def session_login(req: LoginReq):
+def session_login(req: LoginReq, request: Request):
     if not auth_is_configured():
         raise HTTPException(status_code=503, detail="서버 설정에 NEXUS_API_PASSWORD(12자 이상)와 NEXUS_SESSION_SECRET(32자 이상)을 지정해야 합니다.")
     if not hmac.compare_digest(req.password, API_PASSWORD):
         raise HTTPException(status_code=401, detail="비밀번호가 올바르지 않습니다.")
     response = JSONResponse({"ok": True})
-    response.set_cookie(key=SESSION_COOKIE_NAME, value=create_session_cookie(), max_age=SESSION_TTL_SECONDS, httponly=True, secure=os.getenv("NEXUS_COOKIE_SECURE", "false").lower() == "true", samesite="strict", path="/")
+    response.set_cookie(key=SESSION_COOKIE_NAME, value=create_session_cookie(), max_age=SESSION_TTL_SECONDS, httponly=True, secure=session_cookie_is_secure(request), samesite="strict", path="/")
     return response
 
 @app.post("/api/session/logout")
-def session_logout():
+def session_logout(request: Request):
     response = JSONResponse({"ok": True})
-    response.delete_cookie(key=SESSION_COOKIE_NAME, path="/", httponly=True, samesite="strict")
+    response.delete_cookie(key=SESSION_COOKIE_NAME, path="/", httponly=True, secure=session_cookie_is_secure(request), samesite="strict")
     return response
 @app.get("/api/events")
 def get_events(limit: int = 50, event_type: str | None = None):
