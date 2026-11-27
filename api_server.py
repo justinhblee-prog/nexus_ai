@@ -162,6 +162,13 @@ def hosted_session(request: Request):
     return {"authenticated": True, "user": user}
 
 
+class WorkspaceOwnershipTransferReq(BaseModel):
+    new_owner_id: UUID
+
+    class Config:
+        extra = "forbid"
+
+
 class HostedJobCreateReq(BaseModel):
     channel_id: UUID
     topic: str = Field(min_length=1, max_length=300)
@@ -209,6 +216,25 @@ def hosted_workspaces(request: Request):
         for item in items:
             item["member_role"] = roles.get(item["workspace_id"])
         return {"items": items}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+@app.post("/api/hosted/workspaces/{workspace_id}/transfer-ownership")
+def hosted_transfer_workspace_ownership(
+    workspace_id: str,
+    req: WorkspaceOwnershipTransferReq,
+    request: Request,
+):
+    """Transfer ownership to an existing admin before the current owner deletes their account."""
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    try:
+        client.rpc("transfer_workspace_ownership", {
+            "p_workspace_id": workspace_id,
+            "p_new_owner_id": str(req.new_owner_id),
+        })
+        return {"transferred": True, "workspace_id": workspace_id}
     except SupabaseRestError as exc:
         _hosted_rest_error(exc)
 
