@@ -331,20 +331,17 @@ class SignedSessionTests(unittest.TestCase):
             hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
             hosted_access_token="verified.user.jwt",
         ))
-        fake_conn = Mock()
-        fake_conn.execute.side_effect = [
-            Mock(fetchall=Mock(return_value=[
-                {"region": "KR", "rank_no": 1, "topic": "AI 업무 자동화", "source_name": "News",
-                 "source_url": "https://example.com/story", "viral_score": 88},
-                {"region": "US", "rank_no": 2, "topic": "AI 업무 자동화", "source_name": "HN",
-                 "source_url": "javascript:alert(1)", "viral_score": 80},
-            ])),
-            Mock(fetchone=Mock(return_value={"status": "completed", "completed_at": "2026-11-27T00:00:00Z", "item_count": 2})),
+        signals = [
+            {"region": "KR", "rank_no": 1, "topic": "AI 업무 자동화", "source_name": "News",
+             "source_url": "https://example.com/story", "viral_score": None},
+            {"region": "US", "rank_no": 2, "topic": " ai   업무 자동화 ", "source_name": "HN",
+             "source_url": "javascript:alert(1)", "viral_score": None},
         ]
-        with patch.object(self.api, "SupabaseRestClient") as client_type, \
-             patch.object(self.api.os.path, "isfile", return_value=True), \
-             patch.object(self.api.sqlite3, "connect", return_value=fake_conn) as connect:
-            client_type.return_value.select.return_value = [{"role": "viewer"}]
+        scan = [{"status": "partial", "completed_at": "2026-11-28T00:00:00Z", "item_count": 2}]
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.side_effect = [
+                [{"role": "viewer"}], signals, scan
+            ]
             result = self.api.hosted_workspace_trends(
                 "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", request
             )
@@ -352,8 +349,10 @@ class SignedSessionTests(unittest.TestCase):
         self.assertEqual(result["items"][0]["source_url"], "https://example.com/story")
         self.assertEqual(result["scope"], "shared_public_signals")
         self.assertTrue(result["available"])
-        connect.assert_called_once_with("file:data/studio_data.db?mode=ro", uri=True)
-        fake_conn.close.assert_called_once()
+        calls = client_type.return_value.select.call_args_list
+        self.assertEqual(calls[0].args[0], "workspace_members")
+        self.assertEqual(calls[1].args[0], "public_trend_signals")
+        self.assertEqual(calls[2].args[0], "public_trend_scans")
 
     def test_hosted_trends_reject_non_members(self):
         request = types.SimpleNamespace(state=types.SimpleNamespace(
@@ -752,55 +751,34 @@ class SignedSessionTests(unittest.TestCase):
         admin_type.return_value.create_signed_url.assert_not_called()
 
 
-    def test_hosted_trends_uses_existing_sqlite_snapshot_read_only(self):
-        request = types.SimpleNamespace(state=types.SimpleNamespace(
-            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
-            hosted_access_token="verified.user.jwt",
-        ))
-        with tempfile.TemporaryDirectory() as directory:
-            db_path = os.path.join(directory, "studio_data.db")
-            connection = sqlite3.connect(db_path)
-            connection.executescript("""
-                CREATE TABLE trend_recommendations (
-                    region TEXT, rank_no INTEGER, topic TEXT, source_name TEXT,
-                    source_url TEXT, source_score INTEGER, source_score_label TEXT,
-                    growth_pct INTEGER, viral_score INTEGER, ai_reason TEXT,
-                    created_at TEXT, period_type TEXT
-                );
-                CREATE TABLE radar_scans (
-                    period_type TEXT, started_at TEXT, completed_at TEXT,
-                    status TEXT, item_count INTEGER
-                );
-                INSERT INTO trend_recommendations
-                    VALUES ('KR', 1, 'AI topic', 'News', 'https://example.test/story',
-                            10, '10', 20, 90, 'reason', '2026-11-27T00:00:00Z', 'daily');
-                INSERT INTO radar_scans
-                    VALUES ('daily', '2026-11-27T00:00:00Z',
-                            '2026-11-27T00:01:00Z', 'completed', 1);
-            """)
-            connection.commit()
-            connection.close()
-            with patch.object(self.api, "SupabaseRestClient") as client_type, \
-                 patch.object(self.api.trend_radar, "DB_PATH", db_path, create=True), \
-                 patch.object(self.api.trend_radar, "init_radar_db", side_effect=AssertionError("must not initialize hosted SQLite"), create=True):
-                client_type.return_value.select.return_value = [{"role": "owner"}]
-                result = self.api.hosted_workspace_trends(
-                    "wsp_11111111-1111-4111-8111-111111111111", request
-                )
-        self.assertEqual(result["available"], True)
-        self.assertEqual(result["items"][0]["topic"], "AI topic")
-        self.assertEqual(result["scan"]["status"], "completed")
-
-    def test_hosted_trends_returns_empty_state_when_sqlite_snapshot_is_absent(self):
+    def test_hosted_trends_reads_shared_supabase_store_without_local_sqlite(self):
         request = types.SimpleNamespace(state=types.SimpleNamespace(
             hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
             hosted_access_token="verified.user.jwt",
         ))
         with patch.object(self.api, "SupabaseRestClient") as client_type, \
-             patch.object(self.api.trend_radar, "DB_PATH", "/missing/nexus/studio_data.db", create=True), \
-             patch.object(self.api.os.path, "isfile", return_value=False), \
-             patch.object(self.api.trend_radar, "init_radar_db", side_effect=AssertionError("must not initialize hosted SQLite"), create=True):
-            client_type.return_value.select.return_value = [{"role": "owner"}]
+             patch.object(self.api.sqlite3, "connect", side_effect=AssertionError("hosted trend API must not read SQLite")):
+            client_type.return_value.select.side_effect = [
+                [{"role": "owner"}],
+                [{"topic": "AI topic", "source_url": "https://example.test/story", "rank_no": 1}],
+                [{"status": "success", "completed_at": "2026-11-28T00:01:00Z", "item_count": 1}],
+            ]
+            result = self.api.hosted_workspace_trends(
+                "wsp_11111111-1111-4111-8111-111111111111", request
+            )
+        self.assertTrue(result["available"])
+        self.assertEqual(result["items"][0]["topic"], "AI topic")
+        self.assertEqual(result["scan"]["status"], "success")
+
+    def test_hosted_trends_returns_empty_state_when_shared_store_has_no_rows(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.side_effect = [
+                [{"role": "owner"}], [], []
+            ]
             result = self.api.hosted_workspace_trends(
                 "wsp_11111111-1111-4111-8111-111111111111", request
             )
