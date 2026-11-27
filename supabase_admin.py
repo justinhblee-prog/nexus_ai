@@ -34,6 +34,7 @@ _ALLOWED_RPCS = {
     "heartbeat_shorts_upload_job",
     "record_shorts_upload_video_id",
     "finish_shorts_upload",
+    "list_account_deletion_storage_objects",
 }
 
 
