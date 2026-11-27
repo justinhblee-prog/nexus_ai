@@ -506,6 +506,7 @@
                 })
               }
             );
+            if (workspaceId !== activeWorkspaceId || token !== activeAccessToken) return;
             if (migrationResponse.ok) {
               const migrated = await migrationResponse.json();
               if (migrated.item) serverItems.push(migrated.item);
@@ -516,6 +517,7 @@
             remainingLocalItems.push(localItem);
           }
         }
+        if (workspaceId !== activeWorkspaceId || token !== activeAccessToken) return;
         if (remainingLocalItems.length !== localItems.length) {
           writeSavedTopicQueue(remainingLocalItems);
         }
