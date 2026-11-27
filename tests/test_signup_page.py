@@ -51,6 +51,11 @@ class HostedSignupPageContractTests(unittest.TestCase):
         self.assertIn('"/disconnect"', self.html)
         self.assertIn("YouTube 채널 연결", self.html)
         self.assertIn("authorization_url", self.html)
+        self.assertIn('"/jobs"', self.html)
+        self.assertIn('"/preview"', self.html)
+        self.assertIn('"/approve"', self.html)
+        self.assertIn("Shorts 제작 요청", self.html)
+        self.assertIn("최종 승인", self.html)
 
 
 if __name__ == "__main__":
