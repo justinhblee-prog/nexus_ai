@@ -2,10 +2,18 @@ import os
 import unittest
 from unittest.mock import patch
 
-from streamlit_auth import configured_password, is_auth_configured, verify_streamlit_password
+from streamlit_auth import auth_enabled, configured_password, is_auth_configured, verify_streamlit_password
 
 
 class StreamlitAuthTests(unittest.TestCase):
+    def test_authentication_is_disabled_by_default_and_opt_in(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(auth_enabled())
+        with patch.dict(os.environ, {"NEXUS_AUTH_ENABLED": "true"}, clear=True):
+            self.assertTrue(auth_enabled())
+        with patch.dict(os.environ, {"NEXUS_AUTH_ENABLED": "0"}, clear=True):
+            self.assertFalse(auth_enabled())
+
     def test_requires_minimum_password_length(self):
         self.assertEqual(configured_password("short"), "")
         self.assertEqual(configured_password("long-enough-password"), "long-enough-password")
