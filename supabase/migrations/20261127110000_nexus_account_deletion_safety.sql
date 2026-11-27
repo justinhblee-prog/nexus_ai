@@ -76,6 +76,7 @@ SET search_path = ''
 AS $function$
 DECLARE
   v_current_owner uuid;
+  v_updated_members integer;
 BEGIN
   IF (SELECT auth.uid()) IS NULL THEN
     RAISE EXCEPTION 'Authentication required' USING ERRCODE = '42501';
@@ -95,6 +96,17 @@ BEGIN
 
   IF NOT FOUND OR v_current_owner <> (SELECT auth.uid()) THEN
     RAISE EXCEPTION 'Workspace owner permission required' USING ERRCODE = '42501';
+  END IF;
+
+  PERFORM 1
+  FROM public.workspace_members AS wm
+  WHERE wm.workspace_id = p_workspace_id
+    AND wm.user_id = v_current_owner
+    AND wm.role = 'owner'
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Current workspace owner membership is inconsistent' USING ERRCODE = '23514';
   END IF;
 
   PERFORM 1
@@ -120,6 +132,11 @@ BEGIN
   END
   WHERE workspace_id = p_workspace_id
     AND user_id IN (v_current_owner, p_new_owner_id);
+
+  GET DIAGNOSTICS v_updated_members = ROW_COUNT;
+  IF v_updated_members <> 2 THEN
+    RAISE EXCEPTION 'Workspace ownership membership transfer was incomplete' USING ERRCODE = '23514';
+  END IF;
 END;
 $function$;
 
