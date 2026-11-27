@@ -532,6 +532,35 @@ class SupabaseAdminRestClient:
             "p_retry_seconds": max(5, min(int(retry_seconds), 86400)),
         })
 
+    def get_account_deletion_oauth_state(self, user_id, provider_account_hash):
+        value = self._account_user_id(user_id)
+        if not isinstance(provider_account_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", provider_account_hash):
+            raise ValueError("OAuth provider account fingerprint is invalid")
+        rows = self.rpc("get_account_deletion_oauth_state", {
+            "p_user_id": value,
+            "p_provider_account_hash": provider_account_hash,
+        }) or []
+        if not rows:
+            return None
+        row = rows[0]
+        return row.get("state") if isinstance(row, dict) else row
+
+    def set_account_deletion_oauth_state(self, user_id, provider_account_hash, state):
+        value = self._account_user_id(user_id)
+        if not isinstance(provider_account_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", provider_account_hash):
+            raise ValueError("OAuth provider account fingerprint is invalid")
+        if state not in {"revocation_started", "revoked", "preserved", "not_required"}:
+            raise ValueError("OAuth deletion state is invalid")
+        rows = self.rpc("set_account_deletion_oauth_state", {
+            "p_user_id": value,
+            "p_provider_account_hash": provider_account_hash,
+            "p_state": state,
+        }) or []
+        if not rows:
+            return None
+        row = rows[0]
+        return row.get("state") if isinstance(row, dict) else row
+
     def list_account_deletion_storage_objects(self, user_id, limit=1000, offset=0, workspace_ids=None):
         """List Storage objects owned by one verified account via a service-only RPC."""
         value = str(user_id)
