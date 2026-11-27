@@ -1,6 +1,6 @@
 # NEXUS STUDIO PRO — BUILD STATUS
 
-기준일: 2026-11-27  
+기준일: 2026-11-28  
 저장소: `justinhblee-prog/nexus_ai`
 
 ## 최신 Hosted SaaS 릴리스 상태
@@ -8,65 +8,71 @@
 **IN PROGRESS · PR #11 Draft/Open · 운영 전환 차단**
 
 - 작업 브랜치: `feat/nexus-user-onboarding-web-oauth-20261127`
-- 현재 PR branch head: `c41694c5c47c02852a0fe19c847f75a010646e11` (CI 통과한 코드 커밋 `7369889a95c3f695663d635da01cdc1a3cead7ac` 뒤 문서 정합성 수정)
-- 코드 검증 CI: run `46022786431`, code head `7369889a95c3f695663d635da01cdc1a3cead7ac`, **315 tests PASS**, Playwright PASS. 이후 커밋은 문서만 변경.
-- Pull Request: [#11 — User onboarding and hosted OAuth](https://github.com/justinhblee-prog/nexus_ai/pull/11)
-- 최신 코드 검증 GitHub Actions: [run 46022786431](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46022786431) — code head `7369889a95c3f695663d635da01cdc1a3cead7ac`에서 **315 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, Playwright browser smoke 모두 통과.
-- PR은 Draft/Open이며 merge하지 않음. main push, production deployment, public YouTube upload 금지.
-- Supabase 서비스 프로젝트 `ai_studio` (`lmdhgqfqvfyymfrovaty`)는 ACTIVE_HEALTHY, PostgreSQL 17.11, Seoul ap-northeast-2, Free plan.
-- 현재 운영 DB migration history는 총 14개(NEXUS foundation/auth/workspace/OAuth/render/upload 기반). 계정 삭제/권한 강화 후속 6개는 미적용.
-- 현재 Supabase public/private 테이블 목록에 `public.shorts_topic_queue`와 account-deletion 전용 private 테이블이 없음. Saved topic queue는 UI/API 코드와 설계 SQL까지 구현됐지만 DB migration 생성/적용 전이므로 서버 저장 모드는 아직 활성화 불가.
-- 실데이터가 아직 없는 상태: 확인된 workspace/Shorts tenant 테이블 행 수는 0. 실제 Google OAuth 및 2개 계정 간 tenant E2E는 검증되지 않음.
+- PR #11 현재 HEAD: `2087953e70f6f6e5b7d513014b0be9ba77882fa5` (상태 문서 갱신 커밋)
+- 최신 검증 애플리케이션 코드 HEAD: `ccf24ee4808de05c738993d7b2b151c8d0ae8039`
+- 최신 코드 검증: [GitHub Actions run 46039623628](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46039623628) — **340 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, Playwright browser interaction smoke 모두 통과.
+- PR #11: [SaaS onboarding and private Shorts automation pipeline](https://github.com/justinhblee-prog/nexus_ai/pull/11). Draft/Open/unmerged 유지.
+- 별도 Draft PR #1, #5, #6, #7, #8, #9, #10도 보존. PR #11은 `integration/nexus-full-stack-20261127` 기반이며, 독립 PR의 병합/종료는 수행하지 않음.
+- Supabase `ai_studio` (`lmdhgqfqvfyymfrovaty`)는 ACTIVE_HEALTHY, PostgreSQL 17.11, Seoul region, Free plan. Live migration history는 14개이며 NEXUS 후속 migration은 아직 적용하지 않음.
+- Live Supabase에는 Auth 사용자/workspace/Shorts tenant 데이터가 없고, `public.shorts_topic_queue`, `public.public_trend_signals`, `public.public_trend_scans` 테이블도 아직 없음. 합성 사용자/데이터는 생성하지 않음.
+- Hosted auth/workspace, trend reader/collector, topic queue API/UI, private upload 및 account-deletion 설계는 코드에 구현되어 있으나 실제 계정·DB·Google 계정 기반 E2E는 미검증.
 
-### 코드/CI 완료 범위
+### 코드 및 CI 완료 범위
 
-- Supabase Auth signup/login/password recovery 및 사용자별 workspace API/UI.
-- Workspace RLS 기반 exact-count overview, paginated job history, workspace 전환 stale-response 방지.
-- Owner/admin 전용 최종 승인 및 conditional state update.
+- Supabase Auth signup/login/password recovery 및 사용자별 workspace bootstrap, JWT 검증, tenant-scoped APIs.
+- Workspace RLS 기반 exact-count overview, job history, workspace 전환 stale-response 방지.
+- Owner/admin 전용 최종 승인과 conditional state update.
 - Vercel FastAPI entrypoint 분리. 로컬 Streamlit `app.py`는 유지하며 Hosted cold start는 로컬 SQLite/worker/scheduler를 시작하지 않음.
-- OAuth PKCE/state, encrypted token vault, private render/upload worker, private-only YouTube upload path, account-deletion retry/checkpoint 설계 및 테스트. OAuth 시작 후 Google 왕복 중 workspace admin 권한이 강등/삭제되는 경우를 막기 위해 callback에서 code exchange 전과 credential persistence 직전에 현재 membership role을 재검증함.
-- Saved topic queue 사용자·워크스페이스 scoped list/add/delete API와 UI, browser-local fallback 및 migration handoff 문서.
-- Hosted trend radar endpoint는 로컬 SQLite를 쓰거나 초기화하지 않으며, Vercel 번들에 데이터 snapshot이 없을 때 unavailable 상태로 fail closed.
+- Google OAuth PKCE/one-time state, encrypted refresh-token vault, callback membership 재검증, channel discovery 및 disconnect lifecycle.
+- Private Storage, render/review/approval, private-only YouTube upload path, upload lease/checkpoint, account-deletion retry/checkpoint 코드 및 회귀 테스트.
+- 사용자·workspace scoped saved topic queue API/UI와 browser-local fallback. 서버 저장형 queue는 migration 적용 전까지 사용 불가.
+- Hosted shared trend reader/collector 구현. Worker는 source별 최신 데이터 upsert 후 성공한 source만 오래된 행을 정리하며, 실패 source의 마지막 정상 데이터는 보존. 일일/주간 scan 실패는 health metadata를 게시하고 다른 period도 시도한 뒤 worker retry loop로 전달.
+- 최신 애플리케이션 코드 검증은 340 tests PASS. 이는 code contract 및 static preview browser smoke이지 실제 Supabase/Google/YouTube 운영 E2E가 아님.
 
-### Vercel Preview 현황
+### Vercel Preview 및 OAuth 설정
 
-- 프로젝트: `neural-network` / Free plan.
-- Preview 환경변수 목록에는 `NEXUS_SUPABASE_URL`, `NEXUS_SUPABASE_PUBLISHABLE_KEY` 두 레코드만 확인됨(이 브랜치 Preview 전용). 민감 값은 복호화/출력하지 않아 유효성은 미검증. Hosted server-side secret 변수 레코드는 확인되지 않음.
-- 현재 READY Preview: deployment `dpl_4peW8RQNxPiwbwVkPwbWSHbawyp6`, commit `0dda21d543f8ca08ca0d98f2ecfac39c159fa425`. 최신 PR branch head `7369889...`와는 migration/test/docs 수정 커밋 차이가 있어, 해당 최신 소스의 Preview 배포 상태는 별도 확인 대상. 기존 READY는 Hosted OAuth E2E 성공을 의미하지 않음.
-- Google Cloud 기존 OAuth 설정은 `NEXUS STUDIO PRO` External consent screen, test user, YouTube Data API/Analytics API, OAuth client `NEXUS STUDIO PRO Local`(Desktop application)으로 확인됨. 이 Desktop client는 로컬 `tokens/client_secret.json` 기반 localhost 인증용이며, Hosted HTTPS callback용 Web application client와 다름. 따라서 기존 Google 설정을 다시 만들 필요는 없지만, Hosted callback을 위해 별도의 Web application OAuth client와 redirect URI가 필요함.
-- Vercel 프로젝트의 현재 Preview 변수 목록에는 다음 Hosted server-side 설정이 없음: `NEXUS_SUPABASE_SERVICE_ROLE_KEY`, `NEXUS_TOKEN_ENCRYPTION_KEY` 또는 `NEXUS_TOKEN_ENCRYPTION_KEYS_JSON`, `NEXUS_GOOGLE_OAUTH_CLIENT_ID`, `NEXUS_GOOGLE_OAUTH_CLIENT_SECRET`, `NEXUS_GOOGLE_OAUTH_REDIRECT_URI`, `NEXUS_HOSTED_APP_URL`. 어떤 비밀값도 채팅에 요청하거나 출력하지 않음. `NEXUS_SUPABASE_JWT_ISSUER` 및 `NEXUS_SUPABASE_JWKS_URL`은 프로젝트 URL 기본값을 사용할 수 있음.
+- 프로젝트: `neural-network`, Free plan.
+- Branch-scoped Preview 환경변수 8개 확인: Supabase URL/publishable/secret key, Google Web OAuth client ID/secret/redirect URI, hosted app URL, AES-256-GCM token-encryption key. 모든 값은 Preview + feature branch 전용이며 Production 변수는 추가하지 않음.
+- 최신 확인 READY deployment: `dpl_5w9gRC8zzbSi2ET72b4uka1UrNyQ`, commit `c948a7e90fca9c8c1f04d9dfed760f39a9f0b430`. 이것은 현재 애플리케이션 코드 HEAD `ccf24ee...`보다 이전이며, 최신 코드의 Vercel runtime 배포 검증을 의미하지 않음.
+- 이후 Preview 배포 시도는 Vercel Free 일일 배포 API quota(`api-deployments-free-per-day`)로 제한됨. 유료 전환이나 quota 우회는 하지 않음.
+- 현재 `NEXUS_GOOGLE_OAUTH_REDIRECT_URI`와 `NEXUS_HOSTED_APP_URL`은 이전 unique deployment `https://neural-network-gkefyzt27-justinhblee-9540.vercel.app`을 가리킴. 최신 branch alias는 `https://neural-network-git-feat-nexus-user-onbo-509390-justinhblee-9540.vercel.app`이므로 callback/return origin 정합성 조정이 필요함.
+- Google Cloud Web OAuth client는 이전 deployment origin/callback으로 설정되어 있음. 실제 Google consent/callback/refresh/revoke E2E는 아직 실행하지 않음. Vercel Preview SSO/deployment protection도 유지 중이며 임의 해제하지 않음.
+- 최신 확인 deployment의 30분 runtime error/fatal log 조회에서는 로그가 반환되지 않았음. 이는 요청이 없거나 로그가 없다는 뜻일 수 있으며, 기능 성공 증거로 취급하지 않음.
 
-### Supabase read-only advisor 결과 (2026-11-27 재점검)
+### Supabase live read-only 점검
 
+- Migration history: 14개. 미적용 항목은 아래 release gates 참조.
 - Health advisor: findings 0.
-- Security advisor: INFO 6건, 모두 RLS가 활성화됐지만 client policy가 없는 `private.*` worker/OAuth 테이블. 의도된 service-only 접근 영역으로 기록됨.
-- Performance advisor: unindexed foreign keys 14건, unused index 26건. 14개 FK를 커버하는 additive migration 파일은 PR에 있으나 live DB에는 미적용. 26개 unused index는 실제 workload 근거 없이 삭제하지 않음.
-- 운영 DB에는 이번 점검에서 DDL, migration, 데이터 변경을 수행하지 않음.
+- Security advisor: INFO 6건 — RLS가 활성화됐으나 client policy가 없는 private worker/OAuth tables. 의도된 service-only 접근 영역.
+- Performance advisor: unindexed foreign keys 14건, unused indexes 26건. 14개 FK index coverage migration은 PR에 있으나 live 미적용. 26개 unused indexes는 workload 근거 없이 삭제하지 않음.
+- 이번 read-only 점검에서 live DDL, migration, 데이터 변경은 수행하지 않음.
 
-### 남은 릴리스 게이트 — 모두 해소 전까지 운영 전환 금지
+### 남은 릴리스 게이트
 
-1. **Topic queue migration**: `20261127143658_nexus_user_workspace_topic_queue.sql` is present on PR #11 and remains unapplied to the live DB. RLS read is available to owner/admin/editor/viewer; insert/delete are restricted to owner/admin/editor, matching the workspace domain role model. Migration lint, local database application, and two-user RLS isolation tests remain pending. The active Supabase database remains unchanged.
-2. **Account deletion / security migrations**: 아래 6개 파일을 review 후 별도 승인된 migration window에서 적용하고 live schema/advisor 재검증해야 함:
+1. **Topic queue migration** — `20261127143658_nexus_user_workspace_topic_queue.sql`은 PR에 있으나 live DB 미적용. Supabase CLI로 로컬 migration lint 및 local DB 검증 후 별도 승인된 live migration window가 필요.
+2. **Shared trend store migration** — SQL 설계는 `docs/SHARED_PUBLIC_TREND_STORE_MIGRATION.md`에 있음. 올바른 local checkout에서 `supabase migration new nexus_shared_public_trend_store`로 timestamped migration 생성 후 `supabase db lint --local`; live 적용은 별도 승인 필요.
+3. **Account deletion/security migrations** — 다음 6개 파일은 review/승인된 migration window 전까지 미적용:
    - `20261127110000_nexus_account_deletion_safety.sql`
    - `20261127123000_nexus_account_deletion_oauth_retry_state.sql`
    - `20261127130000_nexus_foreign_key_index_coverage.sql`
    - `20261127140000_nexus_account_deletion_retry_lookup.sql`
    - `20261127150000_nexus_youtube_disconnect_retry_state.sql`
    - `20261127160000_nexus_anon_privilege_hardening.sql`
-3. **Hosted trend persistence**: shared persistent trend snapshot/source 및 수집 파이프라인이 필요. 현재는 데이터가 없으면 unavailable로 표시.
-4. **Google OAuth**: Vercel Preview에 Google client ID/secret, redirect URI, app URL, encryption key 및 필요한 server-only key를 안전하게 등록하고 Google Console redirect URI를 일치시킨 뒤 실제 동의/refresh/revoke를 테스트해야 함.
-5. **Tenant E2E**: 실제 두 사용자 계정으로 같은 workspace 및 서로 다른 workspace의 read/write/delete 격리 검증이 필요. 현재 DB에는 테스트 계정이 없어 완료되지 않음.
-6. **Preview runtime**: Vercel deployment `dpl_4peW8RQNxPiwbwVkPwbWSHbawyp6` is READY on commit `0dda21d...`; the current PR branch includes later migration/test/documentation commits. No production deployment was made. Once the required Preview server secrets and Web OAuth client are configured, run real signup/login/API/OAuth browser E2E against a current Preview. Runtime logs for the existing READY deployment returned no warning/error records in the inspected window.
-7. **Account deletion / workers / upload**: 실제 계정·Google 동의·migration·private Storage prerequisites 및 E2E 전까지 `NEXUS_ACCOUNT_DELETION_ENABLED`, `NEXUS_ACCOUNT_DELETION_WORKER_ENABLED`, `NEXUS_HOSTED_WORKER_ENABLED`, `NEXUS_HOSTED_UPLOAD_ENABLED`는 false 유지. YouTube 업로드는 명시적 승인 후 Private만 허용.
+4. **OAuth configuration alignment** — Google Cloud authorized origin/redirect URI, Vercel Preview redirect URI/app URL, branch alias 및 Preview protection 정책 정합성 조정 후 실제 Google consent/callback/refresh/revoke 검증 필요.
+5. **Tenant isolation E2E** — 실제 두 사용자 계정으로 같은 workspace/서로 다른 workspace의 read/write/delete 격리 검증 필요. 현재 live Auth user count 0.
+6. **Private upload E2E** — 실제 테스트 YouTube 채널 연결 후 명시적 Human approval를 거쳐 private upload 및 video ID/privacyStatus 확인 필요. 공개 게시/자동 공개 전환 금지.
+7. **Windows local runtime** — 사용자 Windows Docker/Streamlit/FFmpeg 실제 시작·재시작·render·backup/recovery 검증은 이 세션에서 사용자 PC에 직접 접근할 수 없어 미완료.
+8. **Latest Preview runtime** — Free deployment quota가 해제된 뒤 최신 코드 HEAD의 Preview 배포와 실제 signup/login/API runtime 검증 필요.
 
-### 안전 경계
+### 안전 경계 및 Git 정합성
 
-- PR #11 Draft/Open 유지. merge, main push, production deploy 금지.
-- Supabase 운영 migration/DDL 미적용. `ai_studio_test` dormant 프로젝트 보존.
+- PR #11 및 기존 Draft PR은 Open/Draft/unmerged 유지. merge, production deployment, public YouTube upload, force-push, history rewrite 금지.
+- Supabase live migrations/DDL 및 데이터 변경은 별도 명시적 승인 전까지 수행하지 않음.
 - 유료 API, 유료 인프라, 플랜 업그레이드 금지.
-- Google/OAuth/Vercel/Supabase 비밀값을 채팅이나 Git에 입력하지 않음.
-- 공개 YouTube 업로드 및 자동 공개 전환 금지. 계정 삭제는 prerequisite 완료 전 비활성화.
-- 다음 로컬 의존 작업 외의 코드/CI 완료 사항은 최신 head 및 Actions run으로 추적.
+- Worker flags는 기본 비활성화 유지. 계정 삭제, render/upload, trend worker를 실서비스에서 임의 활성화하지 않음.
+- 알려진 Git 정책 위반 기록: test-only commit `af8aa82195c2642623b5461a623c8bd0a8c99336`가 실수로 `main`에 생성됨. 추가 main 변경/삭제/revert는 수행하지 않았으며, 별도 명시적 승인 전까지 그대로 보존.
+- 비밀값은 채팅/Git에 입력하거나 출력하지 않음.
+
 
 ---
 
