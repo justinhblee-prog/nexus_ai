@@ -36,5 +36,13 @@ class HostedWorkspaceMetricsContractTests(unittest.TestCase):
         self.assertIn('if table not in _ALLOWED_TABLES:', method)
 
 
+    def test_trend_panel_distinguishes_missing_hosted_store_from_empty_scan(self):
+        html = (ROOT / "signup.html").read_text(encoding="utf-8")
+        self.assertIn('result.available === false', html)
+        self.assertIn("공유 트렌드 데이터 저장소 연결 대기", html)
+        self.assertIn("호스팅 환경에 공유 트렌드 데이터 저장소가 아직 연결되지 않았습니다.", html)
+
+
+
 if __name__ == "__main__":
     unittest.main()
