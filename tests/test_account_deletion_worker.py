@@ -297,6 +297,8 @@ class AccountDeletionWorkerTests(unittest.TestCase):
             "status": "connected",
         }]
         admin.has_active_connection_outside_workspaces.return_value = False
+        admin.get_account_deletion_oauth_state.return_value = None
+        admin.set_account_deletion_oauth_state.return_value = "revocation_started"
         admin.get_credential.return_value = {
             "encrypted_refresh_token_hex": "ciphertext",
             "encryption_key_version": "v1",
