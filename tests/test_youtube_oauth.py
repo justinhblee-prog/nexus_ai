@@ -83,6 +83,9 @@ class GoogleOAuthTests(unittest.TestCase):
         http = Mock()
         http.return_value = Mock(status_code=200)
         config.revoke_refresh_token("refresh", http_post=http)
+        http.return_value = Mock(status_code=400)
+        with self.assertRaises(GoogleOAuthError):
+            config.revoke_refresh_token("refresh", http_post=http)
         http.return_value = Mock(status_code=500)
         with self.assertRaises(GoogleOAuthError):
             config.revoke_refresh_token("refresh", http_post=http)
