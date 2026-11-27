@@ -114,14 +114,15 @@
       if (!verified.authenticated || verified.user.user_id !== user.id) {
         throw new Error("서버가 확인한 사용자와 로그인 계정이 일치하지 않습니다.");
       }
-      const { data: workspaces, error: workspaceError } = await supabase
-        .from("workspaces")
-        .select("workspace_id,workspace_name,created_at")
-        .order("created_at", { ascending: true });
-      if (workspaceError) throw workspaceError;
+      const workspaceResponse = await fetch("/api/hosted/workspaces", {
+        headers: { Authorization: "Bearer " + session.access_token }
+      });
+      if (!workspaceResponse.ok) throw new Error("워크스페이스 확인 실패 (" + workspaceResponse.status + ")");
+      const workspaceResult = await workspaceResponse.json();
+      const workspaces = workspaceResult.items || [];
       document.getElementById("session-email").textContent = user.email || "인증된 계정";
       const workspaceNode = document.getElementById("workspace");
-      workspaceNode.textContent = workspaces?.length
+      workspaceNode.textContent = workspaces.length
         ? workspaces.map(item => item.workspace_name + " · " + item.workspace_id).join("\n")
         : "워크스페이스를 찾지 못했습니다. 계정 부트스트랩 상태를 확인하세요.";
       workspaceNode.style.whiteSpace = "pre-line";
