@@ -3,6 +3,8 @@ import logging
 import asyncio
 import os
 import sys
+import sqlite3
+import tempfile
 import types
 import unittest
 from starlette.requests import Request
@@ -680,6 +682,64 @@ class SignedSessionTests(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 404)
         self.assertEqual(client_type.call_args.args[0], "verified.user.jwt")
         admin_type.return_value.create_signed_url.assert_not_called()
+
+
+    def test_hosted_trends_uses_existing_sqlite_snapshot_read_only(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = os.path.join(directory, "studio_data.db")
+            connection = sqlite3.connect(db_path)
+            connection.executescript("""
+                CREATE TABLE trend_recommendations (
+                    region TEXT, rank_no INTEGER, topic TEXT, source_name TEXT,
+                    source_url TEXT, source_score INTEGER, source_score_label TEXT,
+                    growth_pct INTEGER, viral_score INTEGER, ai_reason TEXT,
+                    created_at TEXT, period_type TEXT
+                );
+                CREATE TABLE radar_scans (
+                    period_type TEXT, started_at TEXT, completed_at TEXT,
+                    status TEXT, item_count INTEGER
+                );
+                INSERT INTO trend_recommendations
+                    VALUES ('KR', 1, 'AI topic', 'News', 'https://example.test/story',
+                            10, '10', 20, 90, 'reason', '2026-11-27T00:00:00Z', 'daily');
+                INSERT INTO radar_scans
+                    VALUES ('daily', '2026-11-27T00:00:00Z',
+                            '2026-11-27T00:01:00Z', 'completed', 1);
+            """)
+            connection.commit()
+            connection.close()
+            with patch.object(self.api, "SupabaseRestClient") as client_type, \
+                 patch.object(self.api.trend_radar, "DB_PATH", db_path, create=True), \
+                 patch.object(self.api.trend_radar, "init_radar_db", side_effect=AssertionError("must not initialize hosted SQLite"), create=True):
+                client_type.return_value.select.return_value = [{"role": "owner"}]
+                result = self.api.hosted_workspace_trends(
+                    "wsp_11111111-1111-4111-8111-111111111111", request
+                )
+        self.assertEqual(result["available"], True)
+        self.assertEqual(result["items"][0]["topic"], "AI topic")
+        self.assertEqual(result["scan"]["status"], "completed")
+
+    def test_hosted_trends_returns_empty_state_when_sqlite_snapshot_is_absent(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type, \
+             patch.object(self.api.trend_radar, "DB_PATH", "/missing/nexus/studio_data.db", create=True), \
+             patch.object(self.api.os.path, "isfile", return_value=False), \
+             patch.object(self.api.trend_radar, "init_radar_db", side_effect=AssertionError("must not initialize hosted SQLite"), create=True):
+            client_type.return_value.select.return_value = [{"role": "owner"}]
+            result = self.api.hosted_workspace_trends(
+                "wsp_11111111-1111-4111-8111-111111111111", request
+            )
+        self.assertEqual(result["items"], [])
+        self.assertFalse(result["available"])
+        self.assertEqual(result["scan"]["status"], "not_scanned")
+
 
 
 if __name__ == "__main__":
