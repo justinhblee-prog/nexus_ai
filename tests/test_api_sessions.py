@@ -441,6 +441,8 @@ class SignedSessionTests(unittest.TestCase):
                 "encrypted_refresh_token_hex": "aabb", "encryption_key_version": "v1"
             }
             admin_type.return_value.has_other_active_connections.return_value = False
+            admin_type.return_value.get_youtube_disconnect_state.return_value = None
+            admin_type.return_value.set_youtube_disconnect_state.side_effect = lambda _connection_id, state: state
             admin_type.return_value.update_connection.return_value = [{"status": "disconnected"}]
             result = self.api.hosted_youtube_disconnect(
                 "wsp_11111111-1111-4111-8111-111111111111",
@@ -490,6 +492,8 @@ class SignedSessionTests(unittest.TestCase):
                 "encrypted_refresh_token_hex": "aabb", "encryption_key_version": "v1"
             }
             admin_type.return_value.has_other_active_connections.return_value = True
+            admin_type.return_value.get_youtube_disconnect_state.return_value = None
+            admin_type.return_value.set_youtube_disconnect_state.side_effect = lambda _connection_id, state: state
             admin_type.return_value.update_connection.return_value = [{"status": "disconnected"}]
             result = self.api.hosted_youtube_disconnect(
                 "wsp_11111111-1111-4111-8111-111111111111",
