@@ -2,11 +2,9 @@ from pathlib import Path
 import unittest
 
 
-HANDOFF = (
-    Path(__file__).resolve().parents[1]
-    / "docs"
-    / "SHARED_PUBLIC_TREND_STORE_MIGRATION.md"
-)
+ROOT = Path(__file__).resolve().parents[1]
+HANDOFF = ROOT / "docs" / "SHARED_PUBLIC_TREND_STORE_MIGRATION.md"
+MIGRATION = ROOT / "supabase" / "migrations" / "20261127172712_nexus_shared_public_trend_store.sql"
 
 
 class SharedPublicTrendMigrationTests(unittest.TestCase):
@@ -15,6 +13,10 @@ class SharedPublicTrendMigrationTests(unittest.TestCase):
         markdown = HANDOFF.read_text(encoding="utf-8")
         sql = markdown.split("```sql", 1)[1].split("```", 1)[0]
         cls.sql = " ".join(sql.lower().split())
+        cls.migration_sql = " ".join(MIGRATION.read_text(encoding="utf-8").lower().split())
+
+    def test_cli_generated_migration_matches_the_reviewed_sql_handoff(self):
+        self.assertEqual(self.migration_sql, self.sql)
 
     def test_tables_are_shared_and_have_stable_source_keys(self):
         self.assertIn("create table if not exists public.public_trend_signals", self.sql)
