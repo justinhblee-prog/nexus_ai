@@ -1,6 +1,6 @@
 # NEXUS STUDIO PRO — SaaS User Registration & YouTube Account Linking
 
-Status: Phase A identity and signup/login UI, Phase B workspace-scoped Shorts schema/APIs, Phase C Google Web OAuth foundations, and Phase D opt-in tenant-aware rendering/review pipeline are implemented. Live Google consent, live worker activation, post-approval YouTube upload, and end-to-end SaaS verification remain in progress.
+Status: Phase A identity and signup/login UI, Phase B workspace-scoped Shorts schema/APIs, Phase C Google Web OAuth foundations, Phase D opt-in tenant-aware rendering/review, and Phase E private-only approved YouTube upload foundations are implemented. Live Google consent, live worker activation, and end-to-end SaaS verification remain in progress.
 Target: `feat/nexus-user-onboarding-web-oauth-20261127`, based on the current full-stack integration branch.
 
 ## Phase A implementation delivered
@@ -34,7 +34,10 @@ Target: `feat/nexus-user-onboarding-web-oauth-20261127`, based on the current fu
 - Added an opt-in Docker `hosted-render-worker` profile. It uses the existing Shorts renderer with an empty OpenAI key (free fallback only), runs ffprobe QA, stores tenant-prefixed MP4s, and stops at `review_pending` for human approval.
 - Verified the live database worker lifecycle in a rolled-back transaction: job claim, lease heartbeat, render completion, private media path enforcement, and owner approval moved the job to `approved`. Temporary user/job/lease rows were confirmed absent afterward.
 - The hosted worker remains disabled by default and was not started; no real media was uploaded to Storage and no YouTube upload was performed.
-- Added hosted account UI controls for channel connect/disconnect, Shorts job creation, rendered preview, and owner/admin final approval. Approval transitions the job to `approved`; public upload is not performed.
+- Added hosted account UI controls for channel connect/disconnect, Shorts job creation, rendered preview, and owner/admin final approval. Approval transitions the job to `approved`.
+- Added an opt-in private YouTube upload worker that only claims approved jobs, refreshes the encrypted account token, downloads the private render, verifies that the Google account exposes exactly the selected YouTube channel, and uploads with `privacyStatus=private`.
+- Uploads are capped at three per Pacific calendar day and two attempts per job. The worker records the provider video ID before finalizing to reduce duplicate uploads after retries. Approval cannot be revoked once upload starts.
+- Jobs finish in `published` stage with `privacy_status=private`; this means uploaded to YouTube privately, not publicly published. Public visibility must be changed manually in YouTube Studio. Accounts exposing multiple channels fail closed rather than risk uploading to the wrong channel.
 - Added role-aware RLS for owner/admin/editor/viewer access, restricted column-level mutation grants, and a trigger that permits approval-status changes only by workspace owners/admins.
 - Enforced private-only upload privacy and disallowed approved/uploading/published job stages until approval is recorded; published jobs also require provider video ID and upload timestamp.
 - Added a private workspace-role helper that derives identity from `auth.uid()`, not browser-supplied user IDs.
