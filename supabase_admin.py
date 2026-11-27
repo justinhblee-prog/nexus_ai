@@ -343,7 +343,7 @@ class SupabaseAdminRestClient:
             or len(object_name) > 1024
             or object_name.startswith("/")
             or any(part in {"", ".", ".."} for part in object_name.split("/"))
-            or "\\\\" in object_name
+            or chr(92) in object_name
         ):
             raise ValueError("Storage object path is invalid")
         headers = {
