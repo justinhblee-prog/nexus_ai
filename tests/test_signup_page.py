@@ -68,6 +68,16 @@ class HostedSignupPageContractTests(unittest.TestCase):
         self.assertIn("select.value = activeWorkspaceId || \"\"", self.html)
         self.assertIn("finally {\n        select.disabled = false;", self.html)
 
+    def test_account_deletion_ui_requires_preflight_password_reauth_and_exact_phrase(self):
+        self.assertIn('id="account-deletion-panel"', self.html)
+        self.assertIn('"/api/hosted/account/deletion/preflight"', self.html)
+        self.assertIn('"/api/hosted/account/deletion/request"', self.html)
+        self.assertIn('id="deletion-password"', self.html)
+        self.assertIn('supabase.auth.signInWithPassword', self.html)
+        self.assertIn('DELETE MY ACCOUNT', self.html)
+        self.assertIn('scope: "local"', self.html)
+        self.assertIn("showDeletionRetryOnly", self.html)
+
     def test_youtube_channel_connect_and_disconnect_controls_use_authenticated_api(self):
         self.assertIn('"/youtube/connections"', self.html)
         self.assertIn('"/youtube/connect"', self.html)
