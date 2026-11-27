@@ -1,4 +1,5 @@
 import importlib
+import logging
 import asyncio
 import os
 import sys
@@ -385,6 +386,19 @@ class SignedSessionTests(unittest.TestCase):
                 self._request("/api/hosted/youtube/callback", method="GET"), next_response
             ))
         self.assertEqual(response.status_code, 204)
+
+
+    def test_oauth_callback_access_log_redacts_query_parameters(self):
+        record = logging.LogRecord(
+            "uvicorn.access", logging.INFO, __file__, 1, "%s - %s %s %s %s",
+            ("127.0.0.1", "GET", "/api/hosted/youtube/callback?code=code123&state=state123", "1.1", 200),
+            None,
+        )
+        filter_instance = self.api.OAuthCallbackLogFilter()
+        self.assertTrue(filter_instance.filter(record))
+        self.assertEqual(record.args[2], "/api/hosted/youtube/callback?[REDACTED]")
+        self.assertNotIn("code123", str(record.args))
+        self.assertNotIn("state123", str(record.args))
 
 
 if __name__ == "__main__":
