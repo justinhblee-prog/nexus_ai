@@ -168,6 +168,30 @@ class SupabaseAdminRestClient:
             prefer="resolution=merge-duplicates,return=representation",
         ) or []
 
+    def upsert_public_trend_signals(self, rows):
+        if not isinstance(rows, list) or not rows:
+            return []
+        if len(rows) > 100:
+            raise ValueError("Public trend upsert batches may contain at most 100 rows")
+        return self._call(
+            "POST",
+            "public_trend_signals",
+            params={"on_conflict": "period_type,region,source_name,topic"},
+            payload=rows,
+            prefer="resolution=merge-duplicates,return=minimal",
+        ) or []
+
+    def upsert_public_trend_scan(self, payload):
+        if not isinstance(payload, dict) or payload.get("period_type") not in ("daily", "weekly"):
+            raise ValueError("Public trend scan payload is invalid")
+        return self._call(
+            "POST",
+            "public_trend_scans",
+            params={"on_conflict": "period_type"},
+            payload=payload,
+            prefer="resolution=merge-duplicates,return=minimal",
+        )
+
     def update_channels(self, workspace_id, connection_id, payload):
         return self._call(
             "PATCH",
