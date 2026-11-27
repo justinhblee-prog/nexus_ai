@@ -30,7 +30,7 @@ The eventual server-only deletion workflow must be idempotent and resumable:
 7. Delete the user's sole-member workspaces and their workspace-scoped records. Preserve all shared workspaces and their content.
 8. Remove any remaining user-owned personal assets according to the product retention policy.
 9. Revoke sessions and delete the Auth user through the Supabase Auth Admin API.
-10. Revoke the user's global Supabase refresh sessions using their verified access token. Then delete the Auth user through the server-only Auth Admin endpoint. Note that existing access JWTs may remain valid until expiry; the application must enforce a deletion tombstone or wait for the configured JWT lifetime before treating revocation as complete.
+10. Persist a non-FK account tombstone before revoking sessions. The hosted API middleware checks the tombstone with the caller's verified JWT and blocks further requests, including otherwise unexpired access JWTs. Revoke the user's global Supabase refresh sessions using their verified access token. Then delete the Auth user through the server-only Auth Admin endpoint.
 11. Verify no user-owned Storage objects, OAuth credentials, workspace ownership, or user foreign-key references remain. Mark the deletion request complete only after verification.
 
 If any external cleanup fails, retain a retryable deletion-pending record and do not report completion. Do not partially delete the Auth identity while required cleanup is still outstanding.
@@ -50,6 +50,7 @@ If any external cleanup fails, retain a retryable deletion-pending record and do
 - Active render/upload lease inventory is restricted to a separate service-role-only RPC; it covers the hosted Shorts render and upload lease tables.
 - Storage object deletion uses the Storage API with an exact bucket and object path. The adapter rejects unknown buckets, absolute paths, empty path segments, dot segments, and backslashes.
 - The Auth Admin deletion helper is server-only and is not exposed as an HTTP route.
+- A tombstone table has no foreign key to `auth.users`, so it survives final Auth deletion. Authenticated users can only query their own tombstone state; only service-role code can create tombstones.
 - Global session revocation uses the verified user's bearer token, not the service-role token as the user identity.
 - The account deletion preflight fails closed if it cannot verify Storage ownership.
 - The currently observed NEXUS buckets are private: `acs-assets`, `acs-gallery`, `acs-outputs`, and `nexus-shorts`. The observed object count was zero at the time of inspection; this is not a permanent assumption and runtime inventory is still required.
