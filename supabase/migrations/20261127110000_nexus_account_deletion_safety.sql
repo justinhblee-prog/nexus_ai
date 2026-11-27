@@ -7,7 +7,9 @@
 ALTER TABLE public.assets ALTER COLUMN owner_id DROP NOT NULL;
 ALTER TABLE public.characters ALTER COLUMN owner_id DROP NOT NULL;
 ALTER TABLE public.generation_jobs ALTER COLUMN owner_id DROP NOT NULL;
-ALTER TABLE public.character_bundle_imports ALTER COLUMN user_id DROP NOT NULL;
+-- character_bundle_imports.user_id is part of its composite primary key and
+-- represents an account-scoped idempotency record. Keep it NOT NULL; its FK
+-- ON DELETE CASCADE removes that personal operation record with the Auth user.
 
 ALTER TABLE public.youtube_connections
   ALTER COLUMN connected_by DROP NOT NULL;
