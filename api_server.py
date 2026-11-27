@@ -116,6 +116,11 @@ async def enforce_local_origin_and_session(request, call_next):
                 token = extract_bearer_token(request.headers.get("authorization"))
                 request.state.hosted_user = verify_access_token(token)
                 request.state.hosted_access_token = token
+                tombstone_client = SupabaseRestClient(token)
+                if tombstone_client.rpc("is_account_deletion_tombstoned", {}):
+                    return JSONResponse(status_code=401, content={"detail": "This account is no longer active"})
+            except SupabaseRestError:
+                return JSONResponse(status_code=503, content={"detail": "Account status could not be verified safely"})
             except HostedAuthConfigurationError as exc:
                 return JSONResponse(status_code=503, content={"detail": str(exc)})
             except HostedAuthError:
