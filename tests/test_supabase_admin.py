@@ -138,6 +138,24 @@ class SupabaseAdminClientTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             client.get_account_deletion_request("../../user")
 
+    def test_shared_google_grant_detection_spans_all_workspaces(self):
+        http = Mock()
+        response = Mock(status_code=200)
+        response.json.return_value = [{"connection_id": "other-workspace-connection"}]
+        http.return_value = response
+        client = SupabaseAdminRestClient(ENV, http_request=http)
+        self.assertTrue(client.has_other_active_connections("google-subject-123", "connection-current"))
+        self.assertEqual(http.call_args.args[0], "GET")
+        self.assertIn("/rest/v1/youtube_connections", http.call_args.args[1])
+        params = http.call_args.kwargs["params"]
+        self.assertEqual(params["provider_account_id"], "eq.google-subject-123")
+        self.assertEqual(params["status"], "eq.connected")
+        self.assertEqual(params["connection_id"], "neq.connection-current")
+        self.assertNotIn("workspace_id", params)
+
+        response.json.return_value = []
+        self.assertFalse(client.has_other_active_connections("google-subject-123", "connection-current"))
+
     def test_account_deletion_tombstone_uses_allowlisted_service_rpc(self):
         http = Mock()
         response = Mock(status_code=204)
