@@ -35,6 +35,9 @@ class NexusUiContractTests(unittest.TestCase):
         self.assertIn(":root{--accent:#38BDF8}", self.html)
         self.assertNotIn(":root{--accent:#111}", self.html)
 
+    def test_initial_accent_control_matches_editorial_default(self):
+        self.assertIn('accentColor="#38BDF8"', self.script)
+
     def test_dashboard_uses_persisted_queue_and_upload_states(self):
         self.assertIn("queuePending = Number.isFinite(Number(d.queue_pending))", self.script)
         for stage in (
