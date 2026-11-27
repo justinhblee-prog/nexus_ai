@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import Mock
 
 from token_vault import TokenVaultError
+from supabase_admin import SupabaseAdminError
 
 from account_deletion_worker import (
     AccountDeletionBlocked,
@@ -161,6 +162,77 @@ class AccountDeletionWorkerTests(unittest.TestCase):
         self.assertEqual(
             admin.list_account_deletion_storage_objects.call_args.kwargs["workspace_ids"],
             [SOLE],
+        )
+
+
+    def test_partial_storage_cleanup_failure_is_retryable_before_identity_deletion(self):
+        admin = Mock()
+        admin.claim_next_account_deletion_request.return_value = {
+            "user_id": USER, "sessions_revoked": True,
+        }
+        admin.list_account_user_memberships.return_value = [{"workspace_id": SOLE, "role": "owner"}]
+        admin.list_account_owned_workspaces.return_value = [{"workspace_id": SOLE, "owner_id": USER}]
+        admin.list_account_workspace_members.return_value = [{"user_id": USER, "role": "owner"}]
+        admin.list_account_deletion_active_leases.return_value = []
+        admin.list_account_deletion_storage_objects.return_value = [{
+            "bucket_id": "nexus-shorts", "name": f"{SOLE}/jobs/video.mp4",
+        }]
+        admin.list_account_personal_gallery_images.return_value = []
+        admin.list_youtube_connections_for_workspaces.return_value = []
+        admin.delete_storage_object_in_bucket.side_effect = SupabaseAdminError("temporary storage failure")
+        admin.update_account_deletion_request.return_value = True
+
+        self.assertTrue(process_one_account_deletion(admin, "worker-1"))
+        admin.delete_storage_object_in_bucket.assert_called_once_with(
+            "nexus-shorts", f"{SOLE}/jobs/video.mp4"
+        )
+        admin.delete_account_workspace.assert_not_called()
+        admin.delete_account_profile.assert_not_called()
+        admin.delete_auth_user.assert_not_called()
+        admin.update_account_deletion_request.assert_called_once_with(
+            USER, "worker-1", "retry", "storage_cleanup", "supabaseadminerror", 120
+        )
+
+    def test_oauth_revocation_failure_preserves_credentials_and_retries(self):
+        from youtube_oauth import GoogleOAuthError
+
+        admin = Mock()
+        admin.claim_next_account_deletion_request.return_value = {
+            "user_id": USER, "sessions_revoked": True,
+        }
+        admin.list_account_user_memberships.return_value = [{"workspace_id": SOLE, "role": "owner"}]
+        admin.list_account_owned_workspaces.return_value = [{"workspace_id": SOLE, "owner_id": USER}]
+        admin.list_account_workspace_members.return_value = [{"user_id": USER, "role": "owner"}]
+        admin.list_account_deletion_active_leases.return_value = []
+        admin.list_account_deletion_storage_objects.return_value = []
+        admin.list_account_personal_gallery_images.return_value = []
+        admin.list_youtube_connections_for_workspaces.return_value = [{
+            "connection_id": "55555555-5555-4555-8555-555555555555",
+            "provider_account_id": "google-account",
+            "status": "connected",
+        }]
+        admin.has_active_connection_outside_workspaces.return_value = False
+        admin.get_credential.return_value = {
+            "encrypted_refresh_token_hex": "ciphertext",
+            "encryption_key_version": "v1",
+        }
+        admin.update_account_deletion_request.return_value = True
+        oauth = Mock()
+        oauth.revoke_refresh_token.side_effect = GoogleOAuthError("temporary provider failure")
+
+        self.assertTrue(process_one_account_deletion(
+            admin,
+            "worker-1",
+            oauth_config_factory=Mock(return_value=oauth),
+            decrypt_token=Mock(return_value="refresh-token"),
+        ))
+        oauth.revoke_refresh_token.assert_called_once_with("refresh-token")
+        admin.delete_credential.assert_not_called()
+        admin.delete_storage_object_in_bucket.assert_not_called()
+        admin.delete_account_workspace.assert_not_called()
+        admin.delete_auth_user.assert_not_called()
+        admin.update_account_deletion_request.assert_called_once_with(
+            USER, "worker-1", "retry", "oauth_cleanup", "googleoautherror", 120
         )
 
 
