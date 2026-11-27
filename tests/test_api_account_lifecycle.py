@@ -74,6 +74,19 @@ class AccountLifecycleApiContractTests(unittest.TestCase):
         self.assertIn("admin.revoke_user_sessions(request.state.hosted_access_token)", self.api)
         self.assertIn("admin.mark_account_deletion_sessions_revoked(user_id)", self.api)
 
+    def test_youtube_disconnect_persists_revocation_checkpoint_before_provider_call(self):
+        start = self.api.index('def hosted_youtube_disconnect(')
+        end = self.api.index('@app.get("/api/hosted/jobs/{job_id}/preview")', start)
+        route = self.api[start:end]
+        self.assertIn("admin.get_youtube_disconnect_state(connection_key)", route)
+        self.assertIn('admin.set_youtube_disconnect_state(connection_key, "revocation_started")', route)
+        self.assertIn('admin.set_youtube_disconnect_state(connection_key, "revoked")', route)
+        self.assertLess(route.index('"revocation_started"'), route.index("revoke_refresh_token(refresh_token)"))
+        self.assertIn('elif revocation_state == "revocation_started":', route)
+        self.assertIn("credential retained for safe retry", route)
+        self.assertIn("admin.update_connection(str(connection_id), workspace_id", route)
+        self.assertIn("admin.delete_credential(str(connection_id))", route)
+
     def test_rpc_client_is_allowlisted_and_uses_user_token(self):
         self.assertIn('_ALLOWED_RPCS = {"transfer_workspace_ownership", "is_account_deletion_tombstoned"}', self.rest)
         self.assertIn('if name not in _ALLOWED_RPCS:', self.rest)
