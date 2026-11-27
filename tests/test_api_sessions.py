@@ -324,6 +324,7 @@ class SignedSessionTests(unittest.TestCase):
                 self.api.UUID("22222222-2222-4222-8222-222222222222"), request
             )
         params, payload = client_type.return_value.update.call_args.args[1:]
+        self.assertEqual(client_type.call_args.args[0], "verified.user.jwt")
         self.assertEqual(params["job_id"], "eq.22222222-2222-4222-8222-222222222222")
         self.assertEqual(payload["approved_by"], "11111111-1111-4111-8111-111111111111")
         self.assertEqual(payload["approval_status"], "approved")
@@ -553,9 +554,34 @@ class SignedSessionTests(unittest.TestCase):
             result = self.api.hosted_job_preview(
                 self.api.UUID("22222222-2222-4222-8222-222222222222"), request
             )
+        self.assertEqual(client_type.call_args.args[0], "verified.user.jwt")
+        self.assertEqual(
+            client_type.return_value.select.call_args.args[1],
+            {
+                "select": "job_id,workspace_id,output_storage_key",
+                "job_id": "eq.22222222-2222-4222-8222-222222222222",
+                "limit": "1",
+            },
+        )
         self.assertEqual(result["signed_url"], "https://storage.example.test/signed")
         self.assertEqual(result["expires_in"], 300)
         admin_type.return_value.create_signed_url.assert_called_once()
+
+    def test_hosted_job_preview_never_signs_storage_for_an_rls_invisible_job(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type, \\
+             patch.object(self.api, "SupabaseAdminRestClient") as admin_type:
+            client_type.return_value.select.return_value = []
+            with self.assertRaises(self.api.HTTPException) as raised:
+                self.api.hosted_job_preview(
+                    self.api.UUID("33333333-3333-4333-8333-333333333333"), request
+                )
+        self.assertEqual(raised.exception.status_code, 404)
+        self.assertEqual(client_type.call_args.args[0], "verified.user.jwt")
+        admin_type.return_value.create_signed_url.assert_not_called()
 
 
 if __name__ == "__main__":
