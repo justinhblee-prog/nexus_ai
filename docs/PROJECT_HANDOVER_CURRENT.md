@@ -150,15 +150,21 @@ docker compose stop
 ## 9. 검증 현황과 미완료 사항
 
 2026-11-27 기준 원격 검증:
-- Backend CI [run #427](https://github.com/justinhblee-prog/nexus_ai/actions/runs/45943955880): Docker Compose 설정, Python compile, 인증/큐/레이더/감사 로그 회귀 테스트 77개 통과.
-- 동일 run의 Docker render-integration: 실제 1080×1920 H.264/AAC MP4 렌더링 후 ffprobe QA 통과. 테스트는 외부 AI/TTS 계정 없이 결정적 fixture를 사용합니다.
-- UI Playwright 검증: A/B/C/D 네 테마의 실제 grid geometry, 색상 스킨 독립성, 샘플 넣기/제거, 워크스페이스 이동, 모바일 전환 통과.
-- UI 로그인·HttpOnly 세션 쿠키·세션 만료 검증은 최신 PR CI에서 추가 실행 중입니다.
-- Vercel Preview는 [READY 주소](https://neural-network-nymvfjc1s-justinhblee-9540.vercel.app/)에서 확인할 수 있습니다. 이 주소는 정적 UI 미리보기이며 FastAPI/SQLite 운영 백엔드와 연결된 주소가 아닙니다.
-- Vercel 무료 배포 일일 한도 초과로 최신 커밋의 새 배포가 제한된 상태입니다. 기존 READY 미리보기는 UI 소스가 마지막으로 변경된 커밋을 포함합니다.
-- 위 CI 결과는 Windows 로컬 실행, 실계정 OAuth 또는 실제 YouTube 업로드를 대신하지 않습니다.
+- Backend CI [run #45946478308](https://github.com/justinhblee-prog/nexus_ai/actions/runs/45946478308): 80개 단위 테스트, Docker Compose 검증, Python compile, PowerShell 구문 검사 통과.
+- 동일 Docker integration run: 실제 Uvicorn 프로세스에서 미인증 API/미디어 401, 오인증 401, 로그인 후 API 200, 로그아웃 후 401 확인.
+- 동일 Docker integration run: 실제 1080×1920 H.264/AAC MP4 렌더링 및 ffprobe QA 통과. MoviePy/FFmpeg ResourceWarning 0.
+- UI Playwright [run #45946023351](https://github.com/justinhblee-prog/nexus_ai/actions/runs/45946023351): 네 가지 테마, 색상 독립성, 샘플 토글, 워크스페이스 이동, 모바일 전환, HttpOnly/SameSite 로그인 쿠키와 세션 만료 재로그인 통과.
+- Vercel Preview는 [READY 주소](https://neural-network-nymvfjc1s-justinhblee-9540.vercel.app/)에서 확인할 수 있습니다. 정적 UI 미리보기이며 FastAPI/SQLite 운영 백엔드와 연결된 주소가 아닙니다.
+- Vercel 무료 배포 일일 한도 초과로 최신 브랜치 커밋의 새 배포가 제한될 수 있습니다. 기존 READY 미리보기의 UI 소스는 현재 UI 코드와 동일합니다.
+- 위 CI 결과는 Windows 로컬 실행, 실제 뉴스 피드 가용성, 실계정 OAuth 또는 실제 YouTube 업로드를 대신하지 않습니다.
 
 아직 Windows 호스트에서 직접 확인해야 하는 항목:
+- 기존 Docker 컨테이너와 현재 브랜치 코드의 안전한 연결 및 실제 로그인
+- Windows 호스트에서 scripts/setup-local-nexus.ps1 -Start 및 scripts/verify-local-nexus.ps1 실행
+- 실제 뉴스 피드 접근 성공률 및 재시작 후 큐/스케줄 복구
+- 채널별 OAuth 및 테스트 채널 YouTube Private 업로드/응답 확인
+- YouTube Analytics read-only scope 동의와 실제 성과 수집
+- 백업·복구 및 기존 데이터 보존 검증
 ## 10. GitHub 작업 정책
 
 - 기준 브랜치는 `fix/shorts-runtime-security-bootstrap`이며 후속 변경은 PR #6 Backend와 PR #5 UI에서 분리 관리합니다.
