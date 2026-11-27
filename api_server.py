@@ -395,7 +395,7 @@ def hosted_account_deletion_preflight(request: Request):
         storage_objects = []
         offset = 0
         while True:
-            page = admin.list_account_deletion_storage_objects(user_id, limit=1000, offset=offset)
+            page = admin.list_account_deletion_storage_objects(user_id, limit=1000, offset=offset, workspace_ids=deletion_workspace_ids)
             storage_objects.extend(page)
             if len(page) < 1000:
                 break
@@ -421,20 +421,31 @@ def hosted_account_deletion_preflight(request: Request):
                 provider_grants_to_revoke += 1
         bucket_counts = {}
         shared_storage_count = 0
+        unclassified_storage_count = 0
+        user_owned_storage_count = 0
         for obj in storage_objects:
             bucket = obj.get("bucket_id") or "unknown"
             bucket_counts[bucket] = bucket_counts.get(bucket, 0) + 1
+            if obj.get("owner") == user_id or obj.get("owner_id") == user_id:
+                user_owned_storage_count += 1
             workspace_prefix = (obj.get("name") or "").split("/", 1)[0]
             if workspace_prefix in shared_workspace_ids:
                 shared_storage_count += 1
+            elif workspace_prefix not in deletion_workspace_ids:
+                unclassified_storage_count += 1
         if shared_storage_count:
             blockers.append({
                 "reason": "Some Storage objects owned by this account belong to shared workspaces. Re-upload or safely transfer those files before deleting the account.",
                 "storage_object_count": shared_storage_count,
             })
+        if unclassified_storage_count:
+            blockers.append({
+                "reason": "Some account-owned Storage objects cannot be mapped safely to a workspace. Map or remove them before account deletion.",
+                "storage_object_count": unclassified_storage_count,
+            })
         return {
             "ownership_clear": not any(item.get("workspace_id") for item in blockers),
-            "storage_clear": shared_storage_count == 0,
+            "storage_clear": shared_storage_count == 0 and unclassified_storage_count == 0,
             "preflight_clear": not blockers,
             "workspaces": summaries,
             "owned_workspaces": [item for item in summaries if item["owned_by_current_user"]],
@@ -445,7 +456,9 @@ def hosted_account_deletion_preflight(request: Request):
                 "provider_grants_preserved_for_other_workspaces": shared_provider_grants_preserved,
             },
             "storage": {
-                "owned_object_count": len(storage_objects),
+                "cleanup_candidate_object_count": len(storage_objects),
+                "account_owned_object_count": user_owned_storage_count,
+                "unclassified_object_blockers": unclassified_storage_count,
                 "objects_by_bucket": bucket_counts,
                 "shared_workspace_object_blockers": shared_storage_count,
             },
