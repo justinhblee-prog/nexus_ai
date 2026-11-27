@@ -28,6 +28,14 @@ class AccountDeletionSafetyMigrationTests(unittest.TestCase):
         self.assertIn("drop constraint if exists shorts_jobs_check", self.sql)
         self.assertIn("approval_status = 'approved' and approved_at is not null", self.sql)
 
+    def test_storage_inventory_rpc_is_service_role_only_and_paginates(self):
+        self.assertIn("create or replace function public.list_account_deletion_storage_objects", self.sql)
+        self.assertIn("auth.jwt() ->> 'role'", self.sql)
+        self.assertIn("service_role required", self.sql)
+        self.assertIn("o.owner = p_user_id or o.owner_id = p_user_id::text", self.sql)
+        self.assertIn("limit p_limit offset p_offset", self.sql)
+        self.assertIn("to service_role", self.sql)
+
     def test_reviewer_fk_anonymization_does_not_weaken_authenticated_approval_guard(self):
         self.assertIn("create or replace function private.guard_shorts_job_approval()", self.sql)
         self.assertIn("(select auth.uid()) is null", self.sql)
