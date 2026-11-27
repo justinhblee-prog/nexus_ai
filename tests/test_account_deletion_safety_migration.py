@@ -80,6 +80,13 @@ class AccountDeletionSafetyMigrationTests(unittest.TestCase):
         self.assertIn("grant execute on function public.heartbeat_account_deletion_request(uuid,text,integer) to service_role", self.sql)
         self.assertIn("grant execute on function public.update_account_deletion_request(uuid,text,text,text,text,integer) to service_role", self.sql)
 
+    def test_worker_claim_redefinition_uses_unambiguous_conflict_constraint(self):
+        render_start = self.sql.index("create or replace function public.claim_next_shorts_job")
+        render_end = self.sql.index("create or replace function public.claim_next_approved_shorts_job", render_start)
+        render_claim = self.sql[render_start:render_end]
+        self.assertIn("on conflict on constraint shorts_worker_leases_pkey", render_claim)
+        self.assertNotIn("on conflict (job_id)", render_claim)
+
     def test_shared_legacy_authorship_columns_can_be_anonymized(self):
         self.assertIn("alter table public.assets alter column owner_id drop not null", self.sql)
         self.assertIn("alter table public.characters alter column owner_id drop not null", self.sql)
