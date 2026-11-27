@@ -46,12 +46,14 @@ class SignedSessionTests(unittest.TestCase):
         self.assertFalse(self.api.verify_session_cookie("not-a-session", now=now))
         self.assertFalse(self.api.verify_session_cookie(None, now=now))
 
-    def _request(self, path, method='GET', cookie=None, origin=None):
+    def _request(self, path, method='GET', cookie=None, origin=None, authorization=None):
         headers = []
         if cookie:
             headers.append((b'cookie', f'nexus_session={cookie}'.encode('ascii')))
         if origin:
             headers.append((b'origin', origin.encode('ascii')))
+        if authorization:
+            headers.append((b'authorization', authorization.encode('ascii')))
         scope = {
             'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1',
             'method': method, 'scheme': 'http', 'path': path, 'raw_path': path.encode('ascii'),
@@ -126,6 +128,46 @@ class SignedSessionTests(unittest.TestCase):
         with patch.object(self.api, "API_PASSWORD", ""), patch.object(self.api, "SESSION_SECRET", ""):
             self.assertFalse(self.api.auth_is_configured())
             self.assertFalse(self.api.verify_session_cookie("forged.cookie.value"))
+
+
+    def test_hosted_mode_blocks_legacy_single_operator_routes_and_verifies_bearer(self):
+        async def next_response(_request):
+            return Response(status_code=204)
+        with patch.dict(os.environ, {"NEXUS_HOSTED_AUTH_ENABLED": "true"}):
+            blocked = asyncio.run(self.api.enforce_local_origin_and_session(
+                self._request('/api/overview'), next_response
+            ))
+            blocked_media = asyncio.run(self.api.enforce_local_origin_and_session(
+                self._request('/output/video.mp4'), next_response
+            ))
+            with patch.object(self.api, "verify_access_token", return_value={
+                "user_id": "11111111-1111-4111-8111-111111111111",
+                "email": "member@example.test",
+                "role": "authenticated",
+            }):
+                allowed = asyncio.run(self.api.enforce_local_origin_and_session(
+                    self._request('/api/hosted/session', authorization='Bearer valid.jwt.token'),
+                    next_response,
+                ))
+            with patch.object(self.api, "verify_access_token", side_effect=self.api.HostedAuthError("invalid")):
+                denied = asyncio.run(self.api.enforce_local_origin_and_session(
+                    self._request('/api/hosted/session', authorization='Bearer invalid.jwt.token'),
+                    next_response,
+                ))
+        self.assertEqual(blocked.status_code, 503)
+        self.assertEqual(blocked_media.status_code, 503)
+        self.assertEqual(allowed.status_code, 204)
+        self.assertEqual(allowed.scope.get("state", {}).get("hosted_user", {}).get("role"), "authenticated")
+        self.assertEqual(denied.status_code, 401)
+
+    def test_hosted_auth_config_is_public_but_legacy_auth_is_not_reused(self):
+        async def next_response(_request):
+            return Response(status_code=204)
+        with patch.dict(os.environ, {"NEXUS_HOSTED_AUTH_ENABLED": "true"}):
+            response = asyncio.run(self.api.enforce_local_origin_and_session(
+                self._request('/api/hosted/auth-config'), next_response
+            ))
+        self.assertEqual(response.status_code, 204)
 
 
 if __name__ == "__main__":
