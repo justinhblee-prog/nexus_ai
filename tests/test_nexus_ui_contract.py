@@ -102,10 +102,17 @@ class NexusUiContractTests(unittest.TestCase):
             with self.subTest(metric=fabricated_metric):
                 self.assertNotIn(fabricated_metric, self.script)
 
-    def test_analytics_uses_backend_summary_and_keeps_unavailable_metrics_blank(self):
-        self.assertIn('fetch("/api/analytics/summary"', self.script)
-        self.assertIn("YouTube 읽기 전용 분석 권한이 연결되지 않았습니다.", self.script)
-        self.assertIn("조회수·구독자·참여율·수익은 추정하지 않고 비워 둡니다.", self.script)
+    def test_analytics_uses_provider_metrics_and_explicit_refresh_without_estimating_revenue(self):
+        self.assertIn('const url = "/api/analytics/summary"', self.script)
+        self.assertIn('forceRefresh ? "?refresh=true" : ""', self.script)
+        for field in ("metrics.subscriber_count", "metrics.views_28d", "metrics.watch_minutes_28d",
+                      "metrics.average_view_duration_seconds", "metrics.engagement_rate",
+                      "metrics.subscribers_gained_28d", "metrics.subscribers_lost_28d"):
+            with self.subTest(field=field):
+                self.assertIn(field, self.script)
+        self.assertIn('id=\'nexus-analytics-platform-cards\'', self.html)
+        self.assertIn('id=\'nexus-analytics-refresh\'', self.html)
+        self.assertIn("revenue_status", self.html + self.script)
 
     def test_review_edits_trigger_regeneration_and_disable_approval_until_ready(self):
         self.assertIn('["최종컨펌 대기", "반려(수정 필요)", "재제작 실패"]', self.script)
