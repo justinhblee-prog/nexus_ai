@@ -82,6 +82,19 @@ class SignedSessionTests(unittest.TestCase):
         self.assertEqual(api_response.status_code, 204)
         self.assertEqual(output_response.status_code, 204)
 
+    def test_auth_is_required_by_default_and_missing_secrets_fail_closed(self):
+        async def next_response(_request):
+            return Response(status_code=204)
+        with patch.dict(os.environ, {"NEXUS_AUTH_ENABLED": ""}):
+            with patch.object(self.api, "API_PASSWORD", ""), patch.object(self.api, "SESSION_SECRET", ""):
+                response = asyncio.run(self.api.enforce_local_origin_and_session(self._request('/api/overview'), next_response))
+                self.assertEqual(response.status_code, 503)
+                self.assertTrue(self.api.auth_is_required())
+
+    def test_explicit_local_opt_out_is_supported(self):
+        with patch.dict(os.environ, {"NEXUS_AUTH_ENABLED": "false"}):
+            self.assertFalse(self.api.auth_is_required())
+
     def test_session_status_is_public_and_foreign_mutations_are_blocked(self):
         async def next_response(_request):
             return Response(status_code=204)
