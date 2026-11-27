@@ -45,5 +45,13 @@ class HostedSignupPageContractTests(unittest.TestCase):
         self.assertIn("회원가입 / 로그인", index)
 
 
+    def test_youtube_channel_connect_and_disconnect_controls_use_authenticated_api(self):
+        self.assertIn('"/youtube/connections"', self.html)
+        self.assertIn('"/youtube/connect"', self.html)
+        self.assertIn('"/disconnect"', self.html)
+        self.assertIn("YouTube 채널 연결", self.html)
+        self.assertIn("authorization_url", self.html)
+
+
 if __name__ == "__main__":
     unittest.main()
