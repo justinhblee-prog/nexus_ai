@@ -328,14 +328,20 @@ class SupabaseAdminRestClient:
 
     def mark_account_deletion_tombstone(self, user_id):
         """Persist an identity tombstone before revoking sessions and deleting Auth."""
+        value = str(user_id)
+        if not re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", value):
+            raise ValueError("User ID is invalid")
         return self.rpc("mark_account_deletion_tombstone", {
-            "p_user_id": str(user_id),
+            "p_user_id": value,
         })
 
     def list_account_deletion_storage_objects(self, user_id, limit=1000, offset=0):
         """List Storage objects owned by one verified account via a service-only RPC."""
+        value = str(user_id)
+        if not re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", value):
+            raise ValueError("User ID is invalid")
         rows = self.rpc("list_account_deletion_storage_objects", {
-            "p_user_id": str(user_id),
+            "p_user_id": value,
             "p_limit": max(1, min(int(limit), 1000)),
             "p_offset": max(0, int(offset)),
         }) or []
@@ -405,10 +411,13 @@ class SupabaseAdminRestClient:
 
     def delete_auth_user(self, user_id):
         """Delete a Supabase Auth user after all external cleanup is verified."""
+        value = str(user_id)
+        if not re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", value):
+            raise ValueError("User ID is invalid")
         try:
             response = self.http_request(
                 "DELETE",
-                f"{self.base_url}/auth/v1/admin/users/{quote(str(user_id), safe='')}",
+                f"{self.base_url}/auth/v1/admin/users/{quote(value, safe='')}",
                 headers={
                     "apikey": self.service_key,
                     "Authorization": f"Bearer {self.service_key}",
