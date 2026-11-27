@@ -3,6 +3,12 @@
 -- authenticated ownership-transfer operation before an owner deletes an account.
 -- This migration is committed to the Draft PR only; it is not applied to production.
 
+-- Preserve shared legacy workspace content while removing personal authorship.
+ALTER TABLE public.assets ALTER COLUMN owner_id DROP NOT NULL;
+ALTER TABLE public.characters ALTER COLUMN owner_id DROP NOT NULL;
+ALTER TABLE public.generation_jobs ALTER COLUMN owner_id DROP NOT NULL;
+ALTER TABLE public.character_bundle_imports ALTER COLUMN user_id DROP NOT NULL;
+
 ALTER TABLE public.youtube_connections
   ALTER COLUMN connected_by DROP NOT NULL;
 ALTER TABLE public.youtube_connections
