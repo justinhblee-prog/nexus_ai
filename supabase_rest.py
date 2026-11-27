@@ -98,6 +98,45 @@ class SupabaseRestClient:
     def select(self, table: str, params: dict):
         return self._request("GET", table, params=params)
 
+    def count(self, table: str, params: dict) -> int:
+        """Return an exact RLS-filtered row count without downloading row data."""
+        if table not in _ALLOWED_TABLES:
+            raise ValueError("Unsupported Supabase table")
+        url = f"{self.base_url}/rest/v1/{quote(table, safe='')}"
+        headers = {
+            "apikey": self.publishable_key,
+            "Authorization": f"Bearer {self.access_token}",
+            "Accept": "application/json",
+            "Prefer": "count=exact",
+            "Range-Unit": "items",
+            "Range": "0-0",
+        }
+        try:
+            response = self.http_request(
+                "HEAD",
+                url,
+                params=params,
+                headers=headers,
+                timeout=8,
+            )
+        except requests.RequestException as exc:
+            raise SupabaseRestError(502, "Supabase data service is temporarily unavailable") from exc
+        if not 200 <= response.status_code < 300:
+            if response.status_code in (401, 403):
+                message = "Workspace access denied by Supabase RLS"
+            elif response.status_code == 404:
+                message = "Requested workspace data was not found"
+            elif 400 <= response.status_code < 500:
+                message = "Supabase rejected the workspace data request"
+            else:
+                message = "Supabase data service is temporarily unavailable"
+            raise SupabaseRestError(response.status_code, message)
+        content_range = response.headers.get("Content-Range") or response.headers.get("content-range") or ""
+        match = re.fullmatch(r"(?:\d+-\d+|\*)/(\d+|\*)", content_range.strip())
+        if not match or match.group(1) == "*":
+            raise SupabaseRestError(502, "Supabase did not return an exact row count")
+        return int(match.group(1))
+
     def insert(self, table: str, payload: dict):
         return self._request("POST", table, payload=payload)
 
