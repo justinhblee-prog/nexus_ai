@@ -13,6 +13,25 @@ class NexusUiContractTests(unittest.TestCase):
         cls.script = scripts[-1]
 
 
+    def test_frontend_api_call_patterns_exist_in_backend_routes(self):
+        api_source = Path("api_server.py").read_text(encoding="utf-8")
+        routes = re.findall(r'@app\\.(?:get|post|put|delete|patch)\\(["\\']([^"\\']+)', api_source)
+        calls = set(re.findall(r'["\\'](/api/[A-Za-z0-9_{}?=/&.-]+)', self.script))
+        self.assertTrue(routes, "Backend route decorators are missing")
+
+        def matches_route(path):
+            path = path.split("?", 1)[0]
+            for route in routes:
+                pattern = re.sub(r"\\{[^}]+\\}", r"[^/]+", route)
+                if re.fullmatch(pattern, path):
+                    return True
+                if path.endswith("/") and route.startswith(path):
+                    return True
+            return False
+
+        unmatched = sorted(path for path in calls if not matches_route(path))
+        self.assertEqual(unmatched, [], "UI calls have no backend route: " + ", ".join(unmatched))
+
     def test_sample_data_and_layout_controls_are_real_independent_actions(self):
         self.assertIn('addSample.onclick=addSampleData', self.script)
         self.assertIn('removeSample.onclick=removeSampleData', self.script)
