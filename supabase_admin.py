@@ -35,6 +35,7 @@ _ALLOWED_RPCS = {
     "record_shorts_upload_video_id",
     "finish_shorts_upload",
     "list_account_deletion_storage_objects",
+    "list_account_deletion_active_leases",
 }
 
 
@@ -332,6 +333,15 @@ class SupabaseAdminRestClient:
             "p_offset": max(0, int(offset)),
         }) or []
         return rows
+
+    def list_account_deletion_active_leases(self, workspace_ids):
+        """List unexpired render/upload leases for workspaces scheduled for deletion."""
+        ids = [str(value) for value in workspace_ids]
+        if len(ids) > 100 or any(not re.fullmatch(r"wsp_[0-9a-fA-F-]{36}", value) for value in ids):
+            raise ValueError("Workspace lease inventory request is invalid")
+        return self.rpc("list_account_deletion_active_leases", {
+            "p_workspace_ids": ids,
+        }) or []
 
     def delete_storage_object_in_bucket(self, bucket_id, object_name):
         """Delete one exact object through the Storage API, never storage.objects SQL."""
