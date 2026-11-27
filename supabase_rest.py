@@ -6,6 +6,7 @@ source of truth for workspace access and role permissions.
 from __future__ import annotations
 
 import os
+import re
 from typing import Mapping
 from urllib.parse import quote
 
