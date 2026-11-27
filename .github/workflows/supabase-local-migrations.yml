@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: supabase-local-migrations-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   local-migrations:
     name: Replay and lint local Supabase migrations
@@ -55,7 +59,7 @@ jobs:
           mkdir -p supabase/migrations
 
       - name: Start the isolated local Supabase stack
-        run: supabase start
+        run: supabase start --exclude studio,mail,analytics,realtime,functions,rest
 
       - name: Install the pre-NEXUS legacy schema fixture
         run: |
