@@ -653,23 +653,25 @@ def hosted_workspace_overview(workspace_id: str, request: Request):
     _validate_workspace_id(workspace_id)
     client = _hosted_rest_client(request)
     try:
-        channels = client.select("shorts_channels", {
-            "select": "channel_id,is_active",
-            "workspace_id": f"eq.{workspace_id}",
-        }) or []
-        jobs = client.select("shorts_jobs", {
-            "select": "job_id,stage,approval_status",
-            "workspace_id": f"eq.{workspace_id}",
-            "limit": "1000",
-        }) or []
+        workspace_filter = {"workspace_id": f"eq.{workspace_id}"}
         return {
             "workspace_id": workspace_id,
-            "channel_count": len(channels),
-            "active_channel_count": sum(1 for channel in channels if channel.get("is_active")),
-            "job_count": len(jobs),
-            "queued_count": sum(1 for job in jobs if job.get("stage") == "queued"),
-            "review_pending_count": sum(1 for job in jobs if job.get("approval_status") == "pending"),
-            "published_count": sum(1 for job in jobs if job.get("stage") == "published"),
+            # Exact counts are evaluated under the caller's JWT/RLS.
+            # HEAD avoids downloading job rows and removes the previous 1,000-row cap.
+            "channel_count": client.count("shorts_channels", workspace_filter),
+            "active_channel_count": client.count(
+                "shorts_channels", {**workspace_filter, "is_active": "eq.true"}
+            ),
+            "job_count": client.count("shorts_jobs", workspace_filter),
+            "queued_count": client.count(
+                "shorts_jobs", {**workspace_filter, "stage": "eq.queued"}
+            ),
+            "review_pending_count": client.count(
+                "shorts_jobs", {**workspace_filter, "approval_status": "eq.pending"}
+            ),
+            "published_count": client.count(
+                "shorts_jobs", {**workspace_filter, "stage": "eq.published"}
+            ),
         }
     except SupabaseRestError as exc:
         _hosted_rest_error(exc)
