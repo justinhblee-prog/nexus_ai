@@ -49,6 +49,7 @@ class SharedTrendPersistenceTests(unittest.TestCase):
                     ai_reason TEXT, created_at TEXT
                 );
                 CREATE TABLE radar_scans (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
                     period_type TEXT, status TEXT, started_at TEXT, completed_at TEXT,
                     item_count INTEGER, successful_sources INTEGER, failed_sources INTEGER,
                     source_summary_json TEXT
@@ -96,6 +97,7 @@ class SharedTrendPersistenceTests(unittest.TestCase):
                 self.assertTrue(Path(path).parent.is_dir())
 
     def test_run_once_publishes_failed_scan_health_and_continues_other_period(self):
+        import os
         import hosted_trend_worker as worker
 
         with tempfile.TemporaryDirectory() as temp:
@@ -148,7 +150,8 @@ class SharedTrendPersistenceTests(unittest.TestCase):
                     conn.close()
 
             admin = Mock()
-            with patch.object(worker.trend_radar, "DB_PATH", str(path)):
+            with patch.dict(os.environ, {}, clear=True), \
+                 patch.object(worker.trend_radar, "DB_PATH", str(path)):
                 result = worker.run_once(admin=admin, scanner=scanner, db_path=str(path))
 
             self.assertEqual(result, {"daily": 0, "weekly": 0})
