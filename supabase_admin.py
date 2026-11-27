@@ -338,6 +338,99 @@ class SupabaseAdminRestClient:
             "p_user_id": value,
         })
 
+    def _account_user_id(self, user_id):
+        value = str(user_id)
+        if not re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", value):
+            raise ValueError("User ID is invalid")
+        return value
+
+    def _account_workspace_ids(self, workspace_ids):
+        ids = [str(item) for item in (workspace_ids or [])]
+        if len(ids) > 100 or any(not re.fullmatch(r"wsp_[0-9a-fA-F-]{36}", item) for item in ids):
+            raise ValueError("Workspace ID list is invalid")
+        return ids
+
+    def list_account_user_memberships(self, user_id):
+        value = self._account_user_id(user_id)
+        return self._call("GET", "workspace_members", params={
+            "select": "workspace_id,role", "user_id": f"eq.{value}", "order": "created_at.asc",
+        }) or []
+
+    def list_account_owned_workspaces(self, user_id):
+        value = self._account_user_id(user_id)
+        return self._call("GET", "workspaces", params={
+            "select": "workspace_id,workspace_name,owner_id", "owner_id": f"eq.{value}", "order": "created_at.asc",
+        }) or []
+
+    def list_account_workspace_members(self, workspace_id):
+        ids = self._account_workspace_ids([workspace_id])
+        return self._call("GET", "workspace_members", params={
+            "select": "user_id,role", "workspace_id": f"eq.{ids[0]}", "order": "created_at.asc",
+        }) or []
+
+    def delete_account_workspace(self, workspace_id):
+        ids = self._account_workspace_ids([workspace_id])
+        self._call("DELETE", "workspaces", params={"workspace_id": f"eq.{ids[0]}"}, prefer="return=minimal")
+        return True
+
+    def delete_account_workspace_membership(self, user_id, workspace_id):
+        value = self._account_user_id(user_id)
+        ids = self._account_workspace_ids([workspace_id])
+        self._call("DELETE", "workspace_members", params={
+            "user_id": f"eq.{value}", "workspace_id": f"eq.{ids[0]}",
+        }, prefer="return=minimal")
+        return True
+
+    def delete_account_workspace_generation_jobs(self, workspace_ids):
+        ids = self._account_workspace_ids(workspace_ids)
+        if ids:
+            self._call("DELETE", "generation_jobs", params={
+                "workspace_id": "in.(" + ",".join(ids) + ")",
+            }, prefer="return=minimal")
+        return True
+
+    def delete_account_personal_rows(self, user_id):
+        value = self._account_user_id(user_id)
+        # Personal gallery and idempotency rows are not workspace-shared assets.
+        self._call("DELETE", "gallery_images", params={"owner_id": f"eq.{value}"}, prefer="return=minimal")
+        self._call("DELETE", "generation_idempotency", params={"owner_id": f"eq.{value}"}, prefer="return=minimal")
+        return True
+
+    def anonymize_account_authorship(self, user_id, deleting_workspace_ids):
+        value = self._account_user_id(user_id)
+        ids = self._account_workspace_ids(deleting_workspace_ids)
+        shared_filter = {"workspace_id": "not.in.(" + ",".join(ids) + ")"} if ids else {}
+        for table, owner_column in (
+            ("assets", "owner_id"),
+            ("characters", "owner_id"),
+            ("generation_jobs", "owner_id"),
+            ("character_bundle_imports", "user_id"),
+        ):
+            params = {owner_column: f"eq.{value}", **shared_filter}
+            self._call("PATCH", table, params=params, payload={owner_column: None}, prefer="return=minimal")
+        return True
+
+    def account_user_reference_counts(self, user_id):
+        value = self._account_user_id(user_id)
+        checks = (
+            ("workspace_members", "user_id"),
+            ("workspaces", "owner_id"),
+            ("assets", "owner_id"),
+            ("characters", "owner_id"),
+            ("generation_jobs", "owner_id"),
+            ("character_bundle_imports", "user_id"),
+            ("gallery_images", "owner_id"),
+            ("generation_idempotency", "owner_id"),
+            ("profiles", "id"),
+        )
+        counts = {}
+        for table, column in checks:
+            rows = self._call("GET", table, params={
+                "select": column, column: f"eq.{value}", "limit": "1",
+            }) or []
+            counts[table] = len(rows)
+        return counts
+
     def enqueue_account_deletion(self, user_id, preflight_snapshot):
         """Atomically persist the account tombstone and durable cleanup request."""
         value = str(user_id)
