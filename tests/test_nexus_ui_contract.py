@@ -112,7 +112,7 @@ class NexusUiContractTests(unittest.TestCase):
                 self.assertIn(field, self.script)
         self.assertIn('id=\'nexus-analytics-platform-cards\'', self.html)
         self.assertIn('id=\'nexus-analytics-refresh\'', self.html)
-        self.assertIn("revenue_status", self.html + self.script)
+        self.assertIn("수익은 확인된 provider 데이터만 표시합니다.", self.script)
 
     def test_review_edits_trigger_regeneration_and_disable_approval_until_ready(self):
         self.assertIn('["최종컨펌 대기", "반려(수정 필요)", "재제작 실패"]', self.script)
