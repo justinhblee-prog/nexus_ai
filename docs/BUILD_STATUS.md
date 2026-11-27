@@ -8,9 +8,9 @@
 **IN PROGRESS · PR #11 Draft/Open · 운영 전환 차단**
 
 - 작업 브랜치: `feat/nexus-user-onboarding-web-oauth-20261127`
-- 최신 코드 head: `4e3edea4c3928491426831714a80a4fb9c912ab5`
+- 최신 CI 검증 branch head: `5f54bf0d092a05086a455758ec10e0bd9f687023` (이후 변경은 상태 문서 갱신만 포함)
 - Pull Request: [#11 — User onboarding and hosted OAuth](https://github.com/justinhblee-prog/nexus_ai/pull/11)
-- 최신 GitHub Actions: [run 46014298295](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46014298295) — **309 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, Playwright browser smoke 모두 통과.
+- 최신 GitHub Actions: [run 46015313085](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46015313085) — exact head `5f54bf0d092a05086a455758ec10e0bd9f687023`에서 **309 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, Playwright browser smoke 모두 통과.
 - PR은 Draft/Open이며 merge하지 않음. main push, production deployment, public YouTube upload 금지.
 - Supabase 서비스 프로젝트 `ai_studio` (`lmdhgqfqvfyymfrovaty`)는 ACTIVE_HEALTHY, PostgreSQL 17.11, Seoul ap-northeast-2, Free plan.
 - 현재 운영 DB migration history는 총 14개(NEXUS foundation/auth/workspace/OAuth/render/upload 기반). 계정 삭제/권한 강화 후속 6개는 미적용.
@@ -55,7 +55,7 @@
 3. **Hosted trend persistence**: shared persistent trend snapshot/source 및 수집 파이프라인이 필요. 현재는 데이터가 없으면 unavailable로 표시.
 4. **Google OAuth**: Vercel Preview에 Google client ID/secret, redirect URI, app URL, encryption key 및 필요한 server-only key를 안전하게 등록하고 Google Console redirect URI를 일치시킨 뒤 실제 동의/refresh/revoke를 테스트해야 함.
 5. **Tenant E2E**: 실제 두 사용자 계정으로 같은 workspace 및 서로 다른 workspace의 read/write/delete 격리 검증이 필요. 현재 DB에는 테스트 계정이 없어 완료되지 않음.
-6. **Preview runtime**: Vercel 무료 배포 한도 해제 후 최신 head `4e3edea4...`의 Preview를 배포하고 signup/login/API/browser smoke를 수행해야 함. 기존 READY Preview는 최신 head 증거가 아님.
+6. **Preview runtime**: Vercel 무료 배포 한도 해제 후 최신 branch head `5f54bf0d...`의 Preview를 배포하고 signup/login/API/browser smoke를 수행해야 함. 기존 READY Preview는 최신 head 증거가 아님.
 7. **Account deletion / workers / upload**: 실제 계정·Google 동의·migration·private Storage prerequisites 및 E2E 전까지 `NEXUS_ACCOUNT_DELETION_ENABLED`, `NEXUS_ACCOUNT_DELETION_WORKER_ENABLED`, `NEXUS_HOSTED_WORKER_ENABLED`, `NEXUS_HOSTED_UPLOAD_ENABLED`는 false 유지. YouTube 업로드는 명시적 승인 후 Private만 허용.
 
 ### 안전 경계
