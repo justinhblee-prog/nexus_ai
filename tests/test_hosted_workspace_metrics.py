@@ -44,5 +44,15 @@ class HostedWorkspaceMetricsContractTests(unittest.TestCase):
 
 
 
+    def test_hosted_jobs_ui_supports_offset_pagination_and_context_guard(self):
+        html = (ROOT / "signup.html").read_text(encoding="utf-8")
+        self.assertIn("/jobs?limit=50&offset=", html)
+        self.assertIn("data-load-more", html)
+        self.assertIn("이전 작업 더 불러오기", html)
+        self.assertIn("requestedWorkspaceId !== activeWorkspaceId", html)
+        self.assertIn("requestedToken !== activeAccessToken", html)
+
+
+
 if __name__ == "__main__":
     unittest.main()
