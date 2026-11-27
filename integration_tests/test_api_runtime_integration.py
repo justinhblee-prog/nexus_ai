@@ -30,7 +30,7 @@ class ApiRuntimeIntegrationTests(unittest.TestCase):
             })
             server_code = (
                 "import api_server; "
-                "api_server.watch_topics_loop = lambda: None; "
+                "api_server.watch_legacy_topics_loop = lambda: None; api_server.watch_topics_loop = lambda *args, **kwargs: None; "
                 "api_server.auto_radar_and_scheduler_loop = lambda: None; "
                 "import uvicorn; "
                 f"uvicorn.run(api_server.app, host='127.0.0.1', port={port}, log_level='error')"
