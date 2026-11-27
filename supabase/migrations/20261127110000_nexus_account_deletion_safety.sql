@@ -212,6 +212,11 @@ BEGIN
   WHERE o.owner = p_user_id
      OR o.owner_id = p_user_id::text
      OR split_part(o.name, '/', 1) = ANY(p_workspace_ids)
+     OR EXISTS (
+       SELECT 1 FROM public.gallery_images AS gi
+       WHERE gi.owner_id = p_user_id
+         AND o.name IN (gi.storage_key, gi.thumbnail_key)
+     )
   ORDER BY o.bucket_id, o.name
   LIMIT p_limit OFFSET p_offset;
 END;
