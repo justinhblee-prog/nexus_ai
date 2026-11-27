@@ -30,6 +30,10 @@ _ALLOWED_RPCS = {
     "claim_next_shorts_job",
     "heartbeat_shorts_job",
     "finish_shorts_job",
+    "claim_next_approved_shorts_job",
+    "heartbeat_shorts_upload_job",
+    "record_shorts_upload_video_id",
+    "finish_shorts_upload",
 }
 
 
@@ -133,6 +137,62 @@ class SupabaseAdminRestClient:
             payload=payload,
             prefer="return=representation",
         ) or []
+
+    def claim_next_approved_shorts_job(self, worker_id, lease_seconds=600, max_attempts=2, daily_limit=3):
+        rows = self.rpc("claim_next_approved_shorts_job", {
+            "p_worker_id": worker_id,
+            "p_lease_seconds": lease_seconds,
+            "p_max_attempts": max_attempts,
+            "p_daily_limit": daily_limit,
+        }) or []
+        return rows[0] if rows else None
+
+    def heartbeat_shorts_upload_job(self, job_id, lease_token, lease_seconds=600):
+        return self.rpc("heartbeat_shorts_upload_job", {
+            "p_job_id": job_id,
+            "p_lease_token": lease_token,
+            "p_lease_seconds": lease_seconds,
+        })
+
+    def record_shorts_upload_video_id(self, job_id, lease_token, video_id, channel_id, privacy_status):
+        return self.rpc("record_shorts_upload_video_id", {
+            "p_job_id": job_id,
+            "p_lease_token": lease_token,
+            "p_provider_video_id": video_id,
+            "p_verified_channel_id": channel_id,
+            "p_privacy_status": privacy_status,
+        })
+
+    def finish_shorts_upload(self, job_id, lease_token, success, video_id=None, error=None, max_attempts=2):
+        return self.rpc("finish_shorts_upload", {
+            "p_job_id": job_id,
+            "p_lease_token": lease_token,
+            "p_success": success,
+            "p_provider_video_id": video_id,
+            "p_error": error,
+            "p_max_attempts": max_attempts,
+        })
+
+    def download_storage_object(self, storage_key):
+        if not re.fullmatch(r"wsp_[0-9a-fA-F-]{36}/[0-9a-fA-F-]{36}/[0-9a-f]{32}\\.mp4", storage_key):
+            raise ValueError("Storage key is invalid")
+        url_path = quote(storage_key, safe="/")
+        headers = {
+            "apikey": self.service_key,
+            "Authorization": f"Bearer {self.service_key}",
+        }
+        try:
+            response = self.http_request(
+                "GET",
+                f"{self.base_url}/storage/v1/object/authenticated/nexus-shorts/{url_path}",
+                headers=headers,
+                timeout=60,
+            )
+        except requests.RequestException as exc:
+            raise SupabaseAdminError("Supabase private media download is temporarily unavailable") from exc
+        if response.status_code != 200:
+            raise SupabaseAdminError("Private render media could not be downloaded", response.status_code if 400 <= response.status_code < 500 else 502)
+        return response.content
 
     def claim_next_shorts_job(self, worker_id, lease_seconds=600, max_attempts=3):
         rows = self.rpc("claim_next_shorts_job", {
