@@ -44,7 +44,7 @@
 
 ### 남은 릴리스 게이트 — 모두 해소 전까지 운영 전환 금지
 
-1. **Topic queue migration**: `supabase migration new nexus_user_workspace_topic_queue`로 로컬 CLI에서 timestamp 파일을 생성하고, 설계 SQL을 옮겨 local DB 검증 및 RLS/security advisor를 수행해야 함. 이 세션에는 로컬 checkout/CLI 실행환경이 없어 CLI 생성 파일을 위조하지 않았음.
+1. **Topic queue migration**: `20261127143658_nexus_user_workspace_topic_queue.sql` is present on PR #11 with the designed SQL. The first local CLI attempt created an empty file under `$HOME\supabase\migrations`, not in the project checkout; do not treat that as the project migration. Sync the PR branch into the intended local checkout, then run `supabase db lint --local`, security advisors, and two-user RLS isolation tests. The active Supabase database remains unchanged.
 2. **Account deletion / security migrations**: 아래 6개 파일을 review 후 별도 승인된 migration window에서 적용하고 live schema/advisor 재검증해야 함:
    - `20261127110000_nexus_account_deletion_safety.sql`
    - `20261127123000_nexus_account_deletion_oauth_retry_state.sql`
