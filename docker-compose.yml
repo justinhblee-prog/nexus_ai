@@ -56,3 +56,26 @@ services:
       - .:/app
     command: ["python", "hosted_worker.py"]
     restart: on-failure
+
+  hosted-upload-worker:
+    build: .
+    container_name: nexus_ai_hosted_upload_worker
+    profiles: ["hosted"]
+    environment:
+      NEXUS_HOSTED_UPLOAD_ENABLED: ${NEXUS_HOSTED_UPLOAD_ENABLED:-false}
+      NEXUS_HOSTED_UPLOAD_POLL_SECONDS: ${NEXUS_HOSTED_UPLOAD_POLL_SECONDS:-15}
+      NEXUS_HOSTED_UPLOAD_DAILY_LIMIT: ${NEXUS_HOSTED_UPLOAD_DAILY_LIMIT:-3}
+      NEXUS_HOSTED_UPLOAD_MAX_ATTEMPTS: ${NEXUS_HOSTED_UPLOAD_MAX_ATTEMPTS:-2}
+      NEXUS_HOSTED_UPLOAD_WORKER_ID: ${NEXUS_HOSTED_UPLOAD_WORKER_ID:-}
+      NEXUS_SUPABASE_URL: ${NEXUS_SUPABASE_URL:-}
+      NEXUS_SUPABASE_SERVICE_ROLE_KEY: ${NEXUS_SUPABASE_SERVICE_ROLE_KEY:-}
+      NEXUS_TOKEN_ENCRYPTION_KEYS_JSON: ${NEXUS_TOKEN_ENCRYPTION_KEYS_JSON:-}
+      NEXUS_GOOGLE_OAUTH_CLIENT_ID: ${NEXUS_GOOGLE_OAUTH_CLIENT_ID:-}
+      NEXUS_GOOGLE_OAUTH_CLIENT_SECRET: ${NEXUS_GOOGLE_OAUTH_CLIENT_SECRET:-}
+      NEXUS_GOOGLE_OAUTH_REDIRECT_URI: ${NEXUS_GOOGLE_OAUTH_REDIRECT_URI:-}
+      NEXUS_HOSTED_APP_URL: ${NEXUS_HOSTED_APP_URL:-}
+      NEXUS_LOG_LEVEL: ${NEXUS_LOG_LEVEL:-INFO}
+    volumes:
+      - .:/app
+    command: ["python", "hosted_upload_worker.py"]
+    restart: on-failure
