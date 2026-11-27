@@ -31,3 +31,14 @@ jobs:
           node --check /tmp/nexus-studio.js
       - name: Run regression tests
         run: python -m unittest discover -s tests -v
+
+      - name: Install Playwright browser automation
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+      - name: Verify real browser interactions in the static preview
+        run: |
+          python -m http.server 4173 > /tmp/nexus-preview-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          node integration_tests/ui_smoke.mjs
