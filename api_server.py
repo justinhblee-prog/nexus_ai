@@ -200,8 +200,15 @@ def hosted_workspaces(request: Request):
         items = client.select("workspaces", {
             "select": "workspace_id,workspace_name,owner_id,created_at",
             "order": "created_at.asc",
-        })
-        return {"items": items or []}
+        }) or []
+        memberships = client.select("workspace_members", {
+            "select": "workspace_id,role",
+            "user_id": f"eq.{request.state.hosted_user['user_id']}",
+        }) or []
+        roles = {item["workspace_id"]: item["role"] for item in memberships}
+        for item in items:
+            item["member_role"] = roles.get(item["workspace_id"])
+        return {"items": items}
     except SupabaseRestError as exc:
         _hosted_rest_error(exc)
 
