@@ -75,6 +75,11 @@ class HostedSignupPageContractTests(unittest.TestCase):
         self.assertIn('id="deletion-password"', self.html)
         self.assertIn('supabase.auth.signInWithPassword', self.html)
         self.assertIn('DELETE MY ACCOUNT', self.html)
+        self.assertIn('id="workspace-members-panel"', self.html)
+        self.assertIn('"/api/hosted/workspaces/" + encodeURIComponent(activeWorkspaceId) + "/members"', self.html)
+        self.assertIn('"/transfer-ownership"', self.html)
+        self.assertIn('JSON.stringify({ role: "admin" })', self.html)
+        self.assertIn("소유권을 이전했습니다.", self.html)
         self.assertIn('scope: "local"', self.html)
         self.assertIn("showDeletionRetryOnly", self.html)
 
