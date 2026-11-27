@@ -141,7 +141,7 @@ class AccountDeletionWorkerTests(unittest.TestCase):
         admin.list_account_workspace_members.return_value = [{"user_id": USER, "role": "owner"}]
         admin.list_account_deletion_active_leases.return_value = []
         storage_object = {"bucket_id": "nexus-shorts", "name": f"{SOLE}/jobs/video.mp4"}
-        admin.list_account_deletion_storage_objects.side_effect = [[storage_object], [storage_object], []]
+        admin.list_account_deletion_storage_objects.side_effect = [[storage_object], [storage_object], [], []]
         admin.list_account_personal_gallery_images.return_value = []
         admin.list_youtube_connections_for_workspaces.return_value = [{
             "connection_id": "55555555-5555-4555-8555-555555555555",
