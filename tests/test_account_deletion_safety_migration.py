@@ -95,6 +95,14 @@ class AccountDeletionSafetyMigrationTests(unittest.TestCase):
         self.assertIn("new.stage is not distinct from old.stage", self.sql)
         self.assertIn("if not (select private.has_workspace_role(new.workspace_id, array['owner','admin']))", self.sql)
 
+    def test_workspace_membership_writes_are_limited_to_non_owner_role_changes(self):
+        self.assertIn("revoke all on table public.workspaces from anon, authenticated", self.sql)
+        self.assertIn("grant select on table public.workspaces to authenticated", self.sql)
+        self.assertIn("revoke all on table public.workspace_members from anon, authenticated", self.sql)
+        self.assertIn("grant select, update (role) on table public.workspace_members to authenticated", self.sql)
+        self.assertIn("user_id <> (select auth.uid())", self.sql)
+        self.assertIn("role in ('admin', 'editor', 'viewer')", self.sql)
+
     def test_workspace_ownership_transfer_requires_current_owner_and_existing_admin(self):
         self.assertIn("create or replace function public.transfer_workspace_ownership", self.sql)
         self.assertIn("v_current_owner <> (select auth.uid())", self.sql)
