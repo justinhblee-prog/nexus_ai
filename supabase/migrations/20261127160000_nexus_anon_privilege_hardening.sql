@@ -1,7 +1,7 @@
 -- Remove unnecessary anonymous SQL privileges from the NEXUS tenant data surface.
--- RLS already denies anon rows; this additionally enforces least-privilege grants
--- and prevents future public tables created by either Supabase owner role from
--- inheriting broad anon table privileges.
+-- RLS already denies anon rows; this additionally enforces least-privilege grants.
+-- The migration role is postgres, so it can change postgres-owned defaults only.
+-- Supabase-admin-owned defaults require a separate privileged DBA operation.
 
 REVOKE ALL ON TABLE
   public.workspaces,
@@ -14,10 +14,8 @@ REVOKE ALL ON TABLE
   public.shorts_assets
 FROM anon;
 
--- Supabase's live project has default table grants for both object-creator roles.
--- Keep authenticated/service_role defaults unchanged; remove only anon access.
+-- Keep authenticated/service_role defaults unchanged; remove only anon access
+-- from objects created by the postgres migration role.
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   REVOKE ALL ON TABLES FROM anon;
 
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public
-  REVOKE ALL ON TABLES FROM anon;
