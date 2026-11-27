@@ -171,3 +171,11 @@
 - **Not activated:** no live Supabase schema/data writes, no collector start, no worker enablement, no Vercel deployment, and no paid services. Local Supabase CLI lint and real hosted read/write integration remain pending.
 - The previous statement that hosted trend persistence had no implementation is superseded for application code; its migration/activation/runtime validation gates remain open.
 - Current PR #11 remains Draft/Open/unmerged. Latest commit and Actions validation are tracked on the PR; do not infer success until the current-head workflow completes.
+
+
+### Shared trend persistence CI result — 2026-11-28
+
+- Application-code head `34d636ffe34b8766d842f7de80de99b748ddd440` passed GitHub Actions run [46032479945](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46032479945).
+- **324 Python tests passed**; Docker Compose configuration, Python compilation (including the new trend worker/store), browser JavaScript syntax, and Playwright browser interaction smoke all passed.
+- A follow-up commit `50f14bdda72322bf3b5317add0146083af18e24b` updates this status document only; it does not change application code.
+- This CI result validates code contracts and the static browser preview, not a live Supabase migration, actual collector writes, Vercel deployment, or real OAuth/tenant E2E.
