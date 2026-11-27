@@ -96,23 +96,24 @@ def run_once(admin=None, scanner=None, db_path: str | None = None) -> dict:
     if admin is None:
         admin = SupabaseAdminRestClient()
     result = {}
-    persistence_errors = []
+    cycle_errors = []
     for period in ("daily", "weekly"):
         try:
             scanner(period)
         except Exception as exc:
-            # The scanner records its failed scan in SQLite before re-raising.
-            # Still publish that health record so hosted clients do not see stale
-            # "success" metadata when the latest collection attempt failed.
+            # The scanner normally records its failed scan in SQLite before
+            # re-raising. Publish that health record, but keep the cycle failed
+            # so the outer worker loop retries rather than silently accepting it.
+            cycle_errors.append((period, "scan", exc))
             logger.warning("Trend scan failed for %s (%s)", period, type(exc).__name__)
         try:
             result[period] = persist_period(admin, period, trend_radar.DB_PATH)
         except Exception as exc:
-            persistence_errors.append((period, exc))
+            cycle_errors.append((period, "persistence", exc))
             logger.warning("Trend persistence failed for %s (%s)", period, type(exc).__name__)
-    if persistence_errors:
-        failed_periods = ", ".join(period for period, _ in persistence_errors)
-        raise RuntimeError(f"Trend persistence failed for: {failed_periods}") from persistence_errors[0][1]
+    if cycle_errors:
+        failed_periods = ", ".join(f"{period} {stage}" for period, stage, _ in cycle_errors)
+        raise RuntimeError(f"Trend collection cycle failed: {failed_periods}") from cycle_errors[0][2]
     return result
 
 
