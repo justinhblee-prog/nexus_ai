@@ -68,9 +68,12 @@ try {
     throw new Error("Sample data panel was not removed");
   }
 
-  await page.locator('.side-nav button[data-workspace="analytics"]').click();
-  if (!(await page.locator('.workspace-view[data-workspace="analytics"]').evaluate(node => node.classList.contains("active")))) {
-    throw new Error("Workspace navigation did not switch to Analytics");
+  const workspaceIds = ["dashboard", "studio", "discovery", "review", "publishing", "analytics", "operations"];
+  for (const workspaceId of workspaceIds) {
+    await page.locator('.side-nav button[data-workspace="' + workspaceId + '"]').click();
+    if (!(await page.locator('.workspace-view[data-workspace="' + workspaceId + '"]').evaluate(node => node.classList.contains("active")))) {
+      throw new Error("Workspace navigation failed: " + workspaceId);
+    }
   }
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -78,6 +81,28 @@ try {
   if (await page.locator("html").getAttribute("data-layout") !== "executive") {
     throw new Error("Mobile theme selection failed");
   }
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForSelector("#nexus-runtime-status:not([hidden])");
+  if (await page.locator("html").getAttribute("data-layout") !== "executive" ||
+      await page.locator("html").getAttribute("data-theme") !== "forest") {
+    throw new Error("Layout or color appearance did not persist across reload");
+  }
+
+  // Vercel's SPA fallback may return HTTP 200 + HTML for an unavailable /api route.
+  // This must be identified as a static preview, not misread as a successful login.
+  const fallbackPage = await browser.newPage();
+  await fallbackPage.route("**/api/session/status", route => route.fulfill({
+    status: 200, contentType: "text/html", body: "<!doctype html><html><body>preview fallback</body></html>"
+  }));
+  await fallbackPage.goto("http://127.0.0.1:4173/", { waitUntil: "domcontentloaded" });
+  await fallbackPage.waitForSelector("#nexus-runtime-status:not([hidden])");
+  const fallbackMessage = await fallbackPage.locator("#nexus-runtime-status").innerText();
+  if (!fallbackMessage.includes("미리보기 전용") ||
+      !(await fallbackPage.locator("#nexus-login-overlay").evaluate(node => node.hidden))) {
+    throw new Error("HTTP 200 HTML API fallback was not safely identified as a static preview");
+  }
+  await fallbackPage.close();
+
   // Exercise the authenticated local-runtime path with a deterministic API fixture.
   const authPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   let expireNextOverview = false;
@@ -146,6 +171,9 @@ try {
     appearanceIndependence: "passed",
     workspaceNavigation: "passed",
     mobileThemeSelection: "passed",
+    workspaceNavigationAllSeven: "passed",
+    appearancePersistence: "passed",
+    staticPreviewHtmlFallback: "passed",
     secureLoginAndSessionExpiry: "passed",
   }, null, 2));
 } finally {
