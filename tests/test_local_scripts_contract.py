@@ -25,6 +25,7 @@ class LocalOperationsScriptContractTests(unittest.TestCase):
             "/_stcore/health",
             "unittest discover -s tests",
             "unittest discover -s integration_tests",
+            "scripts/check-feed-connectivity.py",
         ):
             with self.subTest(required=required):
                 self.assertIn(required, script)
