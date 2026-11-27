@@ -1,7 +1,6 @@
 import unittest
 import hashlib
-from unittest.mock import patch
-from unittest.mock import Mock
+from unittest.mock import call, patch, Mock
 
 from token_vault import TokenVaultError
 from supabase_admin import SupabaseAdminError
@@ -114,6 +113,7 @@ class AccountDeletionWorkerTests(unittest.TestCase):
             "status": "connected",
         }]
         admin.get_account_deletion_oauth_state.side_effect = [None, "revoked"]
+        admin.set_account_deletion_oauth_state.side_effect = ["revocation_started", "revoked"]
         admin.get_credential.return_value = {
             "encrypted_refresh_token_hex": "ciphertext",
             "encryption_key_version": "v1",
@@ -127,8 +127,8 @@ class AccountDeletionWorkerTests(unittest.TestCase):
 
         oauth.revoke_refresh_token.assert_called_once_with("refresh-token")
         self.assertEqual(admin.set_account_deletion_oauth_state.call_args_list, [
-            unittest.mock.call(USER, fingerprint, "revocation_started"),
-            unittest.mock.call(USER, fingerprint, "revoked"),
+            call(USER, fingerprint, "revocation_started"),
+            call(USER, fingerprint, "revoked"),
         ])
         self.assertEqual(admin.delete_credential.call_count, 2)
 
