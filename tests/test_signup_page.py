@@ -26,6 +26,15 @@ class HostedSignupPageContractTests(unittest.TestCase):
         self.assertIn("/overview", self.html)
         self.assertIn('headers: { Authorization: "Bearer " + activeAccessToken }', self.html)
         self.assertIn("await loadWorkspaceOverview()", self.html)
+    def test_hosted_job_cards_show_pipeline_stages_and_inline_private_preview(self):
+        self.assertIn('queued: "제작 대기"', self.html)
+        self.assertIn('rendering: "영상 렌더링"', self.html)
+        self.assertIn('review_pending: "최종 검토 대기"', self.html)
+        self.assertIn('new Intl.DateTimeFormat("ko-KR"', self.html)
+        self.assertIn('document.createElement("video")', self.html)
+        self.assertIn('player.src = previewResult.signed_url', self.html)
+        self.assertNotIn("window.location.assign(previewResult.signed_url)", self.html)
+
     def test_final_approval_refreshes_jobs_and_workspace_metrics(self):
         approval_start = self.html.index('"/api/hosted/jobs/" + encodeURIComponent(item.job_id) + "/approve"')
         approval_end = self.html.index("showMessage(\"최종 승인되었습니다.", approval_start)
