@@ -7,7 +7,7 @@ import types
 import unittest
 from starlette.requests import Request
 from starlette.responses import Response
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 class SignedSessionTests(unittest.TestCase):
