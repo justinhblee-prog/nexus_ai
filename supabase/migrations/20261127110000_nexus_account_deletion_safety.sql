@@ -316,6 +316,7 @@ CREATE TABLE IF NOT EXISTS private.account_deletion_requests (
   status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','retry','blocked','completed','failed')),
   phase text NOT NULL DEFAULT 'queued',
   attempt_count integer NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+  sessions_revoked boolean NOT NULL DEFAULT false,
   next_attempt_at timestamptz NOT NULL DEFAULT now(),
   lease_owner text,
   lease_until timestamptz,
@@ -347,7 +348,7 @@ END;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.claim_next_account_deletion_request(p_worker_id text,p_lease_seconds integer DEFAULT 180)
-RETURNS TABLE(user_id uuid,status text,phase text,attempt_count integer,preflight_snapshot jsonb,lease_until timestamptz)
+RETURNS TABLE(user_id uuid,status text,phase text,attempt_count integer,sessions_revoked boolean,preflight_snapshot jsonb,lease_until timestamptz)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
 AS $function$
 BEGIN
@@ -358,8 +359,8 @@ BEGIN
   RETURN QUERY
   WITH candidate AS (
     SELECT r.user_id FROM private.account_deletion_requests r
-    WHERE (r.status IN ('pending','retry') AND r.next_attempt_at <= now())
-       OR (r.status='running' AND r.lease_until < now())
+    WHERE r.sessions_revoked = true AND ((r.status IN ('pending','retry') AND r.next_attempt_at <= now())
+       OR (r.status='running' AND r.lease_until < now()))
     ORDER BY r.requested_at FOR UPDATE SKIP LOCKED LIMIT 1
   )
   UPDATE private.account_deletion_requests r
@@ -367,7 +368,22 @@ BEGIN
       attempt_count=r.attempt_count+1,lease_owner=p_worker_id,
       lease_until=now()+make_interval(secs=>p_lease_seconds),updated_at=now()
   FROM candidate c WHERE r.user_id=c.user_id
-  RETURNING r.user_id,r.status,r.phase,r.attempt_count,r.preflight_snapshot,r.lease_until;
+  RETURNING r.user_id,r.status,r.phase,r.attempt_count,r.sessions_revoked,r.preflight_snapshot,r.lease_until;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.mark_account_deletion_sessions_revoked(p_user_id uuid)
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
+AS $function$
+BEGIN
+  IF COALESCE((SELECT auth.jwt()->>'role'),'') <> 'service_role' THEN
+    RAISE EXCEPTION 'service_role required' USING ERRCODE='42501';
+  END IF;
+  IF p_user_id IS NULL THEN RAISE EXCEPTION 'User ID is required' USING ERRCODE='22023'; END IF;
+  UPDATE private.account_deletion_requests
+  SET sessions_revoked=true,updated_at=now()
+  WHERE user_id=p_user_id AND status IN ('pending','retry','running');
+  RETURN FOUND;
 END;
 $function$;
 
@@ -433,9 +449,11 @@ GRANT EXECUTE ON FUNCTION public.count_account_deletion_private_user_rows(uuid) 
 
 REVOKE ALL ON FUNCTION public.enqueue_account_deletion(uuid,jsonb) FROM PUBLIC,anon,authenticated;
 REVOKE ALL ON FUNCTION public.claim_next_account_deletion_request(text,integer) FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.mark_account_deletion_sessions_revoked(uuid) FROM PUBLIC,anon,authenticated;
 REVOKE ALL ON FUNCTION public.update_account_deletion_request(uuid,text,text,text,text,integer) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.enqueue_account_deletion(uuid,jsonb) TO service_role;
 GRANT EXECUTE ON FUNCTION public.claim_next_account_deletion_request(text,integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.mark_account_deletion_sessions_revoked(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.update_account_deletion_request(uuid,text,text,text,text,integer) TO service_role;
 
 
