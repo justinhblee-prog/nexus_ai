@@ -179,7 +179,7 @@ class GoogleOAuthConfig:
         metadata = {
             "snippet": {
                 "title": (title or "NEXUS Shorts")[:100],
-                "description": ((description or "")[:4500] + "\\n\\n#Shorts")[:5000],
+                "description": ((description or "")[:4500] + "\n\n#Shorts")[:5000],
                 "categoryId": "22",
                 "tags": ["Shorts", "NEXUSStudioPro"],
             },
