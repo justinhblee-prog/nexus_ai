@@ -1,6 +1,52 @@
 # NEXUS STUDIO PRO — BUILD STATUS
 
 기준일: 2026-11-27  
+저장소: `justinhblee-prog/nexus_ai`
+
+## 최신 Hosted SaaS 진행 현황
+
+<badge>IN PROGRESS · PR #11 Draft/Open</badge>
+
+- 작업 브랜치: `feat/nexus-user-onboarding-web-oauth-20261127`
+- 최신 검증 커밋: `1e27338ce0277e443cc315ddef00efed53761ac3`
+- Pull Request: [#11 — User onboarding and hosted OAuth](https://github.com/justinhblee-prog/nexus_ai/pull/11)
+- 최신 CI: [run 46013800343](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46013800343) — **309 Python tests PASS**, Docker Compose 검증, Python 컴파일, 브라우저 JavaScript 구문, Playwright 브라우저 smoke 모두 통과.
+- Vercel 새 Preview 배포는 무료 플랜 일일 배포 한도 때문에 대기 중. 이전 Preview는 현재 PR head를 반영하지 않으므로 최신 화면으로 간주하지 않음.
+- Supabase 운영 프로젝트에는 이번 작업에서 DDL/마이그레이션을 적용하지 않음.
+
+### 이번 트랙에서 완료된 코드
+
+- Hosted root route, signup/login/password recovery, 사용자별 워크스페이스 화면 연결.
+- Hosted overview 통계는 RLS 적용된 exact count 쿼리로 계산.
+- Shorts 작업 내역은 50건 단위 페이지네이션, 안정 정렬, 워크스페이스 전환 stale-response 방지 적용.
+- 최종 승인 API는 현재 상태 및 owner/admin 역할을 재검증하고 조건부 갱신.
+- Vercel FastAPI entrypoint 분리. 로컬 Streamlit `app.py`는 보존하고 Hosted cold start에서는 로컬 영상/분석/업로드 모듈을 로드하지 않음.
+- Hosted trend endpoint는 SQLite를 쓰기/초기화하지 않으며, 저장소 부재 상태를 UI에 명시.
+- Saved topic queue의 사용자·워크스페이스 scoped list/add/delete API 및 화면 연동. 기존 브라우저 항목은 서버 테이블이 준비되면 자동 이전. 이 큐는 `shorts_jobs`와 분리되며 render/upload worker가 소비하지 않음.
+- 큐 스키마/RLS/계정삭제 cascade 설계 및 CLI 생성 절차: [TOPIC_QUEUE_SERVER_PERSISTENCE.md](TOPIC_QUEUE_SERVER_PERSISTENCE.md)
+
+### 현재 외부 의존 및 검증 차단 항목
+
+1. **Topic queue DB migration** — 설계 SQL은 문서화했으나, 로컬 Supabase CLI/repository checkout이 이 세션에 없어 CLI가 생성한 timestamp migration 파일은 아직 없음. 마이그레이션 적용도 미실행. 로컬 checkout에서 `supabase migration new nexus_user_workspace_topic_queue`로 생성 후 검토해야 함.
+2. **Hosted trend feed** — Vercel 번들에 공유 trend snapshot이 없으므로 현재는 unavailable 상태. 영속 공유 데이터 테이블 및 수집 파이프라인 필요.
+3. **Google OAuth 실계정 E2E** — 사용자 동의, refresh/revoke, 실제 테스트 채널 검증 미완료.
+4. **Two-user tenant isolation E2E** — 자동화된 계약 테스트는 있으나 서로 다른 실제 사용자 계정으로 검증 미완료.
+5. **Vercel Preview runtime** — 새 Preview 배포 및 HTTP/browser 연결 확인은 배포 한도 해제 후 필요.
+6. **Hosted secrets/configuration** — 현재 Preview scope에는 Supabase URL과 publishable key만 등록. Google OAuth, redirect URI, token encryption key, hosted app URL 등 민감 설정은 안전한 Vercel 환경 설정 절차가 필요하며 채팅에 비밀값을 입력하지 않음.
+
+### 안전 경계
+
+- PR #11은 Draft/Open 유지. merge/push-to-main/production deploy 금지.
+- Supabase live migration/DDL 미적용. 서비스 프로젝트 `ai_studio` 및 dormant `ai_studio_test` 보존.
+- YouTube 공개 업로드 및 자동 공개 전환 금지. 업로드는 명시적 승인 후 Private만 허용.
+- 유료 API, 유료 인프라, 플랜 업그레이드 사용 금지.
+- 계정 삭제와 공유 워크스페이스 데이터 보존은 완료 조건에서 제외하지 않음.
+
+---
+
+## 로컬 데스크톱 앱 기준선 (이전 상태 스냅샷)
+
+기존 스냅샷 기준일: 2026-11-27  
 저장소: `justinhblee-prog/nexus_ai`  
 진행 기준: PR #1 (bootstrap) → PR #6 (backend) → PR #5 (workspace UI)  
 전체 상태: **IN PROGRESS — 원격 CI 검증은 통과, Windows 실환경·OAuth 검증은 미완료**
