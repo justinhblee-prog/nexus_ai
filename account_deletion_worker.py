@@ -127,10 +127,14 @@ def _cleanup_oauth(admin, user_id, deleting, oauth_config_factory, decrypt_token
         if state not in {"revoked", "preserved", "not_required"}:
             active = [row for row in group if row.get("status") == "connected"]
             if state is None and active and admin.has_active_connection_outside_workspaces(provider_account_id, deleting):
-                admin.set_account_deletion_oauth_state(user_id, provider_hash, "preserved")
+                recorded = admin.set_account_deletion_oauth_state(user_id, provider_hash, "preserved")
+                if recorded != "preserved":
+                    raise SupabaseAdminError("Shared Google grant preservation could not be durably recorded")
                 state = "preserved"
             elif state is None and not active:
-                admin.set_account_deletion_oauth_state(user_id, provider_hash, "not_required")
+                recorded = admin.set_account_deletion_oauth_state(user_id, provider_hash, "not_required")
+                if recorded != "not_required":
+                    raise SupabaseAdminError("Unused Google grant state could not be durably recorded")
                 state = "not_required"
             else:
                 # Persist intent before contacting Google. If the worker dies
@@ -138,7 +142,9 @@ def _cleanup_oauth(admin, user_id, deleting, oauth_config_factory, decrypt_token
                 # the next attempt repeats the same revoke call. Google 400 for
                 # an already-invalid/revoked token is explicitly idempotent.
                 if state is None:
-                    admin.set_account_deletion_oauth_state(user_id, provider_hash, "revocation_started")
+                    recorded = admin.set_account_deletion_oauth_state(user_id, provider_hash, "revocation_started")
+                    if recorded != "revocation_started":
+                        raise SupabaseAdminError("Google revocation intent could not be durably recorded")
                 credentials = []
                 for connection in group:
                     credential = admin.get_credential(str(connection["connection_id"]))
