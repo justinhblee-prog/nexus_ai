@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
-import video_maker, trend_radar, youtube_analytics
+import video_maker, trend_radar, youtube_analytics, yt_uploader
 from audit_log import safe_record_event as record_event, list_events, get_ops_metrics
 from video_qa import validate_video
 from script_templates import split_manual_script
@@ -1075,7 +1075,7 @@ def approve_job(job_id: int):
         db.close()
     record_event("review.approved", entity_type="pipeline_job", entity_id=job_id,
                  payload={"channel": jb["channel_name"], "approval_source": "api"})
-    import yt_uploader  # Google client dependencies are needed only for an explicit upload action.\n    ok, msg = yt_uploader.upload_to_youtube(jb["channel_name"], video_path, jb["title"], jb["script"])
+    ok, msg = yt_uploader.upload_to_youtube(jb["channel_name"], video_path, jb["title"], jb["script"])
     privacy_unverified = msg.startswith("UPLOAD_CREATED_PRIVACY_UNVERIFIED:") or msg.startswith("UPLOAD_RESULT_UNCERTAIN:")
     video_id, privacy_status = _upload_result_metadata(ok, msg)
     if ok and (not video_id or privacy_status != "private"):
