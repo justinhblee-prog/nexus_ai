@@ -121,6 +121,23 @@ class SupabaseAdminClientTests(unittest.TestCase):
                 "11111111-1111-4111-8111-111111111111", "worker-1", "done", "complete"
             )
 
+    def test_existing_account_deletion_request_lookup_is_service_role_only(self):
+        http = Mock()
+        response = Mock(status_code=200)
+        response.json.return_value = [{
+            "status": "pending", "phase": "queued", "attempt_count": 0, "sessions_revoked": False,
+        }]
+        http.return_value = response
+        client = SupabaseAdminRestClient(ENV, http_request=http)
+        request = client.get_account_deletion_request("11111111-1111-4111-8111-111111111111")
+        self.assertEqual(request["sessions_revoked"], False)
+        self.assertIn("/rpc/get_account_deletion_request", http.call_args.args[1])
+        self.assertEqual(http.call_args.kwargs["json"]["p_user_id"], "11111111-1111-4111-8111-111111111111")
+        response.json.return_value = []
+        self.assertIsNone(client.get_account_deletion_request("11111111-1111-4111-8111-111111111111"))
+        with self.assertRaises(ValueError):
+            client.get_account_deletion_request("../../user")
+
     def test_account_deletion_tombstone_uses_allowlisted_service_rpc(self):
         http = Mock()
         response = Mock(status_code=204)
