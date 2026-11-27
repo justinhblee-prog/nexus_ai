@@ -9,7 +9,6 @@
 
 - 작업 브랜치: `feat/nexus-user-onboarding-web-oauth-20261127`
 - PR #11 현재 상태: Draft / Open / Unmerged. [PR #11](https://github.com/justinhblee-prog/nexus_ai/pull/11)
-- 현재 PR HEAD: `c64465e99e17020245f8602942bf7a4dc77a2e1f`
 - 최신 GitHub Actions [run 46043297014](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46043297014) 성공: **343 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, Playwright browser interaction smoke.
 - 최신 Supabase local migration validation [run 46043296979](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46043296979) 성공: **17개 migration 전체 적용**, `supabase db lint --fail-on error` 통과, `No schema errors found`.
 - 기존 PR #1, #5, #6, #7, #8, #9, #10은 Draft/Open으로 보존. PR #5와 #7은 이후 통합 PR에서 기능이 이어진 과거 브랜치로 PR 대화에 상태를 기록함.
