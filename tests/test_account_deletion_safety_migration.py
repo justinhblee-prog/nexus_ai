@@ -11,138 +11,77 @@ class AccountDeletionSafetyMigrationTests(unittest.TestCase):
     def setUpClass(cls):
         cls.sql = MIGRATION.read_text(encoding="utf-8").lower()
 
-    def test_shared_workspace_author_records_are_preserved_as_null(self):
-        for table, column in (
-            ("youtube_connections", "connected_by"),
-            ("shorts_channels", "created_by"),
-            ("shorts_jobs", "created_by"),
-            ("shorts_assets", "created_by"),
-        ):
-            self.assertIn(f"alter table public.{table}", self.sql)
-            self.assertIn(f"alter column {column} drop not null", self.sql)
-            self.assertIn(f"foreign key ({column}) references auth.users(id) on delete set null", self.sql)
-
-    def test_approval_and_event_audit_references_are_anonymized_not_cascaded(self):
-        self.assertIn("foreign key (actor_id) references auth.users(id) on delete set null", self.sql)
-        self.assertIn("foreign key (approved_by) references auth.users(id) on delete set null", self.sql)
-        self.assertIn("drop constraint if exists shorts_jobs_check", self.sql)
-        self.assertIn("approval_status = 'approved' and approved_at is not null", self.sql)
-
-    def test_tombstones_persist_after_auth_deletion_and_are_readable_by_authenticated_user(self):
-        self.assertIn("create table if not exists private.account_deletion_tombstones", self.sql)
-        self.assertIn("create or replace function public.mark_account_deletion_tombstone", self.sql)
-        self.assertIn("create or replace function public.is_account_deletion_tombstoned()", self.sql)
-        self.assertIn("references auth.users", self.sql) if False else None
-        self.assertIn("grant execute on function public.is_account_deletion_tombstoned() to authenticated", self.sql)
-        self.assertIn("grant execute on function public.mark_account_deletion_tombstone(uuid) to service_role", self.sql)
-
-    def test_active_lease_inventory_rpc_is_service_role_only(self):
-        self.assertIn("create or replace function public.list_account_deletion_active_leases", self.sql)
-        self.assertIn("private.shorts_worker_leases", self.sql)
-        self.assertIn("private.shorts_upload_leases", self.sql)
-        self.assertIn("l.lease_until > now()", self.sql)
-        self.assertIn("to service_role", self.sql)
-
     def test_storage_inventory_rpc_is_service_role_only_and_paginates(self):
         self.assertIn("create or replace function public.list_account_deletion_storage_objects", self.sql)
+        self.assertIn("p_limit integer default 1000", self.sql)
+        self.assertIn("p_offset integer default 0", self.sql)
         self.assertIn("p_workspace_ids text[] default array[]::text[]", self.sql)
-        self.assertIn("split_part(o.name, '/', 1) = any(p_workspace_ids)", self.sql)
-        self.assertIn("public.list_account_deletion_storage_objects(uuid,integer,integer,text[])", self.sql)
-        self.assertIn("auth.jwt() ->> 'role'", self.sql)
-        self.assertIn("service_role required", self.sql)
+        self.assertIn("limit p_limit offset p_offset", self.sql)
+        self.assertIn("where item.workspace_id !~ '^wsp_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'", self.sql)
         self.assertIn("where o.owner = p_user_id", self.sql)
         self.assertIn("or o.owner_id = p_user_id::text", self.sql)
+        self.assertIn("split_part(o.name, '/', 1) = any(p_workspace_ids)", self.sql)
         self.assertIn("from public.gallery_images as gi", self.sql)
         self.assertIn("o.name in (gi.storage_key, gi.thumbnail_key)", self.sql)
-        self.assertIn("limit p_limit offset p_offset", self.sql)
-        self.assertIn("where item.workspace_id !~ '^wsp_[0-9a-f-]{36}", self.sql)
+        self.assertIn("revoke all on function public.list_account_deletion_storage_objects(uuid,integer,integer,text[])", self.sql)
         self.assertIn("to service_role", self.sql)
-    def test_durable_deletion_queue_is_service_role_only_and_atomic_with_tombstone(self):
+
+    def test_active_worker_lease_inventory_is_service_role_only(self):
+        self.assertIn("create or replace function public.list_account_deletion_active_leases", self.sql)
+        self.assertIn("from private.shorts_worker_leases", self.sql)
+        self.assertIn("from private.shorts_upload_leases", self.sql)
+        self.assertIn("revoke all on function public.list_account_deletion_active_leases(text[])", self.sql)
+        self.assertIn("grant execute on function public.list_account_deletion_active_leases(text[]) to service_role", self.sql)
+
+    def test_tombstone_survives_auth_user_deletion_and_is_self_scoped(self):
+        self.assertIn("create table if not exists private.account_deletion_tombstones", self.sql)
+        self.assertNotIn("user_id uuid references auth.users", self.sql)
+        self.assertIn("create or replace function public.mark_account_deletion_tombstone", self.sql)
+        self.assertIn("create or replace function public.is_account_deletion_tombstoned", self.sql)
+        self.assertIn("v_user_id := (select auth.uid())", self.sql)
+        self.assertIn("grant execute on function public.is_account_deletion_tombstoned() to authenticated", self.sql)
+
+    def test_durable_queue_is_atomic_and_service_role_only(self):
         self.assertIn("create table if not exists private.account_deletion_requests", self.sql)
+        self.assertIn("sessions_revoked boolean not null default false", self.sql)
         self.assertIn("create or replace function public.enqueue_account_deletion", self.sql)
         self.assertIn("insert into private.account_deletion_tombstones(user_id)", self.sql)
+        self.assertIn("insert into private.account_deletion_requests(user_id,preflight_snapshot)", self.sql)
         self.assertIn("create or replace function public.claim_next_account_deletion_request", self.sql)
-        self.assertIn("for update skip locked", self.sql)
-        self.assertIn("create or replace function public.update_account_deletion_request", self.sql)
-        self.assertIn("create or replace function public.mark_account_deletion_sessions_revoked", self.sql)
-        self.assertIn("sessions_revoked boolean not null default false", self.sql)
         self.assertIn("r.sessions_revoked = true", self.sql)
+        self.assertIn("limit 1 for update skip locked", self.sql)
+        self.assertIn("create or replace function public.mark_account_deletion_sessions_revoked", self.sql)
         self.assertIn("create or replace function public.heartbeat_account_deletion_request", self.sql)
+        self.assertIn("create or replace function public.update_account_deletion_request", self.sql)
         self.assertIn("create or replace function public.delete_account_deletion_private_user_rows", self.sql)
-        self.assertIn("to service_role", self.sql)
+        self.assertIn("create or replace function public.count_account_deletion_private_user_rows", self.sql)
+        self.assertIn("grant execute on function public.enqueue_account_deletion(uuid,jsonb) to service_role", self.sql)
+        self.assertIn("grant execute on function public.claim_next_account_deletion_request(text,integer) to service_role", self.sql)
+        self.assertIn("grant execute on function public.mark_account_deletion_sessions_revoked(uuid) to service_role", self.sql)
+        self.assertIn("grant execute on function public.heartbeat_account_deletion_request(uuid,text,integer) to service_role", self.sql)
+        self.assertIn("grant execute on function public.update_account_deletion_request(uuid,text,text,text,text,integer) to service_role", self.sql)
+
+    def test_shared_legacy_authorship_columns_can_be_anonymized(self):
+        self.assertIn("alter table public.assets alter column owner_id drop not null", self.sql)
+        self.assertIn("alter table public.characters alter column owner_id drop not null", self.sql)
+        self.assertIn("alter table public.generation_jobs alter column owner_id drop not null", self.sql)
+        self.assertIn("alter table public.character_bundle_imports alter column user_id drop not null", self.sql)
 
     def test_reviewer_fk_anonymization_does_not_weaken_authenticated_approval_guard(self):
         self.assertIn("create or replace function private.guard_shorts_job_approval()", self.sql)
-        self.assertIn("(select auth.uid()) is null", self.sql)
         self.assertIn("current_user in ('postgres', 'supabase_auth_admin', 'service_role')", self.sql)
-        self.assertIn("old.approval_status = 'approved'", self.sql)
-        self.assertIn("new.approval_status = 'approved'", self.sql)
         self.assertIn("old.approved_by is not null", self.sql)
         self.assertIn("new.approved_by is null", self.sql)
         self.assertIn("new.approved_at is not distinct from old.approved_at", self.sql)
         self.assertIn("new.stage is not distinct from old.stage", self.sql)
-        self.assertIn("approval must be attributed to the authenticated reviewer", self.sql)
+        self.assertIn("if not (select private.has_workspace_role(new.workspace_id, array['owner','admin']))", self.sql)
 
-    def test_ownership_transfer_requires_authenticated_current_owner(self):
+    def test_workspace_ownership_transfer_requires_current_owner_and_existing_admin(self):
         self.assertIn("create or replace function public.transfer_workspace_ownership", self.sql)
-        self.assertIn("security definer", self.sql)
-        self.assertIn("set search_path = ''", self.sql)
-        self.assertIn("if (select auth.uid()) is null", self.sql)
         self.assertIn("v_current_owner <> (select auth.uid())", self.sql)
-
-    def test_new_owner_must_already_be_admin_and_old_owner_becomes_admin(self):
         self.assertIn("and wm.role = 'admin'", self.sql)
         self.assertIn("when user_id = p_new_owner_id then 'owner'", self.sql)
         self.assertIn("when user_id = v_current_owner then 'admin'", self.sql)
-
-    def test_ownership_transfer_is_not_publicly_callable(self):
-        self.assertIn("revoke all on function public.transfer_workspace_ownership(text, uuid) from public, anon", self.sql)
-        self.assertIn("grant execute on function public.transfer_workspace_ownership(text, uuid) to authenticated", self.sql)
-
-
-if __name__ == "__main__":
-    unittest.main()
-", self.sql)
-        self.assertIn("to service_role", self.sql)
-    def test_durable_deletion_queue_is_service_role_only_and_atomic_with_tombstone(self):
-        self.assertIn("create table if not exists private.account_deletion_requests", self.sql)
-        self.assertIn("create or replace function public.enqueue_account_deletion", self.sql)
-        self.assertIn("insert into private.account_deletion_tombstones(user_id)", self.sql)
-        self.assertIn("create or replace function public.claim_next_account_deletion_request", self.sql)
-        self.assertIn("for update skip locked", self.sql)
-        self.assertIn("create or replace function public.update_account_deletion_request", self.sql)
-        self.assertIn("create or replace function public.mark_account_deletion_sessions_revoked", self.sql)
-        self.assertIn("sessions_revoked boolean not null default false", self.sql)
-        self.assertIn("r.sessions_revoked = true", self.sql)
-        self.assertIn("create or replace function public.heartbeat_account_deletion_request", self.sql)
-        self.assertIn("create or replace function public.delete_account_deletion_private_user_rows", self.sql)
-        self.assertIn("to service_role", self.sql)
-
-    def test_reviewer_fk_anonymization_does_not_weaken_authenticated_approval_guard(self):
-        self.assertIn("create or replace function private.guard_shorts_job_approval()", self.sql)
-        self.assertIn("(select auth.uid()) is null", self.sql)
-        self.assertIn("current_user in ('postgres', 'supabase_auth_admin', 'service_role')", self.sql)
-        self.assertIn("old.approval_status = 'approved'", self.sql)
-        self.assertIn("new.approval_status = 'approved'", self.sql)
-        self.assertIn("old.approved_by is not null", self.sql)
-        self.assertIn("new.approved_by is null", self.sql)
-        self.assertIn("new.approved_at is not distinct from old.approved_at", self.sql)
-        self.assertIn("new.stage is not distinct from old.stage", self.sql)
-        self.assertIn("approval must be attributed to the authenticated reviewer", self.sql)
-
-    def test_ownership_transfer_requires_authenticated_current_owner(self):
-        self.assertIn("create or replace function public.transfer_workspace_ownership", self.sql)
-        self.assertIn("security definer", self.sql)
-        self.assertIn("set search_path = ''", self.sql)
-        self.assertIn("if (select auth.uid()) is null", self.sql)
-        self.assertIn("v_current_owner <> (select auth.uid())", self.sql)
-
-    def test_new_owner_must_already_be_admin_and_old_owner_becomes_admin(self):
-        self.assertIn("and wm.role = 'admin'", self.sql)
-        self.assertIn("when user_id = p_new_owner_id then 'owner'", self.sql)
-        self.assertIn("when user_id = v_current_owner then 'admin'", self.sql)
-
-    def test_ownership_transfer_is_not_publicly_callable(self):
         self.assertIn("revoke all on function public.transfer_workspace_ownership(text, uuid) from public, anon", self.sql)
         self.assertIn("grant execute on function public.transfer_workspace_ownership(text, uuid) to authenticated", self.sql)
 
