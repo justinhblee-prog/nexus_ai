@@ -6,6 +6,7 @@ content. Any uncertain ownership or incomplete cleanup blocks/retries the job.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import socket
@@ -103,7 +104,7 @@ def _inventory_storage(admin, user_id, deleting, shared):
     return objects
 
 
-def _cleanup_oauth(admin, deleting, oauth_config_factory, decrypt_token):
+def _cleanup_oauth(admin, user_id, deleting, oauth_config_factory, decrypt_token):
     if not deleting:
         return
     connections = admin.list_youtube_connections_for_workspaces(deleting)
@@ -116,35 +117,58 @@ def _cleanup_oauth(admin, deleting, oauth_config_factory, decrypt_token):
 
     oauth_config = None
     for provider_account_id, group in grouped.items():
-        active = [row for row in group if row.get("status") == "connected"]
-        if active and not admin.has_active_connection_outside_workspaces(provider_account_id, deleting):
-            credentials = []
-            for connection in active:
-                credential = admin.get_credential(str(connection["connection_id"]))
-                if credential:
-                    credentials.append((connection, credential))
-            if not credentials:
-                raise AccountDeletionBlocked("oauth_cleanup", "connected_oauth_credential_missing")
-            if oauth_config is None:
-                oauth_config = oauth_config_factory()
-            # One valid refresh token revokes this Google grant. Every credential
-            # in the deleted workspaces is then removed, including duplicates.
-            refresh_token = None
-            for _connection, credential in credentials:
-                try:
-                    refresh_token = decrypt_token(
-                        credential["encrypted_refresh_token_hex"],
-                        credential["encryption_key_version"],
-                    )
-                    break
-                except TokenVaultError:
-                    continue
-            if not refresh_token:
-                raise AccountDeletionBlocked("oauth_cleanup", "oauth_refresh_token_unavailable")
-            oauth_config.revoke_refresh_token(refresh_token)
+        # Keep provider identifiers out of the durable deletion journal. The
+        # one-way fingerprint is sufficient to resume the per-grant operation.
+        provider_hash = hashlib.sha256(provider_account_id.encode("utf-8")).hexdigest()
+        state = admin.get_account_deletion_oauth_state(user_id, provider_hash)
+        if state not in {None, "revocation_started", "revoked", "preserved", "not_required"}:
+            raise AccountDeletionBlocked("oauth_cleanup", "oauth_cleanup_state_invalid")
+
+        if state not in {"revoked", "preserved", "not_required"}:
+            active = [row for row in group if row.get("status") == "connected"]
+            if state is None and active and admin.has_active_connection_outside_workspaces(provider_account_id, deleting):
+                admin.set_account_deletion_oauth_state(user_id, provider_hash, "preserved")
+                state = "preserved"
+            elif state is None and not active:
+                admin.set_account_deletion_oauth_state(user_id, provider_hash, "not_required")
+                state = "not_required"
+            else:
+                # Persist intent before contacting Google. If the worker dies
+                # after Google revokes the grant but before recording success,
+                # the next attempt repeats the same revoke call. Google 400 for
+                # an already-invalid/revoked token is explicitly idempotent.
+                if state is None:
+                    admin.set_account_deletion_oauth_state(user_id, provider_hash, "revocation_started")
+                credentials = []
+                for connection in group:
+                    credential = admin.get_credential(str(connection["connection_id"]))
+                    if credential:
+                        credentials.append((connection, credential))
+                if not credentials:
+                    raise AccountDeletionBlocked("oauth_cleanup", "connected_oauth_credential_missing")
+                if oauth_config is None:
+                    oauth_config = oauth_config_factory()
+                refresh_token = None
+                for _connection, credential in credentials:
+                    try:
+                        refresh_token = decrypt_token(
+                            credential["encrypted_refresh_token_hex"],
+                            credential["encryption_key_version"],
+                        )
+                        break
+                    except TokenVaultError:
+                        continue
+                if not refresh_token:
+                    raise AccountDeletionBlocked("oauth_cleanup", "oauth_refresh_token_unavailable")
+                oauth_config.revoke_refresh_token(refresh_token)
+                recorded = admin.set_account_deletion_oauth_state(user_id, provider_hash, "revoked")
+                if recorded != "revoked":
+                    raise SupabaseAdminError("Google revocation outcome could not be durably recorded")
+
+        # Credentials are removed only after a durable terminal state. Repeated
+        # deletes are safe when a previous attempt stopped part-way through.
         for connection in group:
             admin.delete_credential(str(connection["connection_id"]))
-
 
 def _remaining_storage_objects(admin, user_id, workspace_ids):
     objects = []
@@ -215,6 +239,7 @@ def process_one_account_deletion(
         phase = "oauth_cleanup"
         _cleanup_oauth(
             admin,
+            user_id,
             deleting,
             oauth_config_factory or GoogleOAuthConfig.from_env,
             decrypt_token,
