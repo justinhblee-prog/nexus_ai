@@ -23,6 +23,22 @@ from token_vault import encrypt_refresh_token, decrypt_refresh_token, TokenVault
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("nexus.api")
 
+
+class OAuthCallbackLogFilter(logging.Filter):
+    """Redact authorization code and state query strings from access logs."""
+    def filter(self, record):
+        args = record.args
+        if isinstance(args, tuple) and len(args) >= 3:
+            target = args[2]
+            if isinstance(target, str) and target.startswith("/api/hosted/youtube/callback"):
+                redacted = list(args)
+                redacted[2] = "/api/hosted/youtube/callback?[REDACTED]"
+                record.args = tuple(redacted)
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(OAuthCallbackLogFilter())
+
 app = FastAPI(title="NEXUS STUDIO PRO API")
 # Browser sessions are signed server-side and stored in HttpOnly cookies.
 API_PASSWORD = os.getenv('NEXUS_API_PASSWORD', '')
