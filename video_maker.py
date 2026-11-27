@@ -103,46 +103,81 @@ def render_pro_short(channel_name, persona, topic, openai_key="", script_overrid
     font_badge = get_korean_font(34)
     font_head = get_korean_font(42)
     clips = []
+    audio_clips = []
     temp_files = []
-    total_s = len(sentences)
-    for idx, sent in enumerate(sentences):
-        seg_mp3 = f"output/seg_{ts}_{idx}.mp3"
-        seg_png = f"output/seg_{ts}_{idx}.png"
-        generate_announcer_audio(sent, channel_name, seg_mp3)
-        temp_files.extend([seg_mp3, seg_png])
-        ac = AudioFileClip(seg_mp3)
-        dur = max(ac.duration, 1.2)
-        zoom = 1.0 + (idx * 0.018)
-        crop_w, crop_h = int(1080 / zoom), int(1920 / zoom)
-        left = (1200 - crop_w) // 2
-        top = (2133 - crop_h) // 2
-        frame = master_bg.crop((left, top, left + crop_w, top + crop_h)).resize((1080, 1920), Image.Resampling.LANCZOS)
-        draw = ImageDraw.Draw(frame, "RGBA")
-        draw.rounded_rectangle([(56, 120), (1024, 295)], radius=28, fill=(10, 15, 30, 210), outline=(56, 189, 248, 160), width=3)
-        draw.rounded_rectangle([(84, 145), (380, 192)], radius=12, fill=(37, 99, 235, 230))
-        draw.text((102, 152), f"* {channel_name[:16]}", fill=(255, 255, 255), font=font_badge)
-        clean_title = title.replace("#Shorts", "").strip()
-        draw.text((88, 212), clean_title[:24], fill=(248, 250, 252), font=font_head)
-        wrapped = textwrap.fill(sent, width=16)
-        lines = wrapped.split("\n")
-        block_h = len(lines) * 90 + 50
-        box_top = 940 - (block_h // 2)
-        draw.rounded_rectangle([(64, box_top), (1016, box_top + block_h)], radius=24, fill=(5, 8, 18, 165))
-        for li, line_txt in enumerate(lines):
-            y_pos = box_top + 28 + (li * 90)
-            x1, y1, x2, y2 = draw.textbbox((0, 0), line_txt, font=font_sub)
-            x_pos = max(80, (1080 - (x2 - x1)) // 2)
-            t_color = (250, 204, 21) if idx == 0 else ((56, 189, 248) if idx == total_s - 1 else (255, 255, 255))
-            draw.text((x_pos, y_pos), line_txt, font=font_sub, fill=t_color, stroke_width=6, stroke_fill=(0, 0, 0))
-        prog_w = int(960 * ((idx + 1) / total_s))
-        draw.rounded_rectangle([(60, 1680), (1020, 1698)], radius=9, fill=(30, 41, 59, 200))
-        draw.rounded_rectangle([(60, 1680), (60 + prog_w, 1698)], radius=9, fill=(56, 189, 248, 255))
-        frame.convert("RGB").save(seg_png, format="PNG")
-        ic = ImageClip(seg_png).with_duration(dur).with_audio(ac)
-        clips.append(ic)
-    final_vid = concatenate_videoclips(clips, method="chain")
-    final_vid.write_videofile(mp4_path, fps=24, codec="libx264", audio_codec="aac", ffmpeg_params=["-pix_fmt", "yuv420p"], logger=None)
-    for tf in temp_files:
-        if os.path.exists(tf):
-            os.remove(tf)
-    return mp4_path, title, full_script
+    final_vid = None
+    completed = False
+    try:
+        total_s = len(sentences)
+        for idx, sent in enumerate(sentences):
+            seg_mp3 = f"output/seg_{ts}_{idx}.mp3"
+            seg_png = f"output/seg_{ts}_{idx}.png"
+            temp_files.extend([seg_mp3, seg_png])
+            generate_announcer_audio(sent, channel_name, seg_mp3)
+            ac = AudioFileClip(seg_mp3)
+            audio_clips.append(ac)
+            dur = max(ac.duration, 1.2)
+            zoom = 1.0 + (idx * 0.018)
+            crop_w, crop_h = int(1080 / zoom), int(1920 / zoom)
+            left = (1200 - crop_w) // 2
+            top = (2133 - crop_h) // 2
+            frame = master_bg.crop((left, top, left + crop_w, top + crop_h)).resize((1080, 1920), Image.Resampling.LANCZOS)
+            draw = ImageDraw.Draw(frame, "RGBA")
+            draw.rounded_rectangle([(56, 120), (1024, 295)], radius=28, fill=(10, 15, 30, 210), outline=(56, 189, 248, 160), width=3)
+            draw.rounded_rectangle([(84, 145), (380, 192)], radius=12, fill=(37, 99, 235, 230))
+            draw.text((102, 152), f"* {channel_name[:16]}", fill=(255, 255, 255), font=font_badge)
+            clean_title = title.replace("#Shorts", "").strip()
+            draw.text((88, 212), clean_title[:24], fill=(248, 250, 252), font=font_head)
+            wrapped = textwrap.fill(sent, width=16)
+            lines = wrapped.split("\\n")
+            block_h = len(lines) * 90 + 50
+            box_top = 940 - (block_h // 2)
+            draw.rounded_rectangle([(64, box_top), (1016, box_top + block_h)], radius=24, fill=(5, 8, 18, 165))
+            for li, line_txt in enumerate(lines):
+                y_pos = box_top + 28 + (li * 90)
+                x1, y1, x2, y2 = draw.textbbox((0, 0), line_txt, font=font_sub)
+                x_pos = max(80, (1080 - (x2 - x1)) // 2)
+                t_color = (250, 204, 21) if idx == 0 else ((56, 189, 248) if idx == total_s - 1 else (255, 255, 255))
+                draw.text((x_pos, y_pos), line_txt, font=font_sub, fill=t_color, stroke_width=6, stroke_fill=(0, 0, 0))
+            prog_w = int(960 * ((idx + 1) / total_s))
+            draw.rounded_rectangle([(60, 1680), (1020, 1698)], radius=9, fill=(30, 41, 59, 200))
+            draw.rounded_rectangle([(60, 1680), (60 + prog_w, 1698)], radius=9, fill=(56, 189, 248, 255))
+            frame.convert("RGB").save(seg_png, format="PNG")
+            clip = ImageClip(seg_png).with_duration(dur).with_audio(ac)
+            clips.append(clip)
+        final_vid = concatenate_videoclips(clips, method="chain")
+        final_vid.write_videofile(
+            mp4_path, fps=24, codec="libx264", audio_codec="aac",
+            ffmpeg_params=["-pix_fmt", "yuv420p"], logger=None,
+        )
+        completed = True
+        return mp4_path, title, full_script
+    finally:
+        # Close readers before deleting their backing files, including on render failures.
+        if final_vid is not None:
+            try:
+                final_vid.close()
+            except Exception:
+                pass
+        for clip in clips:
+            try:
+                clip.close()
+            except Exception:
+                pass
+        for audio in audio_clips:
+            try:
+                audio.close()
+            except Exception:
+                pass
+        for temp_file in temp_files:
+            try:
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+            except OSError:
+                pass
+        if not completed:
+            try:
+                if os.path.exists(mp4_path):
+                    os.remove(mp4_path)
+            except OSError:
+                pass
