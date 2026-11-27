@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from urllib.parse import parse_qs, urlparse
 
 import requests
@@ -111,21 +111,21 @@ class GoogleOAuthTests(unittest.TestCase):
 
     def test_private_resumable_upload_verifies_exact_channel_and_visibility(self):
         config = GoogleOAuthConfig.from_env(ENV)
-        config.fetch_channels = Mock(return_value=[{"channel_id": "UC123", "title": "NEXUS"}])
-        init = Mock(status_code=200)
-        init.headers = {"Location": "https://upload.youtube.example/session"}
-        upload = Mock(status_code=200)
-        upload.json.return_value = {
-            "id": "video-123",
-            "snippet": {"channelId": "UC123"},
-            "status": {"privacyStatus": "private"},
-        }
-        post = Mock(return_value=init)
-        put = Mock(return_value=upload)
-        result = config.upload_private_video(
-            "fresh-access", b"video-bytes", "NEXUS title", "script", "UC123",
-            http_post=post, http_put=put,
-        )
+        with patch.object(GoogleOAuthConfig, "fetch_channels", return_value=[{"channel_id": "UC123", "title": "NEXUS"}]):
+            init = Mock(status_code=200)
+            init.headers = {"Location": "https://upload.youtube.example/session"}
+            upload = Mock(status_code=200)
+            upload.json.return_value = {
+                "id": "video-123",
+                "snippet": {"channelId": "UC123"},
+                "status": {"privacyStatus": "private"},
+            }
+            post = Mock(return_value=init)
+            put = Mock(return_value=upload)
+            result = config.upload_private_video(
+                "fresh-access", b"video-bytes", "NEXUS title", "script", "UC123",
+                http_post=post, http_put=put,
+            )
         self.assertEqual(result, {
             "video_id": "video-123", "channel_id": "UC123", "privacy_status": "private"
         })
@@ -134,26 +134,26 @@ class GoogleOAuthTests(unittest.TestCase):
 
     def test_private_upload_fails_closed_for_ambiguous_channel_or_public_response(self):
         config = GoogleOAuthConfig.from_env(ENV)
-        config.fetch_channels = Mock(return_value=[
+        with patch.object(GoogleOAuthConfig, "fetch_channels", return_value=[
             {"channel_id": "UC123", "title": "One"},
             {"channel_id": "UC456", "title": "Two"},
-        ])
-        with self.assertRaises(GoogleOAuthError):
-            config.upload_private_video("token", b"video", "title", "desc", "UC123")
-        config.fetch_channels = Mock(return_value=[{"channel_id": "UC123", "title": "One"}])
-        init = Mock(status_code=200)
-        init.headers = {"Location": "https://upload.youtube.example/session"}
-        upload = Mock(status_code=200)
-        upload.json.return_value = {
-            "id": "video-123",
-            "snippet": {"channelId": "UC123"},
-            "status": {"privacyStatus": "public"},
-        }
-        with self.assertRaises(GoogleOAuthError):
-            config.upload_private_video(
-                "token", b"video", "title", "desc", "UC123",
-                http_post=Mock(return_value=init), http_put=Mock(return_value=upload),
-            )
+        ]):
+            with self.assertRaises(GoogleOAuthError):
+                config.upload_private_video("token", b"video", "title", "desc", "UC123")
+        with patch.object(GoogleOAuthConfig, "fetch_channels", return_value=[{"channel_id": "UC123", "title": "One"}]):
+            init = Mock(status_code=200)
+            init.headers = {"Location": "https://upload.youtube.example/session"}
+            upload = Mock(status_code=200)
+            upload.json.return_value = {
+                "id": "video-123",
+                "snippet": {"channelId": "UC123"},
+                "status": {"privacyStatus": "public"},
+            }
+            with self.assertRaises(GoogleOAuthError):
+                config.upload_private_video(
+                    "token", b"video", "title", "desc", "UC123",
+                    http_post=Mock(return_value=init), http_put=Mock(return_value=upload),
+                )
 
 
 if __name__ == "__main__":
