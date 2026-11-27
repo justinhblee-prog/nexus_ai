@@ -169,7 +169,11 @@ class SignedSessionTests(unittest.TestCase):
             response = asyncio.run(self.api.enforce_local_origin_and_session(
                 self._request('/api/hosted/auth-config'), next_response
             ))
+            health = asyncio.run(self.api.enforce_local_origin_and_session(
+                self._request('/api/session/status'), next_response
+            ))
         self.assertEqual(response.status_code, 204)
+        self.assertEqual(health.status_code, 204)
 
 
     def test_hosted_signup_page_is_served_from_api(self):
