@@ -38,6 +38,7 @@ _ALLOWED_RPCS = {
     "list_account_deletion_active_leases",
     "mark_account_deletion_tombstone",
     "enqueue_account_deletion",
+    "get_account_deletion_request",
     "claim_next_account_deletion_request",
     "heartbeat_account_deletion_request",
     "mark_account_deletion_sessions_revoked",
@@ -482,6 +483,12 @@ class SupabaseAdminRestClient:
             "p_user_id": value,
             "p_preflight_snapshot": preflight_snapshot,
         }) or []
+        return rows[0] if rows else None
+
+    def get_account_deletion_request(self, user_id):
+        """Read only an already-existing durable deletion request for safe retry."""
+        value = self._account_user_id(user_id)
+        rows = self.rpc("get_account_deletion_request", {"p_user_id": value}) or []
         return rows[0] if rows else None
 
     def claim_next_account_deletion_request(self, worker_id, lease_seconds=180):
