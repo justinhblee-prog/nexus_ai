@@ -208,6 +208,37 @@ class SupabaseAdminRestClient:
             prefer="return=minimal",
         )
 
+    def create_signed_url(self, storage_key, expires_in=300):
+        if not storage_key.startswith("wsp_") or ".." in storage_key or storage_key.startswith("/"):
+            raise ValueError("Storage key is invalid")
+        path = quote(storage_key, safe="/")
+        headers = {
+            "apikey": self.service_key,
+            "Authorization": f"Bearer {self.service_key}",
+            "Content-Type": "application/json",
+        }
+        try:
+            response = self.http_request(
+                "POST",
+                f"{self.base_url}/storage/v1/object/sign/nexus-shorts/{path}",
+                json={"expiresIn": max(60, min(900, int(expires_in)))},
+                headers=headers,
+                timeout=8,
+            )
+        except requests.RequestException as exc:
+            raise SupabaseAdminError("Supabase signed media service is temporarily unavailable") from exc
+        if response.status_code not in (200, 201):
+            raise SupabaseAdminError("Private media preview could not be created", response.status_code if 400 <= response.status_code < 500 else 502)
+        try:
+            signed = response.json().get("signedURL")
+        except ValueError as exc:
+            raise SupabaseAdminError("Supabase returned an invalid signed media URL") from exc
+        if not isinstance(signed, str) or not signed:
+            raise SupabaseAdminError("Supabase did not return a signed media URL")
+        if signed.startswith("https://"):
+            return signed
+        return f"{self.base_url}/storage/v1" + (signed if signed.startswith("/") else "/" + signed)
+
     def delete_storage_object(self, storage_key):
         headers = {
             "apikey": self.service_key,
