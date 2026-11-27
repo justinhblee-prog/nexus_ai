@@ -411,5 +411,33 @@ class SignedSessionTests(unittest.TestCase):
         self.assertNotIn("state123", str(record.args))
 
 
+    def test_youtube_disconnect_does_not_revoke_google_grant_shared_by_another_workspace(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type, \
+             patch.object(self.api, "SupabaseAdminRestClient") as admin_type, \
+             patch.object(self.api.GoogleOAuthConfig, "from_env") as config_factory:
+            client_type.return_value.select.side_effect = [
+                [{"role": "owner"}],
+                [{"connection_id": "33333333-3333-4333-8333-333333333333", "status": "connected", "provider_account_id": "google-account-123"}],
+            ]
+            admin_type.return_value.get_credential.return_value = {
+                "encrypted_refresh_token_hex": "aabb", "encryption_key_version": "v1"
+            }
+            admin_type.return_value.has_other_active_connections.return_value = True
+            admin_type.return_value.update_connection.return_value = [{"status": "disconnected"}]
+            result = self.api.hosted_youtube_disconnect(
+                "wsp_11111111-1111-4111-8111-111111111111",
+                self.api.UUID("33333333-3333-4333-8333-333333333333"),
+                request,
+            )
+        config_factory.assert_not_called()
+        admin_type.return_value.update_channels.assert_called_once()
+        admin_type.return_value.delete_credential.assert_called_once()
+        self.assertEqual(result["status"], "disconnected")
+
+
 if __name__ == "__main__":
     unittest.main()
