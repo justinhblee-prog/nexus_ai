@@ -839,15 +839,36 @@ def hosted_youtube_disconnect(workspace_id: str, connection_id: UUID, request: R
         if not connections:
             raise HTTPException(status_code=404, detail="YouTube connection not found")
         admin = SupabaseAdminRestClient()
-        credential = admin.get_credential(str(connection_id))
-        if credential and not admin.has_other_active_connections(
-            connections[0]["provider_account_id"], str(connection_id)
-        ):
-            refresh_token = decrypt_refresh_token(
-                credential["encrypted_refresh_token_hex"],
-                credential["encryption_key_version"],
+        connection_key = str(connection_id)
+        credential = admin.get_credential(connection_key)
+        revocation_state = admin.get_youtube_disconnect_state(connection_key)
+        if credential:
+            shared_grant = admin.has_other_active_connections(
+                connections[0]["provider_account_id"], connection_key
             )
-            GoogleOAuthConfig.from_env().revoke_refresh_token(refresh_token)
+            target_state = "preserved" if shared_grant else revocation_state
+            if shared_grant:
+                saved = admin.set_youtube_disconnect_state(connection_key, "preserved")
+                if saved != "preserved":
+                    raise SupabaseAdminError("Shared Google grant preservation state was not persisted")
+            elif target_state not in {"revoked", "preserved", "not_required"}:
+                started = admin.set_youtube_disconnect_state(connection_key, "revocation_started")
+                if started != "revocation_started":
+                    raise SupabaseAdminError("Google token revocation intent was not durably recorded")
+                refresh_token = decrypt_refresh_token(
+                    credential["encrypted_refresh_token_hex"],
+                    credential["encryption_key_version"],
+                )
+                GoogleOAuthConfig.from_env().revoke_refresh_token(refresh_token)
+                completed = admin.set_youtube_disconnect_state(connection_key, "revoked")
+                if completed != "revoked":
+                    raise SupabaseAdminError("Google token revocation result was not durably recorded")
+        elif revocation_state == "revocation_started":
+            raise SupabaseAdminError("Google token revocation outcome is uncertain; credential retained for safe retry")
+        elif revocation_state is None:
+            saved = admin.set_youtube_disconnect_state(connection_key, "not_required")
+            if saved != "not_required":
+                raise SupabaseAdminError("No-token disconnect state was not durably recorded")
         updated = admin.update_connection(str(connection_id), workspace_id, {
             "status": "disconnected",
             "disconnected_at": datetime.now(timezone.utc).isoformat(),
