@@ -30,6 +30,7 @@ class HostedRenderWorkerMigrationTests(unittest.TestCase):
 
     def test_successful_render_waits_for_human_review(self):
         self.assertIn("set stage = 'review_pending'", self.sql)
+        self.assertIn("left(p_output_storage_key, length(v_lease.workspace_id) + 1) <> v_lease.workspace_id || '/'", self.sql)
         self.assertIn("'render.completed'", self.sql)
         self.assertIn("'render.failed'", self.sql)
         self.assertIn("set stage = v_next_stage", self.sql)
