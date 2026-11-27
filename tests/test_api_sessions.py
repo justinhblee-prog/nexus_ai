@@ -131,7 +131,9 @@ class SignedSessionTests(unittest.TestCase):
 
 
     def test_hosted_mode_blocks_legacy_single_operator_routes_and_verifies_bearer(self):
+        seen_requests = []
         async def next_response(_request):
+            seen_requests.append(_request)
             return Response(status_code=204)
         with patch.dict(os.environ, {"NEXUS_HOSTED_AUTH_ENABLED": "true"}):
             blocked = asyncio.run(self.api.enforce_local_origin_and_session(
@@ -157,7 +159,7 @@ class SignedSessionTests(unittest.TestCase):
         self.assertEqual(blocked.status_code, 503)
         self.assertEqual(blocked_media.status_code, 503)
         self.assertEqual(allowed.status_code, 204)
-        self.assertEqual(allowed.scope.get("state", {}).get("hosted_user", {}).get("role"), "authenticated")
+        self.assertEqual(seen_requests[0].state.hosted_user["role"], "authenticated")
         self.assertEqual(denied.status_code, 401)
 
     def test_hosted_auth_config_is_public_but_legacy_auth_is_not_reused(self):
