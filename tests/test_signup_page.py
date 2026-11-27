@@ -24,8 +24,7 @@ class HostedSignupPageContractTests(unittest.TestCase):
             self.assertIn('id="' + metric_id + '"', self.html)
         self.assertIn("async function loadWorkspaceOverview()", self.html)
         self.assertIn("/overview", self.html)
-        self.assertIn("Authorization: { Bearer: activeAccessToken }", self.html) if False else None
-        self.assertIn("activeAccessToken", self.html)
+        self.assertIn('headers: { Authorization: "Bearer " + activeAccessToken }', self.html)
         self.assertIn("await loadWorkspaceOverview()", self.html)
     def test_email_registration_login_and_recovery_flows_exist(self):
         self.assertIn("supabase.auth.signUp", self.html)
