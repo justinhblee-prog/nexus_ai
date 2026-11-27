@@ -189,11 +189,15 @@ class SignedSessionTests(unittest.TestCase):
             hosted_access_token="verified.user.jwt",
         ))
         with patch.object(self.api, "SupabaseRestClient") as client_type:
-            client_type.return_value.select.return_value = [{"workspace_id": "wsp_11111111-1111-4111-8111-111111111111"}]
+            client_type.return_value.select.side_effect = [
+                [{"workspace_id": "wsp_11111111-1111-4111-8111-111111111111", "workspace_name": "Personal"}],
+                [{"workspace_id": "wsp_11111111-1111-4111-8111-111111111111", "role": "owner"}],
+                [{"job_id": "job-1"}],
+            ]
             result = self.api.hosted_workspaces(request)
             self.assertEqual(result["items"][0]["workspace_id"], "wsp_11111111-1111-4111-8111-111111111111")
+            self.assertEqual(result["items"][0]["member_role"], "owner")
             self.assertEqual(client_type.call_args.args[0], "verified.user.jwt")
-            client_type.return_value.select.return_value = [{"job_id": "job-1"}]
             jobs = self.api.hosted_workspace_jobs("wsp_11111111-1111-4111-8111-111111111111", request)
             self.assertEqual(jobs["items"][0]["job_id"], "job-1")
             self.assertEqual(
