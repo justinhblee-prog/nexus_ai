@@ -100,6 +100,26 @@ class SupabaseAdminClientTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             client.list_account_deletion_active_leases(["../../other-workspace"])
 
+    def test_youtube_connection_inventory_is_workspace_scoped_and_excludes_tokens(self):
+        http = Mock()
+        response = Mock(status_code=200)
+        response.json.return_value = [{
+            "connection_id": "33333333-3333-4333-8333-333333333333",
+            "workspace_id": "wsp_11111111-1111-4111-8111-111111111111",
+            "provider": "youtube",
+            "provider_account_id": "google-account",
+            "status": "connected",
+        }]
+        http.return_value = response
+        client = SupabaseAdminRestClient(ENV, http_request=http)
+        rows = client.list_youtube_connections_for_workspaces(["wsp_11111111-1111-4111-8111-111111111111"])
+        self.assertEqual(rows[0]["provider"], "youtube")
+        self.assertNotIn("encrypted_refresh_token", rows[0])
+        self.assertIn("youtube_connections", http.call_args.args[1])
+        self.assertEqual(http.call_args.kwargs["params"]["workspace_id"], "in.(wsp_11111111-1111-4111-8111-111111111111)")
+        with self.assertRaises(ValueError):
+            client.list_youtube_connections_for_workspaces(["../../workspace"])
+
     def test_account_storage_inventory_uses_allowlisted_service_rpc(self):
         http = Mock()
         response = Mock(status_code=200)
