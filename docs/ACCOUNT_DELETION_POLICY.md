@@ -5,7 +5,7 @@
 Account deletion is a required SaaS feature. The Draft PR now contains a gated request endpoint, durable queue, a resumable worker, Storage/OAuth cleanup, Auth deletion, and post-cleanup verification. The API and worker are disabled by default. No production migration has been applied and no user data has been deleted.
 
 The API accepts a deletion request only when:
-- The caller's verified JWT contains an `auth_time` no older than 10 minutes.
+- The caller's verified JWT contains a signed `amr` password-authentication timestamp no older than 10 minutes; token refresh alone does not satisfy this check.
 - The caller submits the exact confirmation phrase `DELETE MY ACCOUNT`.
 - The read-only preflight has no ownership, active-worker, shared-Storage, or unclassified-Storage blockers.
 - Both `NEXUS_ACCOUNT_DELETION_ENABLED` and `NEXUS_ACCOUNT_DELETION_WORKER_ENABLED` are explicitly enabled after the migration and deployment configuration are reviewed.
@@ -29,7 +29,7 @@ The worker removes only the departing user's membership row from shared workspac
 
 ## Resumable deletion workflow
 
-1. Require fresh reauthentication and explicit confirmation.
+1. Require fresh password reauthentication (verified through the signed AMR timestamp) and explicit confirmation.
 2. Run the read-only preflight. Reject requests with ownership-transfer, active-worker, shared-storage, or unclassified-storage blockers.
 3. In one database transaction, create the durable deletion request and persistent tombstone. The tombstone blocks ordinary hosted API requests even if an access JWT has not expired.
 4. Revoke all refresh sessions using the caller's verified bearer token. Persist `sessions_revoked=true`; the worker's claim RPC filters out every request without this flag.
