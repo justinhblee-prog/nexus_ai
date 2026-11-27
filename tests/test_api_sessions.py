@@ -869,5 +869,22 @@ class SignedSessionTests(unittest.TestCase):
 
 
 
+    def test_hosted_topic_queue_maps_unique_topic_conflict_to_duplicate_message(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        req = self.api.HostedTopicQueueCreateReq(topic="AI workflow")
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.insert.side_effect = self.api.SupabaseRestError(409, "Workspace data conflicts with an existing record")
+            with self.assertRaises(self.api.HTTPException) as raised:
+                self.api.hosted_topic_queue_add(
+                    "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", req, request
+                )
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(raised.exception.detail, "이미 저장된 주제입니다.")
+
+
+
 if __name__ == "__main__":
     unittest.main()
