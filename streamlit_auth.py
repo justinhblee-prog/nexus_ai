@@ -3,6 +3,11 @@ import hmac
 import os
 
 
+def auth_enabled(value=None):
+    setting = os.getenv("NEXUS_AUTH_ENABLED", "false") if value is None else value
+    return str(setting).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def configured_password(value=None):
     password = os.getenv("NEXUS_API_PASSWORD", "") if value is None else value
     return password if isinstance(password, str) and len(password) >= 12 else ""
