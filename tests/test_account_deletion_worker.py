@@ -118,6 +118,7 @@ class AccountDeletionWorkerTests(unittest.TestCase):
         }]
         admin.get_account_deletion_oauth_state.side_effect = [None, "revoked"]
         admin.set_account_deletion_oauth_state.side_effect = ["revocation_started", "revoked"]
+        admin.has_active_connection_outside_workspaces.return_value = False
         admin.get_credential.return_value = {
             "encrypted_refresh_token_hex": "ciphertext",
             "encryption_key_version": "v1",
