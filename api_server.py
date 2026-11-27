@@ -375,6 +375,8 @@ def hosted_account_deletion_preflight(request: Request):
         blockers = []
         summaries = []
         shared_workspace_ids = set()
+        if len(workspace_ids) > 100:
+            blockers.append({"reason": "This account has more than 100 workspace memberships; support-assisted cleanup is required."})
         for wid in workspace_ids:
             membership = membership_by_workspace.get(wid, {"role": "owner"})
             workspace_rows = client.select("workspaces", {
@@ -391,6 +393,19 @@ def hosted_account_deletion_preflight(request: Request):
             }) or []
             others = [member for member in members if member.get("user_id") != user_id]
             is_owner = workspace.get("owner_id") == user_id
+            if is_owner and (
+                wid not in membership_by_workspace
+                or membership_by_workspace[wid].get("role") != "owner"
+            ):
+                blockers.append({
+                    "workspace_id": wid,
+                    "reason": "Workspace ownership and membership records do not match; resolve this before deletion.",
+                })
+            if not is_owner and membership.get("role") == "owner":
+                blockers.append({
+                    "workspace_id": wid,
+                    "reason": "Workspace owner and membership records do not match; resolve this before deletion.",
+                })
             if others or not is_owner:
                 # Non-owners can only see their own membership row under RLS;
                 # treat those workspaces as shared rather than guessing member count.
@@ -461,10 +476,27 @@ def hosted_account_deletion_preflight(request: Request):
                 shared_provider_grants_preserved += 1
             else:
                 provider_grants_to_revoke += 1
+                if not admin.get_credential(str(connection.get("connection_id"))):
+                    blockers.append({
+                        "reason": "A connected YouTube account has no stored refresh credential to revoke safely.",
+                        "connection_id": connection.get("connection_id"),
+                    })
         bucket_counts = {}
         shared_storage_count = 0
         unclassified_storage_count = 0
         user_owned_storage_count = 0
+        buckets_by_name = {}
+        allowed_storage_buckets = {"acs-assets", "acs-gallery", "acs-outputs", "nexus-shorts"}
+        for obj in storage_objects:
+            object_name = obj.get("name") or ""
+            buckets_by_name.setdefault(object_name, set()).add(obj.get("bucket_id"))
+            if obj.get("bucket_id") not in allowed_storage_buckets:
+                blockers.append({
+                    "reason": "An account Storage object uses an unsupported bucket and requires safe mapping.",
+                    "bucket_id": obj.get("bucket_id") or "unknown",
+                })
+        if any(len(values) > 1 for values in buckets_by_name.values()):
+            blockers.append({"reason": "Storage contains duplicate object paths across buckets; resolve the ambiguity before deletion."})
         for obj in storage_objects:
             bucket = obj.get("bucket_id") or "unknown"
             bucket_counts[bucket] = bucket_counts.get(bucket, 0) + 1
