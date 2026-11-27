@@ -1,57 +1,67 @@
 # NEXUS account deletion and workspace ownership policy
 
-## Current status
+## Current implementation status
 
-Account deletion is a required SaaS capability, but the destructive Auth deletion endpoint is intentionally not exposed yet. The account-lifecycle work in this PR establishes the safe ownership-transfer and audit-preservation prerequisites, plus a read-only deletion preflight that inventories account-owned Storage objects through a service-only database RPC. Server-only helpers now cover exact Storage API object deletion, global refresh-session revocation, and the Supabase Auth Admin deletion endpoint. They are not yet wired into a destructive workflow. No production migration or user deletion has been executed.
+Account deletion is a required SaaS feature. The Draft PR now contains a gated request endpoint, durable queue, a resumable worker, Storage/OAuth cleanup, Auth deletion, and post-cleanup verification. The API and worker are disabled by default. No production migration has been applied and no user data has been deleted.
+
+The API accepts a deletion request only when:
+- The caller's verified JWT contains an `auth_time` no older than 10 minutes.
+- The caller submits the exact confirmation phrase `DELETE MY ACCOUNT`.
+- The read-only preflight has no ownership, active-worker, shared-Storage, or unclassified-Storage blockers.
+- Both `NEXUS_ACCOUNT_DELETION_ENABLED` and `NEXUS_ACCOUNT_DELETION_WORKER_ENABLED` are explicitly enabled after the migration and deployment configuration are reviewed.
+
+The queue RPC atomically creates a non-FK tombstone and a durable request. The worker cannot claim a request until global refresh-session revocation has been confirmed and persisted. If session revocation fails, the user may retry the same request endpoint; the middleware permits only that exact POST path for an already-tombstoned account.
 
 ## Workspace rules
 
-1. A user may leave a workspace where they are a member without deleting that workspace.
-2. A workspace owner must transfer ownership to an existing admin before deleting their account when other members remain.
-3. The transfer operation changes the workspace owner and membership roles atomically: the selected admin becomes `owner`, and the previous owner becomes `admin`.
-4. The owner can list workspace members and promote a member to admin before transfer. The transfer function derives the acting user from `auth.uid()`; caller-supplied identity is never trusted.
-5. `GET /api/hosted/account/deletion/preflight` reports owned workspaces, whether an admin is available, and the transfer blockers. It does not start deletion and explicitly reports that deletion is not enabled.
-5. A sole-member workspace may be removed as part of the account deletion workflow. A shared workspace must never be cascade-deleted merely because its former owner account is removed.
+1. A user may leave a workspace where they are a member without deleting the workspace.
+2. An owner must transfer ownership to an existing admin before deleting their account if other members remain.
+3. Ownership transfer is atomic: the selected admin becomes `owner`, and the previous owner becomes `admin`.
+4. The owner may promote an existing member to admin before transfer. The transfer RPC derives the acting user from `auth.uid()`; caller-supplied identity is never trusted.
+5. A sole-member workspace may be removed during account deletion. Shared workspaces and their content must never be cascade-deleted because one member leaves.
+6. The worker re-reads memberships and ownership using the service role immediately before destructive operations. It does not trust the preflight snapshot as authorization.
 
 ## Shared workspace records
 
-Shorts jobs, channels, assets, connections, and review events may outlive the person who created them. Their author/reviewer foreign keys are nullable and use `ON DELETE SET NULL`, preserving the workspace content and audit event while removing the deleted identity reference.
+Shorts jobs, channels, assets, connections, review events, and legacy workspace assets may outlive the person who created them. The migration makes author/reviewer fields nullable and uses `ON DELETE SET NULL` for the Shorts domain. For legacy shared workspace records, the worker anonymizes `assets.owner_id`, `characters.owner_id`, `generation_jobs.owner_id`, and `character_bundle_imports.user_id` rather than deleting the shared content.
 
-## Required deletion saga (not yet implemented)
+The worker removes only the departing user's membership row from shared workspaces. It preserves their other members, workspace ownership, channels, jobs, media, and OAuth connections.
 
-The eventual server-only deletion workflow must be idempotent and resumable:
+## Resumable deletion workflow
 
-1. Require a fresh reauthentication step and an explicit account-deletion confirmation.
-2. Block deletion while the user owns any workspace with other members. Return the workspace IDs and require ownership transfer first.
-3. Mark the account as deletion-pending and prevent new workspace writes/jobs for that user.
-4. Stop new work for workspaces that will be deleted and wait until both render and private-upload leases have expired. The deletion preflight now inventories active hosted worker leases through a service-only RPC and reports the latest lease expiry; it never deletes a workspace while a lease is active.
-5. Inventory YouTube connections only in sole-member workspaces that will be deleted. For each, decrypt the refresh token in server memory, revoke the Google grant only if no other active NEXUS workspace connection uses the same provider account, then delete the encrypted credential. Preserve connections and credentials in shared workspaces after ownership transfer; they are workspace resources, not personal tokens. Record revocation outcomes without storing token material. The preflight now reports how many credentials need cleanup and how many distinct provider grants must be preserved for active connections outside all workspaces scheduled for deletion. Duplicate connections inside the deletion set are counted as one provider grant.
-6. Enumerate Storage objects owned by the user across all NEXUS buckets through the service-only inventory RPC. If a user-owned object is inside a shared workspace, block deletion until the file is safely re-uploaded or ownership is otherwise transferred; never remove a shared team's only copy. For deletable objects, call the Storage API for each exact bucket/path. Do not delete Storage metadata rows directly.
-7. Delete the user's sole-member workspaces and their workspace-scoped records. Preserve all shared workspaces and their content.
-8. Remove any remaining user-owned personal assets according to the product retention policy.
-9. Revoke sessions and delete the Auth user through the Supabase Auth Admin API.
-10. Persist a non-FK account tombstone before revoking sessions. The hosted API middleware checks the tombstone with the caller's verified JWT and blocks further requests, including otherwise unexpired access JWTs. Revoke the user's global Supabase refresh sessions using their verified access token. Then delete the Auth user through the server-only Auth Admin endpoint.
-11. Verify no user-owned Storage objects, OAuth credentials, workspace ownership, or user foreign-key references remain. Mark the deletion request complete only after verification.
+1. Require fresh reauthentication and explicit confirmation.
+2. Run the read-only preflight. Reject requests with ownership-transfer, active-worker, shared-storage, or unclassified-storage blockers.
+3. In one database transaction, create the durable deletion request and persistent tombstone. The tombstone blocks ordinary hosted API requests even if an access JWT has not expired.
+4. Revoke all refresh sessions using the caller's verified bearer token. Persist `sessions_revoked=true`; the worker's claim RPC filters out every request without this flag.
+5. Claim the job with `FOR UPDATE SKIP LOCKED`, a unique worker lease, and a bounded lease expiry. Heartbeat long-running jobs. Expired leases can be reclaimed after a worker crash.
+6. Re-read the user's memberships and owned workspaces. If the user still owns a shared workspace, mark the job blocked and retry daily so an ownership transfer can unblock it. Never delete a shared workspace.
+7. Wait while render or private-upload leases are active. Retry later instead of racing a worker.
+8. Inventory YouTube connections only in sole-member workspaces scheduled for deletion. If an active provider account is also connected in another workspace, preserve the provider grant. Otherwise decrypt a refresh token in server memory and revoke the Google grant. Delete credentials only for connections in the deleted workspaces. Never log or persist plaintext tokens.
+9. Inventory Storage objects owned by the user, all objects under sole-member workspace prefixes, and personal gallery image/thumbnail keys. Block deletion if an object belongs to a shared workspace, has an ambiguous bucket, uses an unsupported bucket, or cannot be mapped safely. Delete each allowed object through the exact bucket's Storage API; never delete `storage.objects` rows with SQL.
+10. Delete workspace-scoped legacy generation jobs whose FK uses `ON DELETE SET NULL`, anonymize authorship on retained shared legacy records, remove personal gallery metadata and private idempotency/OAuth-state rows, and then delete sole-member workspaces. Workspace cascade removes their channels, Shorts jobs, assets, connections, worker leases, and encrypted OAuth credentials.
+11. Remove the departing user's membership from every remaining shared workspace and remove their profile.
+12. Verify that no user-owned Storage objects, private idempotency/OAuth-state rows, workspace ownership, memberships, or legacy author references remain. Only then call the server-only Supabase Auth Admin delete endpoint.
+13. Verify again after Auth deletion. Mark the queue request `completed` only after all checks return zero. If any operation fails, keep the tombstone and durable request and retry from the idempotent cleanup steps.
 
-If any external cleanup fails, retain a retryable deletion-pending record and do not report completion. Do not partially delete the Auth identity while required cleanup is still outstanding.
+The queue stores only a minimal preflight snapshot and sanitized error codes. It never stores an access token, refresh token, password, or OAuth secret. Completed tombstones remain without a foreign key to `auth.users`, so stale JWTs remain blocked.
 
 ## Explicit safety constraints
 
 - Never cascade-delete a shared workspace.
 - Never delete another member's content or YouTube connection.
 - Never expose service-role credentials or OAuth tokens to the browser.
-- Never treat an HTTP success from the Auth Admin API as proof that Storage and provider credentials were cleaned.
-- Account deletion is not complete until the verification step succeeds.
-
+- Never treat an Auth Admin HTTP success as proof that Storage and provider credentials were cleaned.
+- Never mark a request complete before post-Auth verification.
+- The worker is opt-in and disabled by default. Do not enable it until the reviewed migration is applied and free-tier service configuration is verified.
+- No paid APIs or infrastructure are required by this workflow.
 
 ## Storage and Auth adapter safeguards
 
-- Storage inventory is restricted to a service-role-only RPC and paginated in batches of at most 1,000 rows. It includes account-owned objects across buckets and every object under sole-member workspace prefixes, so workspace deletion can clean even service-owned objects. Objects in shared workspaces or paths that cannot be mapped to a workspace block deletion.
-- Active render/upload lease inventory is restricted to a separate service-role-only RPC; it covers the hosted Shorts render and upload lease tables.
-- OAuth connection inventory returns only connection metadata, never ciphertext or token material. It checks other active connections before deciding whether a Google grant can be revoked.
-- Storage object deletion uses the Storage API with an exact bucket and object path. The adapter rejects unknown buckets, absolute paths, empty path segments, dot segments, and backslashes.
-- The Auth Admin deletion helper is server-only and is not exposed as an HTTP route.
-- A tombstone table has no foreign key to `auth.users`, so it survives final Auth deletion. Authenticated users can only query their own tombstone state; only service-role code can create tombstones.
+- Storage inventory is restricted to a service-role-only RPC and paginated in batches of at most 1,000 rows. It includes account-owned objects across buckets, every object under sole-member workspace prefixes, and personal gallery image/thumbnail keys.
+- Active render/upload lease inventory is restricted to a service-role-only RPC.
+- OAuth connection inventory returns metadata only, never ciphertext or token material. Provider grant reuse is checked outside all workspaces scheduled for deletion.
+- Storage deletion uses the Storage API with an exact bucket and object path. The adapter rejects unknown buckets, absolute paths, empty path segments, dot segments, and backslashes. Already-missing objects are treated idempotently.
+- Auth Admin deletion is server-only and is not exposed directly to the browser.
+- Tombstones and queue rows have no FK to `auth.users`; they survive final Auth deletion.
 - Global session revocation uses the verified user's bearer token, not the service-role token as the user identity.
-- The account deletion preflight fails closed if it cannot verify Storage ownership.
-- The currently observed NEXUS buckets are private: `acs-assets`, `acs-gallery`, `acs-outputs`, and `nexus-shorts`. The observed object count was zero at the time of inspection; this is not a permanent assumption and runtime inventory is still required.
+- The current live project inspection found zero rows in legacy assets, characters, generation jobs, character bundle imports, gallery images, and Storage objects at the time of inspection. This is only an observation, not a permanent assumption; every deletion performs fresh runtime inventory.
