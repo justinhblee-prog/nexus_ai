@@ -1,0 +1,40 @@
+import pathlib
+import unittest
+
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+MIGRATION = ROOT / "supabase" / "migrations" / "20261127160000_nexus_anon_privilege_hardening.sql"
+
+
+class NexusAnonPrivilegeHardeningMigrationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.sql = MIGRATION.read_text(encoding="utf-8").lower()
+
+    def test_current_tenant_tables_revoke_all_anon_privileges(self):
+        self.assertIn("revoke all on table", self.sql)
+        for table in (
+            "public.workspaces",
+            "public.workspace_members",
+            "public.youtube_connections",
+            "public.shorts_channels",
+            "public.shorts_jobs",
+            "public.shorts_job_events",
+            "public.shorts_analytics_snapshots",
+            "public.shorts_assets",
+        ):
+            self.assertIn(table, self.sql)
+        self.assertIn("from anon", self.sql)
+
+    def test_future_public_tables_do_not_inherit_anon_privileges(self):
+        self.assertIn("alter default privileges for role postgres in schema public", self.sql)
+        self.assertIn("alter default privileges for role supabase_admin in schema public", self.sql)
+        self.assertEqual(self.sql.count("revoke all on tables from anon"), 2)
+
+    def test_authenticated_and_service_role_grants_are_not_revoked(self):
+        self.assertNotIn("from authenticated", self.sql)
+        self.assertNotIn("from service_role", self.sql)
+
+
+if __name__ == "__main__":
+    unittest.main()
