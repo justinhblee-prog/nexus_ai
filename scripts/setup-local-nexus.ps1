@@ -45,12 +45,26 @@ if (-not $Values.ContainsKey("NEXUS_API_PASSWORD") -or [string]::IsNullOrWhiteSp
     $Password = $null
 }
 
+if ($Values.ContainsKey("NEXUS_API_PASSWORD") -and $Values["NEXUS_API_PASSWORD"].Length -lt 12) {
+    throw "기존 NEXUS_API_PASSWORD가 12자보다 짧습니다. .env에서 안전한 비밀번호로 변경해 주세요."
+}
+
 if (-not $Values.ContainsKey("NEXUS_SESSION_SECRET") -or $Values["NEXUS_SESSION_SECRET"].Length -lt 32) {
     $Secret = & python -c "import secrets; print(secrets.token_urlsafe(48))"
     if ($LASTEXITCODE -ne 0 -or $Secret.Length -lt 32) {
         throw "Python secrets 모듈로 세션 키를 생성하지 못했습니다."
     }
-    $Lines.Add("NEXUS_SESSION_SECRET=$Secret")
+    $SecretLineFound = $false
+    for ($Index = 0; $Index -lt $Lines.Count; $Index++) {
+        if ($Lines[$Index] -match '^\s*NEXUS_SESSION_SECRET=') {
+            $Lines[$Index] = "NEXUS_SESSION_SECRET=$Secret"
+            $SecretLineFound = $true
+            break
+        }
+    }
+    if (-not $SecretLineFound) {
+        $Lines.Add("NEXUS_SESSION_SECRET=$Secret")
+    }
     $Values["NEXUS_SESSION_SECRET"] = $Secret
     $Secret = $null
 }
@@ -58,8 +72,18 @@ if (-not $Values.ContainsKey("NEXUS_SESSION_SECRET") -or $Values["NEXUS_SESSION_
 if ($Values.ContainsKey("NEXUS_AUTH_ENABLED") -and $Values["NEXUS_AUTH_ENABLED"].ToLowerInvariant() -in @("0", "false", "no", "off")) {
     throw "NEXUS_AUTH_ENABLED=false 설정이 발견됐습니다. 안전한 기본값은 true입니다. .env를 확인한 뒤 명시적으로 수정해 주세요."
 }
-if (-not $Values.ContainsKey("NEXUS_AUTH_ENABLED")) {
-    $Lines.Add("NEXUS_AUTH_ENABLED=true")
+if (-not $Values.ContainsKey("NEXUS_AUTH_ENABLED") -or [string]::IsNullOrWhiteSpace($Values["NEXUS_AUTH_ENABLED"])) {
+    $AuthLineFound = $false
+    for ($Index = 0; $Index -lt $Lines.Count; $Index++) {
+        if ($Lines[$Index] -match '^\s*NEXUS_AUTH_ENABLED=') {
+            $Lines[$Index] = "NEXUS_AUTH_ENABLED=true"
+            $AuthLineFound = $true
+            break
+        }
+    }
+    if (-not $AuthLineFound) {
+        $Lines.Add("NEXUS_AUTH_ENABLED=true")
+    }
     $Values["NEXUS_AUTH_ENABLED"] = "true"
 }
 if (-not $Values.ContainsKey("NEXUS_COOKIE_SECURE")) {
