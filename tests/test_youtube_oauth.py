@@ -65,10 +65,16 @@ class GoogleOAuthTests(unittest.TestCase):
         config = GoogleOAuthConfig.from_env(ENV)
         http = Mock()
         response = Mock(status_code=200)
-        response.json.return_value = {"items": [{"id": "UC123", "snippet": {"title": "NEXUS Channel"}}]}
+        response.json.return_value = {"items": [
+            {"id": "UC123", "snippet": {"title": "NEXUS Channel"}},
+            {"id": "UC456", "snippet": {"title": "Second Channel"}},
+        ]}
         http.return_value = response
-        result = config.fetch_channel("verified-access-token", http_get=http)
-        self.assertEqual(result, {"channel_id": "UC123", "title": "NEXUS Channel"})
+        result = config.fetch_channels("verified-access-token", http_get=http)
+        self.assertEqual(result, [
+            {"channel_id": "UC123", "title": "NEXUS Channel"},
+            {"channel_id": "UC456", "title": "Second Channel"},
+        ])
         self.assertEqual(http.call_args.kwargs["params"]["mine"], "true")
 
     def test_revoke_requires_google_confirmation(self):
@@ -79,6 +85,18 @@ class GoogleOAuthTests(unittest.TestCase):
         http.return_value = Mock(status_code=500)
         with self.assertRaises(GoogleOAuthError):
             config.revoke_refresh_token("refresh", http_post=http)
+
+
+    def test_google_account_subject_is_verified_with_openid_userinfo(self):
+        config = GoogleOAuthConfig.from_env(ENV)
+        http = Mock()
+        response = Mock(status_code=200)
+        response.json.return_value = {"sub": "google-account-123", "email": "owner@example.test", "name": "Workspace Owner"}
+        http.return_value = response
+        result = config.fetch_account("verified-access-token", http_get=http)
+        self.assertEqual(result["account_id"], "google-account-123")
+        self.assertEqual(result["email"], "owner@example.test")
+        self.assertIn("openid", config.authorization_url("state", "challenge"))
 
 
 if __name__ == "__main__":
