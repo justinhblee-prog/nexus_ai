@@ -2,14 +2,15 @@
 
 ## Current status
 
-Account deletion is a required SaaS capability, but the destructive Auth deletion endpoint is intentionally not exposed yet. The account-lifecycle work in this PR establishes the safe ownership-transfer and audit-preservation prerequisites. No production migration or user deletion has been executed.
+Account deletion is a required SaaS capability, but the destructive Auth deletion endpoint is intentionally not exposed yet. The account-lifecycle work in this PR establishes the safe ownership-transfer and audit-preservation prerequisites, plus a read-only deletion preflight. No production migration or user deletion has been executed.
 
 ## Workspace rules
 
 1. A user may leave a workspace where they are a member without deleting that workspace.
 2. A workspace owner must transfer ownership to an existing admin before deleting their account when other members remain.
 3. The transfer operation changes the workspace owner and membership roles atomically: the selected admin becomes `owner`, and the previous owner becomes `admin`.
-4. The transfer function derives the acting user from `auth.uid()`; caller-supplied identity is never trusted.
+4. The owner can list workspace members and promote a member to admin before transfer. The transfer function derives the acting user from `auth.uid()`; caller-supplied identity is never trusted.
+5. `GET /api/hosted/account/deletion/preflight` reports owned workspaces, whether an admin is available, and the transfer blockers. It does not start deletion and explicitly reports that deletion is not enabled.
 5. A sole-member workspace may be removed as part of the account deletion workflow. A shared workspace must never be cascade-deleted merely because its former owner account is removed.
 
 ## Shared workspace records
