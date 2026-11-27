@@ -50,6 +50,8 @@ def _workspace_plan(admin, user_id):
         members = admin.list_account_workspace_members(workspace_id)
         current_membership = next((row for row in members if row.get("user_id") == user_id), None)
         is_owner = workspace_id in owned_by_id
+        if not is_owner and current_membership and current_membership.get("role") == "owner":
+            raise AccountDeletionBlocked("workspace_inventory", "owner_record_mismatch")
         if is_owner:
             if not current_membership or current_membership.get("role") != "owner":
                 raise AccountDeletionBlocked("workspace_inventory", "owner_membership_inconsistent")
@@ -96,6 +98,8 @@ def _inventory_storage(admin, user_id, deleting, shared):
             raise AccountDeletionBlocked("storage_inventory", "unclassified_storage_object_found")
         if not item.get("bucket_id") or not name:
             raise AccountDeletionBlocked("storage_inventory", "storage_object_identity_incomplete")
+        if item["bucket_id"] not in {"acs-assets", "acs-gallery", "acs-outputs", "nexus-shorts"}:
+            raise AccountDeletionBlocked("storage_inventory", "unsupported_storage_bucket")
     return objects
 
 
@@ -244,7 +248,7 @@ def process_one_account_deletion(
         return True
     except AccountDeletionBlocked as exc:
         admin.update_account_deletion_request(
-            user_id, worker_id, "blocked", exc.phase, exc.code, retry_seconds
+            user_id, worker_id, "blocked", exc.phase, exc.code, 86400
         )
         logger.warning("Account deletion blocked at %s (%s)", exc.phase, exc.code)
         return True
