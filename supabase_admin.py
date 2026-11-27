@@ -181,6 +181,24 @@ class SupabaseAdminRestClient:
             prefer="resolution=merge-duplicates,return=minimal",
         ) or []
 
+    def delete_stale_public_trend_signals(self, period_type, source_name, created_before):
+        if period_type not in ("daily", "weekly"):
+            raise ValueError("Public trend period is invalid")
+        if not isinstance(source_name, str) or not source_name.strip() or len(source_name) > 120:
+            raise ValueError("Public trend source name is invalid")
+        if not isinstance(created_before, str) or not created_before.strip():
+            raise ValueError("Public trend cutoff timestamp is invalid")
+        return self._call(
+            "DELETE",
+            "public_trend_signals",
+            params={
+                "period_type": f"eq.{period_type}",
+                "source_name": f"eq.{source_name.strip()}",
+                "created_at": f"lt.{created_before}",
+            },
+            prefer="return=minimal",
+        )
+
     def upsert_public_trend_scan(self, payload):
         if not isinstance(payload, dict) or payload.get("period_type") not in ("daily", "weekly"):
             raise ValueError("Public trend scan payload is invalid")
