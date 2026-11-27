@@ -36,11 +36,6 @@
     .spin { display: inline-block; animation: spin360 0.8s linear infinite; }
     .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
     .modal-bg.open { display: flex; }
-    .auth-overlay { position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(2,6,18,.96); }
-    .auth-overlay[hidden] { display:none; }
-    .auth-card { width:min(420px,100%); background:#0B101D; border:1px solid #24334D; border-radius:16px; padding:26px; box-shadow:0 24px 80px rgba(0,0,0,.5); }
-    .auth-card input { width:100%; margin:14px 0 10px; }
-    .auth-error { min-height:20px; color:#FDA4AF; font-size:12px; }
     .ops-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(155px,1fr)); gap:10px; }
     .ops-metric { background:#060A14; border:1px solid #1E293B; border-radius:12px; padding:14px; }
     .ops-metric .label { color:#94A3B8; font-size:11px; font-weight:700; }
@@ -51,10 +46,10 @@
     .event-meta { color:#64748B; text-align:right; font-size:11px; }
     @media (max-width:760px) { main { padding:14px; } header { padding:0 14px; height:auto; min-height:64px; } .work-grid { grid-template-columns:1fr; } .radar-layout { grid-template-columns:1fr; } }
 
-:root{--bg:#fff;--surface:#fff;--panel:#f7f7f7;--text:#111;--muted:#666;--line:#dedede;--accent:#111;--soft:#eee;--shadow:0 8px 28px rgba(0,0,0,.04)}
+:root{--bg:#050811;--surface:#0B101D;--panel:#060A14;--text:#F8FAFC;--muted:#94A3B8;--line:#1E293B;--accent:#38BDF8;--soft:#111C2E;--shadow:none}
 body{background:var(--bg);color:var(--text);font-family:Inter,Pretendard,'Malgun Gothic',sans-serif}
 header{background:var(--surface);color:var(--text);border-color:var(--line)}
-.logo{background:#111;color:#fff}
+.logo{background:linear-gradient(135deg,#2563EB,#06B6D4);color:#fff}
 .live-badge{background:var(--soft);color:var(--text);border-color:var(--line)}
 select,input,textarea{background:var(--surface);color:var(--text);border-color:var(--line)}
 .btn-blue,.btn-green,.btn-purple{background:var(--accent);color:var(--bg)}
@@ -62,7 +57,6 @@ select,input,textarea{background:var(--surface);color:var(--text);border-color:v
 .btn-red{background:var(--soft);color:var(--text);border-color:var(--line)}
 .card,.inset,.r-card,.job-item,.ops-metric,.event-row{background:var(--surface);color:var(--text);border-color:var(--line);box-shadow:var(--shadow)}
 .inset{background:var(--panel)}.bar-bg{background:var(--line)}.bar-fill{background:var(--accent)}
-.auth-overlay{background:rgba(255,255,255,.97)}.auth-card{background:#fff;color:#111;border-color:#ddd}
 .nexus-shell{display:grid;grid-template-columns:238px minmax(0,1fr);min-height:calc(100vh - 64px)}
 .nexus-sidebar{position:sticky;top:64px;height:calc(100vh - 64px);border-right:1px solid var(--line);background:var(--surface);padding:20px 13px;display:flex;flex-direction:column;gap:20px}
 .side-brand{font-size:11px;letter-spacing:1.5px;font-weight:900;color:var(--muted);padding:0 12px}
@@ -85,7 +79,7 @@ select,input,textarea{background:var(--surface);color:var(--text);border-color:v
 [data-theme="violet"]{--bg:#111326;--surface:#191c35;--panel:#222746;--text:#f0f1ff;--muted:#a9afd2;--line:#393f69;--accent:#9296ff;--soft:#30365d;--shadow:none}
 [data-theme="ocean"] .logo,[data-theme="forest"] .logo,[data-theme="coral"] .logo,[data-theme="violet"] .logo{background:var(--accent);color:#08111f}
 [data-theme="ocean"] .btn-blue,[data-theme="forest"] .btn-blue,[data-theme="coral"] .btn-blue,[data-theme="violet"] .btn-blue{background:var(--accent);color:#08111f}
-:root{--accent:#111}
+:root{--accent:#38BDF8}
 [data-layout="creator"] .dash-grid{grid-template-columns:minmax(0,1.1fr) minmax(300px,1fr)}
 [data-layout="creator"] .workspace-view[data-workspace="dashboard"] .queue-list{grid-template-columns:repeat(2,minmax(0,1fr))}
 [data-layout="global"] .dash-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
@@ -102,19 +96,185 @@ select,input,textarea{background:var(--surface);color:var(--text);border-color:v
 @media(max-width:760px){[data-layout] .dash-grid{grid-template-columns:1fr}[data-layout="global"] .workspace-view[data-workspace="dashboard"] .chart-card:first-child{grid-column:auto}}
 @media(max-width:900px){.nexus-shell{grid-template-columns:1fr}.nexus-sidebar{position:relative;top:auto;height:auto;padding:10px 12px;border-right:0;border-bottom:1px solid var(--line)}.side-brand,.side-foot{display:none}.side-nav{flex-direction:row;overflow-x:auto}.side-nav button{white-space:nowrap;width:auto}.workspace{padding:15px}.dash-grid{grid-template-columns:1fr}}
 
-  </style>
+
+/* NEXUS four presentation modes: same live data, different information hierarchy */
+.workspace-view[data-workspace="dashboard"]>.workspace-heading{order:0}
+.workspace-view[data-workspace="dashboard"]>.kpi-grid{order:1}
+.workspace-view[data-workspace="dashboard"]>.dash-grid{order:2}
+.workspace-view[data-workspace="dashboard"]>.card:last-child{order:3}
+.workspace-view[data-workspace="dashboard"]>.kpi-grid .card{min-height:104px;display:flex;flex-direction:column;justify-content:center}
+[data-layout="intelligence"] .workspace-view[data-workspace="dashboard"]>.dash-grid{grid-template-columns:minmax(0,1.55fr) minmax(280px,1fr)}
+[data-layout="creator"] .workspace-view[data-workspace="dashboard"]>.card:last-child{order:2}
+[data-layout="creator"] .workspace-view[data-workspace="dashboard"]>.dash-grid{order:3;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+[data-layout="creator"] .workspace-view[data-workspace="dashboard"]>.dash-grid .chart-card:first-child{order:2}
+[data-layout="creator"] .workspace-view[data-workspace="dashboard"]>.dash-grid .chart-card:last-child{order:1}
+[data-layout="global"] .workspace-view[data-workspace="dashboard"]>.dash-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+[data-layout="global"] .workspace-view[data-workspace="dashboard"]>.dash-grid .chart-card:first-child{grid-column:1/-1;min-height:310px}
+[data-layout="global"] .workspace-view[data-workspace="dashboard"]>.dash-grid .chart-card:first-child canvas{height:245px}
+[data-layout="global"] .workspace-view[data-workspace="dashboard"]>.kpi-grid .card{border-top:3px solid var(--accent)}
+[data-layout="executive"] .workspace-view[data-workspace="dashboard"]>.workspace-heading{padding:22px 24px;background:var(--panel);border:1px solid var(--line);border-radius:16px}
+[data-layout="executive"] .workspace-view[data-workspace="dashboard"]>.kpi-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+[data-layout="executive"] .workspace-view[data-workspace="dashboard"]>.kpi-grid .card{min-height:132px}
+[data-layout="executive"] .workspace-view[data-workspace="dashboard"]>.dash-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+[data-layout="executive"] .workspace-view[data-workspace="dashboard"]>.card:last-child{border-left:4px solid var(--accent)}
+.workspace-view[data-workspace="publishing"] .publish-status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.workspace-view[data-workspace="publishing"] .publish-status{padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.workspace-view[data-workspace="publishing"] .publish-status strong{display:block;font-size:24px;margin-top:5px}
+.workspace-view[data-workspace="analytics"] .analytics-note{padding:14px;border:1px dashed var(--line);border-radius:12px;color:var(--muted);font-size:12px}
+@media(max-width:760px){
+ .workspace-view[data-workspace="dashboard"]>.kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ [data-layout="executive"] .workspace-view[data-workspace="dashboard"]>.kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ [data-layout="creator"] .workspace-view[data-workspace="dashboard"]>.dash-grid,
+ [data-layout="global"] .workspace-view[data-workspace="dashboard"]>.dash-grid,
+ [data-layout="executive"] .workspace-view[data-workspace="dashboard"]>.dash-grid{grid-template-columns:1fr}
+ .workspace-view[data-workspace="publishing"] .publish-status-grid{grid-template-columns:1fr}
+}
+
+/* Global workflow navigation */
+.nexus-workflow{display:flex;align-items:center;gap:8px;padding:12px 22px;border-bottom:1px solid var(--line);background:var(--surface,transparent);overflow-x:auto;scrollbar-width:thin}
+.nexus-workflow .flow-step{display:inline-flex;align-items:center;gap:8px;white-space:nowrap;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:999px;padding:8px 12px;font:inherit;font-size:12px;cursor:pointer}
+.nexus-workflow .flow-step .flow-no{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--line);font-size:10px;font-weight:700}
+.nexus-workflow .flow-step.active{color:var(--text);border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.nexus-workflow .flow-step.active .flow-no{background:var(--accent);color:white}
+.nexus-workflow .flow-arrow{color:var(--muted);font-size:12px}
+.workspace-main{min-width:0;display:flex;flex-direction:column}
+.workspace-main>.workspace{width:100%}
+.workspace-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.workspace-heading .heading-note{font-size:12px;color:var(--muted)}
+.workspace-view[data-workspace="studio"] .workspace-heading:after{content:"PLAN  →  SCRIPT  →  GENERATE  →  QA";font-size:11px;letter-spacing:.08em;color:var(--muted)}
+.workspace-view[data-workspace="review"] .workspace-heading:after{content:"QUALITY GATE  ·  HUMAN APPROVAL";font-size:11px;letter-spacing:.08em;color:var(--muted)}
+.workspace-view[data-workspace="publishing"] .workspace-heading:after{content:"APPROVED ONLY  ·  PRIVATE BY DEFAULT";font-size:11px;letter-spacing:.08em;color:var(--muted)}
+@media(max-width:760px){.nexus-workflow{padding:10px 14px}.workspace-heading{align-items:flex-start;flex-direction:column}.workspace-view[data-workspace="studio"] .workspace-heading:after,.workspace-view[data-workspace="review"] .workspace-heading:after,.workspace-view[data-workspace="publishing"] .workspace-heading:after{font-size:9px}}
+.design-gallery{position:fixed;inset:0;z-index:90;background:rgba(2,6,18,.82);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;padding:22px}.design-gallery.open{display:flex}.design-gallery-panel{width:min(1120px,100%);max-height:90vh;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:22px}.design-gallery-head{display:flex;justify-content:space-between;gap:16px;margin-bottom:18px}.design-gallery-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.design-option{border:1px solid var(--line);background:var(--panel);border-radius:15px;padding:14px}.design-option.active{outline:2px solid var(--accent)}.design-option h3{font-size:15px;margin:12px 0 4px}.design-option p{font-size:12px;color:var(--muted);min-height:36px}.design-thumb{height:145px;border:1px solid var(--line);border-radius:10px;padding:9px;display:grid;gap:7px;background:#070b14}.design-thumb .mini-top{height:12px;border-radius:4px;background:#26364e}.design-thumb .mini-body{display:grid;gap:6px;min-height:0}.design-thumb .mini-box{border-radius:5px;background:#14243b;border:1px solid #34465e;min-height:0}.design-thumb .mini-bars{display:flex;align-items:flex-end;gap:5px;padding:7px}.design-thumb .mini-bars i{display:block;flex:1;background:#60a5fa}.design-thumb.creator{grid-template-columns:35px 1fr}.design-thumb.creator .mini-body{grid-template-columns:1fr 1fr;grid-template-rows:18px 1fr 1fr}.design-thumb.global .mini-body{grid-template-columns:1fr 1fr;grid-template-rows:1.3fr 1fr}.design-thumb.global .mini-box:first-child{grid-column:1/-1}.design-thumb.executive .mini-body{grid-template-columns:repeat(4,1fr);grid-template-rows:35px 1fr}.design-thumb.executive .mini-box:nth-child(3){grid-column:1/4}.design-thumb.intelligence .mini-body{grid-template-columns:1.5fr 1fr;grid-template-rows:1fr 35px}.design-thumb.intelligence .mini-box:nth-child(3){grid-column:1/-1}.sample-data-panel{border:1px dashed var(--accent);background:var(--panel);border-radius:16px;padding:18px;margin-bottom:18px}.sample-data-panel[hidden]{display:none}.sample-tag{display:inline-flex;border:1px solid var(--accent);color:var(--accent);border-radius:99px;padding:3px 9px;font-size:10px;font-weight:900}.sample-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:13px}.sample-kpi{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:12px}.sample-kpi strong{display:block;font-size:22px;margin-top:4px}.sample-kpi span,.sample-note{font-size:11px;color:var(--muted)}.sample-note{margin-top:6px}.sample-lower{display:grid;grid-template-columns:1.2fr 1fr;gap:14px;margin-top:16px}.sample-lower>div{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px}.sample-bars{display:grid;gap:7px;margin-top:12px}.sample-bars span{display:block;min-width:110px;max-width:100%;padding:5px 9px;border-radius:6px;background:var(--soft);border-left:3px solid var(--accent);font-size:11px}.sample-stage-list{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.sample-stage-list span{padding:9px;background:var(--panel);border-radius:8px;font-size:11px;color:var(--muted)}.sample-stage-list strong{display:block;color:var(--text);font-size:18px}.sample-data-panel[hidden]{display:none!important}
+/* Distinct information architecture per presentation mode */
+[data-layout="intelligence"] .workspace-view[data-workspace="dashboard"]>.dash-grid{grid-template-columns:minmax(0,1.65fr) minmax(260px,.85fr)}
+[data-layout="creator"] .workspace-view[data-workspace="dashboard"]>.kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr));max-width:560px}
+[data-layout="creator"] .workspace-view[data-workspace="dashboard"]>.card:last-child{background:var(--soft);border-left:4px solid var(--accent)}
+[data-layout="creator"] .workspace-view[data-workspace="dashboard"]>.dash-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+[data-layout="creator"] .workspace-view[data-workspace="dashboard"]>.dash-grid .chart-card{min-height:340px}
+[data-layout="global"] .workspace-view[data-workspace="dashboard"]>.kpi-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+[data-layout="global"] .workspace-view[data-workspace="dashboard"]>.dash-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+[data-layout="global"] .workspace-view[data-workspace="dashboard"]>.dash-grid .chart-card:first-child{grid-column:1/-1;min-height:360px}
+[data-layout="global"] .workspace-view[data-workspace="dashboard"]>.dash-grid .chart-card:last-child{min-height:260px}
+[data-layout="executive"] .workspace-view[data-workspace="dashboard"]>.workspace-heading{padding:26px 28px;background:linear-gradient(120deg,var(--soft),var(--panel));border:1px solid var(--line);border-radius:16px}
+[data-layout="executive"] .workspace-view[data-workspace="dashboard"]>.kpi-grid .card{min-height:150px;align-items:flex-start;border-top:4px solid var(--accent)}
+[data-layout="executive"] .workspace-view[data-workspace="dashboard"]>.dash-grid{grid-template-columns:1fr 1fr}
+[data-layout="executive"] .workspace-view[data-workspace="dashboard"]>.card:last-child{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));align-items:center;gap:10px}
+[data-layout="executive"] .workspace-view[data-workspace="dashboard"]>.card:last-child .queue-tile{min-height:88px}
+@media(max-width:760px){.sample-lower{grid-template-columns:1fr}.sample-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}[data-layout="global"] .workspace-view[data-workspace="dashboard"]>.kpi-grid,[data-layout="executive"] .workspace-view[data-workspace="dashboard"]>.kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:760px){.design-gallery{padding:8px}.design-gallery-panel{padding:14px}.design-gallery-grid{grid-template-columns:1fr}.sample-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  
+/* NEXUS DESIGN THEMES v2 — presentation systems, not color presets */
+:root{--layout-radius:16px;--layout-gap:18px}
+.card,.inset,.queue-tile,.publish-status{border-radius:var(--layout-radius)}
+.nexus-shell{transition:grid-template-columns .2s ease}
+.nexus-sidebar,.workspace-view,.workspace-view>.card,.workspace-view>.dash-grid{transition:all .2s ease}
+.design-option{cursor:default}
+.design-thumb{position:relative;overflow:hidden;background:#080d18}
+.design-thumb .mini-top{height:11px;background:#25344d}
+.design-thumb .mini-body{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:18px 1fr 1fr}
+.design-thumb .mini-box{background:linear-gradient(145deg,#172943,#0c1728);border-color:#314766}
+.design-thumb .mini-bars{grid-column:1/-1;display:flex;align-items:flex-end}
+.design-thumb .mini-bars i{border-radius:3px 3px 0 0}
+.design-thumb.intelligence{grid-template-columns:28px 1fr}
+.design-thumb.intelligence:before{content:"";position:absolute;left:0;top:0;bottom:0;width:22px;background:#101e33;border-right:1px solid #30445f}
+.design-thumb.intelligence .mini-top{margin-left:26px}
+.design-thumb.intelligence .mini-body{margin-left:26px;grid-template-columns:1.5fr 1fr;grid-template-rows:18px 1fr}
+.design-thumb.creator{grid-template-columns:1fr}
+.design-thumb.creator .mini-body{grid-template-columns:1.2fr .8fr;grid-template-rows:1fr 1fr}
+.design-thumb.creator .mini-box:first-child{grid-row:1/3;background:linear-gradient(145deg,#263b59,#111e31)}
+.design-thumb.creator .mini-box:last-child{grid-column:2;grid-row:2}
+.design-thumb.creator .mini-bars{grid-column:2;grid-row:1}
+.design-thumb.global .mini-body{grid-template-columns:1fr 1fr;grid-template-rows:18px 1fr}
+.design-thumb.global .mini-box:first-child{grid-column:1/-1;background:radial-gradient(ellipse,#234c70,#101c30 70%)}
+.design-thumb.global .mini-bars{grid-column:1/-1}
+.design-thumb.executive{grid-template-columns:1fr}
+.design-thumb.executive .mini-body{grid-template-columns:repeat(4,1fr);grid-template-rows:28px 1fr}
+.design-thumb.executive .mini-box:first-child{grid-column:1/-1;background:#1c304a}
+.design-thumb.executive .mini-bars{grid-column:1/-1}
+.design-option button{width:100%;margin-top:12px}
+.design-option.active{border-color:var(--accent);background:var(--soft)}
+/* A — Intelligence: command-centre navigation, live operational hierarchy */
+[data-layout="intelligence"] .nexus-shell{grid-template-columns:250px minmax(0,1fr)}
+[data-layout="intelligence"] .nexus-sidebar{background:linear-gradient(180deg,var(--surface),var(--panel));border-right:1px solid var(--line)}
+[data-layout="intelligence"] .side-nav button{border-radius:8px;padding:13px 12px}
+[data-layout="intelligence"] .workspace-view[data-workspace="dashboard"]>.dash-grid{grid-template-columns:minmax(0,1.6fr) minmax(270px,.9fr)}
+[data-layout="intelligence"] .workspace-view[data-workspace="dashboard"]>.kpi-grid .card{border-top:2px solid var(--accent)}
+/* B — Creator: compact app navigation, content-first workspace and production queue */
+[data-layout="creator"] .nexus-shell{grid-template-columns:82px minmax(0,1fr)}
+[data-layout="creator"] .nexus-sidebar{padding:18px 9px;align-items:center}
+[data-layout="creator"] .side-brand{font-size:0;padding:0;width:38px;height:38px;border-radius:12px;background:var(--accent)}
+[data-layout="creator"] .side-brand:after{content:"N";font-size:18px;color:var(--bg);display:grid;place-items:center;height:38px}
+[data-layout="creator"] .side-nav{width:100%;gap:9px}
+[data-layout="creator"] .side-nav button{font-size:0;text-align:center;padding:14px 4px;border-radius:14px}
+[data-layout="creator"] .side-nav button:first-letter{font-size:18px}
+[data-layout="creator"] .side-nav button.active{background:var(--soft);border-color:var(--accent)}
+[data-layout="creator"] .workspace{max-width:1500px;padding:30px}
+[data-layout="creator"] .workspace-view[data-workspace="dashboard"]>.workspace-heading h1{font-size:32px}
+[data-layout="creator"] .workspace-view[data-workspace="dashboard"]>.kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr));max-width:640px}
+[data-layout="creator"] .workspace-view[data-workspace="dashboard"]>.card:last-child{order:2;border:1px solid var(--line);background:var(--soft)}
+[data-layout="creator"] .workspace-view[data-workspace="dashboard"]>.dash-grid{order:3;grid-template-columns:minmax(0,1.25fr) minmax(280px,.75fr)}
+[data-layout="creator"] .workspace-view[data-workspace="studio"] .studio-grid{grid-template-columns:minmax(260px,.8fr) minmax(0,1.5fr)}
+[data-layout="creator"] .workspace-view[data-workspace="review"] .card{border-radius:18px}
+/* C — Global analytics: wide canvas, horizontal navigation and chart-led reporting */
+[data-layout="global"] .nexus-shell{grid-template-columns:1fr}
+[data-layout="global"] .nexus-sidebar{position:relative;top:0;height:auto;padding:10px 22px;border-right:0;border-bottom:1px solid var(--line)}
+[data-layout="global"] .side-brand,[data-layout="global"] .side-foot{display:none}
+[data-layout="global"] .side-nav{flex-direction:row;overflow-x:auto}
+[data-layout="global"] .side-nav button{width:auto;white-space:nowrap;border-radius:999px;padding:10px 16px}
+[data-layout="global"] .workspace{max-width:1600px;width:100%;margin:0 auto;padding:28px 34px}
+[data-layout="global"] .workspace-view[data-workspace="dashboard"]>.workspace-heading{border-bottom:1px solid var(--line);padding-bottom:18px}
+[data-layout="global"] .workspace-view[data-workspace="dashboard"]>.kpi-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+[data-layout="global"] .workspace-view[data-workspace="dashboard"]>.kpi-grid .card{border-top:3px solid var(--accent);background:var(--panel)}
+[data-layout="global"] .workspace-view[data-workspace="dashboard"]>.dash-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+[data-layout="global"] .workspace-view[data-workspace="dashboard"]>.dash-grid .chart-card:first-child{grid-column:1/-1;min-height:360px}
+[data-layout="global"] .workspace-view[data-workspace="analytics"] .dash-grid{grid-template-columns:1fr 1fr}
+[data-layout="global"] .workspace-view[data-workspace="analytics"] .chart-card{min-height:330px}
+/* D — Executive: report masthead, scorecard grid and decision-oriented summaries */
+[data-layout="executive"] .nexus-shell{grid-template-columns:220px minmax(0,1fr)}
+[data-layout="executive"] .nexus-sidebar{background:var(--panel);border-right:0;border-left:4px solid var(--accent);padding:24px 12px}
+[data-layout="executive"] .side-brand{letter-spacing:2px}
+[data-layout="executive"] .side-nav button{border-radius:4px;border-left:3px solid transparent;padding:14px 12px}
+[data-layout="executive"] .side-nav button.active{border-left-color:var(--accent);background:var(--soft)}
+[data-layout="executive"] .workspace{max-width:1450px;padding:34px}
+[data-layout="executive"] .workspace-view[data-workspace="dashboard"]>.workspace-heading{padding:26px 30px;background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--accent);border-radius:4px}
+[data-layout="executive"] .workspace-view[data-workspace="dashboard"]>.workspace-heading h1{font-size:30px;letter-spacing:-1px}
+[data-layout="executive"] .workspace-view[data-workspace="dashboard"]>.kpi-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+[data-layout="executive"] .workspace-view[data-workspace="dashboard"]>.kpi-grid .card{min-height:142px;border-radius:4px;border-top:4px solid var(--accent);background:var(--panel)}
+[data-layout="executive"] .workspace-view[data-workspace="dashboard"]>.dash-grid{grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr)}
+[data-layout="executive"] .workspace-view[data-workspace="dashboard"]>.card:last-child{border-radius:4px;background:var(--soft)}
+/* Color preset is deliberately independent of these four layout systems */
+@media(max-width:900px){
+ [data-layout="creator"] .nexus-shell,[data-layout="executive"] .nexus-shell{grid-template-columns:1fr}
+ [data-layout="creator"] .nexus-sidebar,[data-layout="executive"] .nexus-sidebar{position:relative;height:auto;top:auto;padding:10px 12px;border:0;border-bottom:1px solid var(--line)}
+ [data-layout="creator"] .side-brand,[data-layout="creator"] .side-foot{display:none}
+ [data-layout="creator"] .side-nav{flex-direction:row;overflow-x:auto}
+ [data-layout="creator"] .side-nav button{font-size:12px;white-space:nowrap;width:auto;padding:10px 12px}
+ [data-layout="global"] .workspace{padding:16px}
+ [data-layout="executive"] .side-brand,[data-layout="executive"] .side-foot{display:none}
+}
+@media(max-width:760px){
+ [data-layout="global"] .workspace-view[data-workspace="dashboard"]>.kpi-grid,[data-layout="executive"] .workspace-view[data-workspace="dashboard"]>.kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ [data-layout="creator"] .workspace-view[data-workspace="dashboard"]>.kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ [data-layout="creator"] .workspace-view[data-workspace="dashboard"]>.dash-grid,[data-layout="global"] .workspace-view[data-workspace="dashboard"]>.dash-grid,[data-layout="executive"] .workspace-view[data-workspace="dashboard"]>.dash-grid{grid-template-columns:1fr}
+ .design-gallery-grid{grid-template-columns:1fr}
+}
+
+
+/* Browser session gate and truthful disconnected preview state */
+.nexus-auth-overlay{position:fixed;inset:0;z-index:120;background:rgba(2,6,18,.88);backdrop-filter:blur(12px);display:grid;place-items:center;padding:20px}
+.nexus-auth-overlay[hidden]{display:none!important}
+.nexus-auth-card{width:min(420px,100%);padding:30px;background:var(--surface);border:1px solid var(--line);border-radius:20px;box-shadow:0 24px 80px rgba(0,0,0,.45)}
+.nexus-auth-card h2{font-size:23px;margin:8px 0}
+.nexus-auth-card p{color:var(--muted);font-size:13px;line-height:1.6}
+.nexus-auth-card input{width:100%;margin:18px 0 10px;padding:13px}
+.nexus-auth-card button{width:100%;padding:13px}
+.nexus-auth-error{min-height:20px;color:#fb7185;font-size:12px;margin-top:10px}
+.nexus-runtime-status{padding:11px 14px;border:1px solid var(--line);border-radius:10px;background:var(--soft);color:var(--muted);font-size:12px}
+.nexus-runtime-status[data-kind="warning"]{border-color:#b7791f;color:#f6c66a}
+.nexus-runtime-status[hidden]{display:none!important}
+</style>
 </head>
 <body>
-  <div id="auth-overlay" class="auth-overlay">
-    <form class="auth-card" onsubmit="event.preventDefault(); loginStudio();">
-      <div style="font-size:11px;font-weight:800;color:#38BDF8;letter-spacing:1px;">NEXUS STUDIO PRO · SECURE SESSION</div>
-      <h2 style="font-size:21px;margin-top:10px;">관리자 로그인</h2>
-      <p style="font-size:12px;color:#94A3B8;margin-top:8px;">로컬 운영 비밀번호를 입력해 스튜디오 세션을 시작하세요.</p>
-      <input id="auth-password" type="password" autocomplete="current-password" placeholder="운영 비밀번호" required />
-      <button id="auth-submit" type="submit" class="btn-blue" style="width:100%;">안전하게 로그인</button>
-      <div id="auth-error" class="auth-error"></div>
-    </form>
-  </div>
   <header>
     <div style="display:flex;align-items:center;gap:12px;">
       <div class="logo">N</div>
@@ -124,7 +284,6 @@ select,input,textarea{background:var(--surface);color:var(--text);border-color:v
       </div>
     </div>
     <div class="controls">
-      <button onclick="logoutStudio()" class="btn-dark">로그아웃</button>
       <select id="scan-interval" onchange="changeInterval(this.value)"><option value="1">1분마다</option><option value="5" selected>5분마다</option><option value="15">15분마다</option></select>
       <button onclick="forceScan()" id="btn-scan" class="btn-blue"><span id="scan-arrow">↻</span> <span id="scan-label">즉시 재스캔</span></button>
     </div>
@@ -154,7 +313,7 @@ select,input,textarea{background:var(--surface);color:var(--text);border-color:v
     </section>
     <section class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1E293B;padding-bottom:16px;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
-        <div><div style="font-size:11px;font-weight:800;color:#38BDF8;">GLOBAL NEURAL RADAR</div><h2 style="font-size:19px;font-weight:800;">글로벌 신경망 트렌드 레이더 & 국가별 TOP 10</h2></div>
+        <div><div style="font-size:11px;font-weight:800;color:#38BDF8;">GLOBAL NEURAL RADAR</div><h2 style="font-size:19px;font-weight:800;">글로벌 원천 트렌드 레이더 & 지역별 후보</h2></div>
         <div class="controls">
           <button onclick="switchPeriod('daily')" id="tab-daily" class="btn-blue">일간 편성</button>
           <button onclick="switchPeriod('weekly')" id="tab-weekly" class="btn-dark">주간 편성</button>
@@ -163,18 +322,18 @@ select,input,textarea{background:var(--surface);color:var(--text);border-color:v
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
         <div class="controls">
-          <button onclick="setRankFilter('TOP10')" data-rf="TOP10" class="rf-btn btn-blue">🏆 글로벌 종합 TOP 10</button>
-          <button onclick="setRankFilter('KR')" data-rf="KR" class="rf-btn btn-dark">🇰🇷 한국 TOP 10</button>
-          <button onclick="setRankFilter('US')" data-rf="US" class="rf-btn btn-dark">🇺🇸 미국 TOP 10</button>
-          <button onclick="setRankFilter('JP')" data-rf="JP" class="rf-btn btn-dark">🇯🇵 일본 TOP 10</button>
-          <button onclick="setRankFilter('GB')" data-rf="GB" class="rf-btn btn-dark">🇬🇧 영국 TOP 10</button>
+          <button onclick="setRankFilter('ALL')" data-rf="ALL" class="rf-btn btn-blue">전체 후보</button>
+          <button onclick="setRankFilter('KR')" data-rf="KR" class="rf-btn btn-dark">🇰🇷 한국 원천 순위</button>
+          <button onclick="setRankFilter('US')" data-rf="US" class="rf-btn btn-dark">🇺🇸 미국 원천 순위</button>
+          <button onclick="setRankFilter('JP')" data-rf="JP" class="rf-btn btn-dark">🇯🇵 일본 원천 순위</button>
+          <button onclick="setRankFilter('GB')" data-rf="GB" class="rf-btn btn-dark">🇬🇧 영국 원천 순위</button>
         </div>
         <div id="radar-count-label" style="font-size:12px;color:#94A3B8;font-weight:700;">0건 표시 중</div>
       </div>
       <div class="radar-layout">
         <div style="display:flex;flex-direction:column;gap:14px;">
           <div class="inset"><div style="font-size:12px;font-weight:700;margin-bottom:10px;">권역별 트렌드 포착 비중</div><div id="region-bars" style="display:flex;flex-direction:column;gap:10px;font-size:12px;"></div></div>
-          <div class="inset"><div style="font-size:12px;font-weight:700;">평균 바이럴 적합도</div><div style="font-size:28px;font-weight:900;color:#38BDF8;margin:4px 0;"><span id="avg-viral-score">0</span> / 100</div><div class="bar-bg"><div id="avg-viral-bar" class="bar-fill" style="width:0%"></div></div></div>
+          <div class="inset"><div style="font-size:12px;font-weight:700;">글로벌 비교 순위</div><div id="avg-viral-score" style="font-size:18px;font-weight:900;margin:8px 0;">산출 불가</div><div style="font-size:11px;color:#94A3B8;">서로 다른 수집원 점수는 합산하지 않습니다.</div><div id="radar-scan-status" style="font-size:11px;margin-top:10px;color:#94A3B8;">수집 상태 확인 중</div></div>
         </div>
         <div id="radar-grid" class="radar-cards"></div>
       </div>
@@ -195,8 +354,9 @@ select,input,textarea{background:var(--surface);color:var(--text);border-color:v
           <div style="display:flex;justify-content:space-between;font-size:12px;"><span id="editor-channel" style="font-weight:800;color:#38BDF8;">선택된 작업 없음</span><span id="editor-stage" style="color:#94A3B8;">-</span></div>
           <input id="editor-title" type="text" style="width:100%;font-weight:700;" />
           <textarea id="editor-script" rows="9" style="width:100%;line-height:1.6;"></textarea>
+          <p id="editor-hint" style="font-size:11px;color:var(--muted);">수정 대본은 4~8문장으로 구성해야 하며, 저장 후 영상이 재제작되고 다시 검수 대기 상태가 됩니다.</p>
           <input id="reject-note" type="text" maxlength="2000" placeholder="반려 사유 (선택)" style="width:100%;" />
-          <div style="display:flex;gap:8px;"><button onclick="saveJobEdit()" class="btn-dark" style="flex:1;">💾 수정 저장</button><button onclick="rejectJob()" id="btn-reject" class="btn-red" style="flex:1;">↩ 반려 및 수정 요청</button><button onclick="approveUpload()" id="btn-approve" class="btn-green" style="flex:1;">✅ 최종 승인 및 업로드</button></div>
+          <div style="display:flex;gap:8px;"><button onclick="saveJobEdit()" id="btn-save-edit" class="btn-dark" style="flex:1;">↻ 수정 후 재제작</button><button onclick="rejectJob()" id="btn-reject" class="btn-red" style="flex:1;">↩ 반려 및 수정 요청</button><button onclick="approveUpload()" id="btn-approve" class="btn-green" style="flex:1;">✅ 최종 승인 및 업로드</button></div>
         </div>
         <div class="inset" style="display:flex;flex-direction:column;align-items:center;justify-content:center;"><div style="font-size:12px;font-weight:700;margin-bottom:8px;">9:16 실물 프리뷰</div><video id="preview-video" style="width:210px;aspect-ratio:9/16;border-radius:16px;background:#000;" controls playsinline></video></div>
       </div>
@@ -206,81 +366,151 @@ select,input,textarea{background:var(--surface);color:var(--text);border-color:v
     <div class="card" style="max-width:540px;width:100%;display:flex;flex-direction:column;gap:14px;">
       <div style="display:flex;justify-content:space-between;"><h3 id="mod-title" style="font-size:17px;font-weight:800;"></h3><button onclick="closeModal()" class="btn-dark" style="padding:4px 10px;">✕</button></div>
       <div class="inset" style="display:flex;justify-content:space-between;align-items:center;"><span id="mod-source" style="font-size:12px;font-weight:800;color:#38BDF8;"></span><a id="mod-url" href="#" target="_blank" style="background:#1E293B;color:#fff;text-decoration:none;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;">원문 출처 페이지 열기 ↗</a></div>
-      <div class="inset" style="font-size:12px;"><div>동일 카테고리 평균 조회수: <strong id="mod-avg-views"></strong></div><div style="color:#34D399;margin-top:4px;">포착 트렌드 추정 파급력: <strong id="mod-est-views"></strong></div></div>
+      <div class="inset" style="font-size:12px;"><div>원천 순위: <strong id="mod-avg-views"></strong></div><div style="margin-top:4px;">원천 제공 점수: <strong id="mod-est-views"></strong></div></div>
       <p id="mod-reason" class="inset" style="font-size:12px;"></p>
       <div style="display:flex;gap:10px;"><button onclick="closeModal()" class="btn-dark" style="flex:1;">닫기</button><button onclick="produceFromModal()" class="btn-blue" style="flex:1;">🚀 이 근거로 AI 쇼츠 즉시 제작</button></div>
     </div>
   </div>
-  <script>
+<div id="nexus-design-gallery" class="design-gallery" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="nexus-design-title" onclick="if(event.target===this)closeDesignGallery()"><div class="design-gallery-panel"><div class="design-gallery-head"><div><div class="eyebrow">NEXUS DESIGN SYSTEM</div><h2 id="nexus-design-title" style="font-size:22px">4가지 화면 시안</h2><p style="color:var(--muted);font-size:12px;margin-top:5px">전체 정보 구조와 시각적 위계를 비교하세요. 데이터와 기능은 동일합니다.</p><p style="color:var(--accent);font-size:11px;margin-top:8px">현재 적용: <strong id="nexus-design-current">A · Intelligence Dashboard</strong></p></div><button type="button" class="btn-dark" onclick="closeDesignGallery()">닫기 ✕</button></div><div id="nexus-design-options" class="design-gallery-grid"></div></div></div>
+  <div id="nexus-login-overlay" class="nexus-auth-overlay" hidden>
+  <form id="nexus-login-form" class="nexus-auth-card">
+    <div class="eyebrow">NEXUS STUDIO PRO · SECURE SESSION</div>
+    <h2>운영자 로그인</h2>
+    <p>인증된 운영자 세션으로 연결합니다. 비밀번호는 브라우저 저장소에 보관하지 않습니다.</p>
+    <label for="nexus-login-password" class="eyebrow">운영자 비밀번호</label>
+    <input id="nexus-login-password" type="password" autocomplete="current-password" required minlength="12" placeholder="운영자 비밀번호 입력"/>
+    <button id="nexus-login-submit" type="submit" class="btn-blue">안전하게 로그인</button>
+    <div id="nexus-login-error" class="nexus-auth-error" role="status" aria-live="polite"></div>
+  </form>
+</div>
+<script>
 
 const NEXUS_THEMES=["mono","ocean","forest","violet","coral"];
 const NEXUS_LAYOUTS=["intelligence","creator","global","executive"];
+
+const NEXUS_LAYOUT_SAMPLES=[{id:"intelligence",code:"A",name:"Intelligence Dashboard",desc:"실시간 운영·핵심 KPI 중심의 관제형 구성"},{id:"creator",code:"B",name:"Modern Creator Workspace",desc:"제작 큐와 콘텐츠 작업 중심의 크리에이터 구성"},{id:"global",code:"C",name:"Global Analytics Dashboard",desc:"지역별 분포와 글로벌 비교 중심의 분석형 구성"},{id:"executive",code:"D",name:"Executive Intelligence",desc:"핵심 지표와 의사결정 요약 중심의 보고형 구성"}];
+function openDesignGallery(){const m=document.getElementById("nexus-design-gallery");if(m){m.classList.add("open");m.setAttribute("aria-hidden","false");renderDesignGallery()}}
+function closeDesignGallery(){const m=document.getElementById("nexus-design-gallery");if(m){m.classList.remove("open");m.setAttribute("aria-hidden","true")}}
+function renderDesignGallery(){const root=document.getElementById("nexus-design-options");if(!root)return;const current=document.documentElement.dataset.layout||"intelligence";root.innerHTML=NEXUS_LAYOUT_SAMPLES.map(s=>"<article class='design-option "+(s.id===current?"active":"")+"'><div class='design-thumb "+s.id+"'><div class='mini-top'></div><div class='mini-body'><div class='mini-box'></div><div class='mini-box'></div><div class='mini-box mini-bars'><i style='height:40%'></i><i style='height:75%'></i><i style='height:55%'></i><i style='height:90%'></i></div></div></div><h3>"+s.code+". "+s.name+"</h3><p>"+s.desc+"</p><button type='button' class='btn-blue' onclick=\"applyDesignSample('"+s.id+"')\">이 시안 적용</button></article>").join("")}
+function applyDesignSample(layout){setLayout(layout);renderDesignGallery();const n=document.getElementById("nexus-design-current"),s=NEXUS_LAYOUT_SAMPLES.find(x=>x.id===layout);if(n&&s)n.textContent=s.code+" · "+s.name}
+function addSampleData(){const p=document.getElementById("nexus-sample-data");if(p)p.hidden=false;const a=document.getElementById("nexus-add-sample"),r=document.getElementById("nexus-remove-sample");if(a)a.hidden=true;if(r)r.hidden=false;try{localStorage.setItem("nexus-demo-sample","visible")}catch(e){}}
+function removeSampleData(){const p=document.getElementById("nexus-sample-data");if(p)p.hidden=true;const a=document.getElementById("nexus-add-sample"),r=document.getElementById("nexus-remove-sample");if(a)a.hidden=false;if(r)r.hidden=true;try{localStorage.removeItem("nexus-demo-sample")}catch(e){}}
+
 function setTheme(t){if(!NEXUS_THEMES.includes(t))t="mono";document.documentElement.dataset.theme=t;const s=document.getElementById("nexus-theme");if(s)s.value=t;try{localStorage.setItem("nexus-theme",t)}catch(e){};renderDashboardData()}
-function setLayout(t){if(!NEXUS_LAYOUTS.includes(t))t="intelligence";document.documentElement.dataset.layout=t;const s=document.getElementById("nexus-layout");if(s)s.value=t;try{localStorage.setItem("nexus-layout",t)}catch(e){};renderDashboardData()}
+function setLayout(t){if(!NEXUS_LAYOUTS.includes(t))t="intelligence";document.documentElement.dataset.layout=t;const s=document.getElementById("nexus-layout");if(s)s.value=t;try{localStorage.setItem("nexus-layout",t)}catch(e){};renderDashboardData();renderPublishingSummary()}
 function setAccent(v){if(!/^#[0-9a-f]{6}$/i.test(v))return;document.documentElement.style.setProperty("--accent",v);try{localStorage.setItem("nexus-accent",v)}catch(e){};renderDashboardData()}
 function setDensity(v){if(!["compact","comfortable","spacious"].includes(v))v="comfortable";document.documentElement.dataset.density=v;try{localStorage.setItem("nexus-density",v)}catch(e){}}
-function showWorkspace(n){document.querySelectorAll(".workspace-view").forEach(v=>v.classList.toggle("active",v.dataset.workspace===n));document.querySelectorAll(".side-nav button").forEach(b=>b.classList.toggle("active",b.dataset.workspace===n));if(n==="operations")loadOpsMetrics();if(n==="dashboard"||n==="analytics")renderDashboardData()}
-function renderDashboardData(){const jobs=allJobs||[],items=allRadarItems||[],regions=["KR","US","JP","GB"];const counts=[jobs.filter(j=>/대기|pending/i.test(j.stage)).length,jobs.filter(j=>/진행|running|생성/i.test(j.stage)).length,jobs.filter(j=>j.stage==="최종컨펌 대기").length,jobs.filter(j=>/Uploaded|완료/i.test(j.stage)).length];const labels=["제작 대기","제작 중","검수 대기","업로드 완료"];const tiles=labels.map((x,i)=>"<div class='queue-tile'><span style='color:var(--muted);font-size:11px'>"+x+"</span><strong>"+counts[i]+"</strong></div>").join("");["nexus-queue","nexus-analytics-queue"].forEach(id=>{const n=document.getElementById(id);if(n)n.innerHTML=tiles});const mix=regions.map(r=>{const c=items.filter(x=>x.region===r).length;return "<div class='mix-row'><b>"+r+"</b><div class='mix-track'><i style='width:"+Math.round(c/Math.max(1,items.length)*100)+"%'></i></div><span>"+c+"</span></div>"}).join("");["nexus-mix","nexus-analytics-mix"].forEach(id=>{const n=document.getElementById(id);if(n)n.innerHTML=mix});const canvas=document.getElementById("nexus-chart");if(canvas){const ctx=canvas.getContext("2d"),w=canvas.width,h=canvas.height,style=getComputedStyle(document.documentElement);ctx.clearRect(0,0,w,h);ctx.strokeStyle=style.getPropertyValue("--line");for(let i=0;i<4;i++){ctx.beginPath();ctx.moveTo(40,20+i*58);ctx.lineTo(w-15,20+i*58);ctx.stroke()}const names=(allChannels||[]).map(c=>c.name).slice(0,8),vals=names.map(n=>jobs.filter(j=>j.channel_name===n).length),max=Math.max(1,...vals);if(vals.length){const gap=(w-70)/vals.length;vals.forEach((v,i)=>{const bh=v/max*145,x=48+i*gap;ctx.fillStyle=style.getPropertyValue("--accent");ctx.fillRect(x,h-28-bh,Math.max(12,gap-12),bh);ctx.fillStyle=style.getPropertyValue("--muted");ctx.font="11px sans-serif";ctx.fillText(names[i].slice(0,12),x,h-9)})}else{ctx.fillStyle=style.getPropertyValue("--muted");ctx.font="16px sans-serif";ctx.fillText("채널별 작업 데이터가 없습니다.",45,110)}}}
-function initNexusShell(){const old=document.querySelector("body > main");if(!old)return;const sections=[...old.children];const shell=document.createElement("div");shell.className="nexus-shell";const side=document.createElement("aside");side.className="nexus-sidebar";side.innerHTML="<div class='side-brand'>NEXUS / WORKSPACE</div><nav class='side-nav' aria-label='주 메뉴'></nav><div class='side-foot'>Human approval required<br>YouTube upload · Private by default</div>";const nav=side.querySelector("nav");const main=document.createElement("main");main.className="workspace";const names=[["dashboard","Dashboard","▦"],["studio","AI Content Studio","✦"],["discovery","Discovery","◎"],["review","Review","✓"],["publishing","Publishing","↗"],["analytics","Analytics","⌁"],["operations","Operations","⚙"]];const views={};names.forEach(([id,label,icon],i)=>{const b=document.createElement("button");b.type="button";b.dataset.workspace=id;b.textContent=icon+"  "+label;b.onclick=()=>showWorkspace(id);if(!i)b.className="active";nav.append(b);const v=document.createElement("section");v.className="workspace-view"+(!i?" active":"");v.dataset.workspace=id;const head=document.createElement("div");head.className="workspace-heading";head.innerHTML="<div><div class='eyebrow'>NEXUS STUDIO PRO</div><h1>"+label+"</h1></div>";v.append(head);main.append(v);views[id]=v});const put=(id,el)=>{if(el)views[id].append(el)};put("dashboard",sections[0]);const dash=document.createElement("div");dash.className="dash-grid";dash.innerHTML="<section class='card chart-card'><div class='eyebrow'>CHANNEL PERFORMANCE</div><h2>Global Trend Momentum</h2><canvas id='nexus-chart' width='900' height='230'></canvas></section><section class='card chart-card'><div class='eyebrow'>CONTENT MIX</div><h2>Regional Distribution</h2><div id='nexus-mix' class='mix-list'></div></section>";views.dashboard.append(dash);const q=document.createElement("section");q.className="card";q.innerHTML="<div class='eyebrow'>PRODUCTION QUEUE</div><h2 style='font-size:17px;margin-bottom:14px'>제작 파이프라인 현황</h2><div id='nexus-queue' class='queue-list'></div>";views.dashboard.append(q);put("operations",sections[1]);put("discovery",sections[2]);put("studio",sections[3]);put("review",sections[4]);const publish=document.createElement("section");publish.className="card";publish.innerHTML="<h2>Human approval · Private by default</h2><p style='color:var(--muted);margin-top:8px'>최종 검수 승인 후 YouTube 비공개 업로드를 진행합니다. 자동 공개 전환은 수행하지 않습니다.</p><button class='btn-dark' style='margin-top:14px' onclick='showWorkspace(\"review\")'>검수 대기열 열기</button>";views.publishing.append(publish);const analytics=document.createElement("div");analytics.className="dash-grid";analytics.innerHTML="<section class='card'><div class='eyebrow'>REGIONAL CONTENT MIX</div><div id='nexus-analytics-mix' class='mix-list'></div></section><section class='card'><div class='eyebrow'>PIPELINE SUMMARY</div><div id='nexus-analytics-queue' class='queue-list'></div></section>";views.analytics.append(analytics);old.replaceWith(shell);shell.append(side,main);const controls=document.querySelector("header .controls");if(controls){const sel=document.createElement("select");sel.id="nexus-theme";sel.className="theme-select";sel.setAttribute("aria-label","테마 선택");sel.innerHTML="<option value='mono'>Monochrome</option><option value='ocean'>Ocean Blue</option><option value='forest'>Forest Green</option><option value='coral'>Editorial Coral</option><option value='violet'>Indigo Violet</option>";sel.onchange=()=>setTheme(sel.value);controls.prepend(sel);const layout=document.createElement("select");layout.id="nexus-layout";layout.className="theme-select";layout.setAttribute("aria-label","대시보드 표현 방식");layout.innerHTML="<option value='intelligence'>A · Intelligence</option><option value='creator'>B · Creator</option><option value='global'>C · Global Analytics</option><option value='executive'>D · Executive</option>";layout.onchange=()=>setLayout(layout.value);controls.prepend(layout);const accent=document.createElement("input");accent.type="color";accent.id="nexus-accent";accent.title="강조 색상";accent.setAttribute("aria-label","강조 색상");accent.style.cssText="width:38px;height:34px;padding:2px;border-radius:8px";accent.oninput=()=>setAccent(accent.value);controls.prepend(accent);const density=document.createElement("select");density.id="nexus-density";density.className="theme-select";density.setAttribute("aria-label","화면 밀도");density.innerHTML="<option value='comfortable'>기본 밀도</option><option value='compact'>컴팩트</option><option value='spacious'>여유롭게</option>";density.onchange=()=>setDensity(density.value);controls.prepend(density)}let theme="mono",layoutMode="intelligence",densityMode="comfortable",accentColor="#111111";try{theme=localStorage.getItem("nexus-theme")||theme;layoutMode=localStorage.getItem("nexus-layout")||layoutMode;densityMode=localStorage.getItem("nexus-density")||densityMode;accentColor=localStorage.getItem("nexus-accent")||accentColor}catch(e){}setTheme(theme);setLayout(layoutMode);setDensity(densityMode);setAccent(accentColor);const accentInput=document.getElementById("nexus-accent");if(accentInput)accentInput.value=accentColor}
+function showWorkspace(n){document.querySelectorAll(".workspace-view").forEach(v=>v.classList.toggle("active",v.dataset.workspace===n));document.querySelectorAll(".side-nav button").forEach(b=>b.classList.toggle("active",b.dataset.workspace===n));document.querySelectorAll(".flow-step").forEach(b=>b.classList.toggle("active",b.dataset.flow===n));if(n==="operations")loadOpsMetrics();if(n==="analytics")loadAnalyticsSummary();if(["dashboard","analytics","publishing"].includes(n)){renderDashboardData();renderPublishingSummary()}}
+function renderPublishingSummary(){const root=document.getElementById("nexus-publish-status");if(!root)return;const jobs=allJobs||[];const stage=j=>String(j.stage||"");const groups=[["최종 검수 대기",jobs.filter(j=>stage(j)==="최종컨펌 대기").length],["재제작 대기",jobs.filter(j=>stage(j)==="재제작 대기").length],["재제작 실패",jobs.filter(j=>stage(j)==="재제작 실패").length],["업로드 진행 중",jobs.filter(j=>stage(j)==="업로드 진행 중").length],["비공개 게시 완료",jobs.filter(j=>stage(j)==="업로드 완료(비공개)").length],["상태 확인 필요",jobs.filter(j=>stage(j)==="업로드 상태 확인 필요").length],["반려·수정 요청",jobs.filter(j=>stage(j)==="반려(수정 필요)").length]];root.innerHTML=groups.map(([label,value])=>"<div class='publish-status'><span style='color:var(--muted);font-size:12px'>"+label+"</span><strong>"+value+"</strong></div>").join("")}
+function renderDashboardData(){const jobs=allJobs||[],items=allRadarItems||[],regions=["KR","US","JP","GB"];const stage=j=>String(j.stage||"");const counts=[Number(queuePending||0),jobs.filter(j=>stage(j)==="최종컨펌 대기").length,jobs.filter(j=>stage(j)==="재제작 대기").length,jobs.filter(j=>stage(j)==="업로드 진행 중").length,jobs.filter(j=>stage(j)==="업로드 완료(비공개)").length,jobs.filter(j=>stage(j)==="업로드 상태 확인 필요").length];const labels=["제작 큐 대기·실행","최종 검수 대기","수정 영상 재제작","업로드 진행 중","비공개 게시 완료","업로드 확인 필요"];const tiles=labels.map((x,i)=>"<div class='queue-tile'><span style='color:var(--muted);font-size:11px'>"+x+"</span><strong>"+counts[i]+"</strong></div>").join("");["nexus-queue","nexus-analytics-queue"].forEach(id=>{const n=document.getElementById(id);if(n)n.innerHTML=tiles});const mix=regions.map(r=>{const c=items.filter(x=>x.region===r).length;return "<div class='mix-row'><b>"+r+"</b><div class='mix-track'><i style='width:"+Math.round(c/Math.max(1,items.length)*100)+"%'></i></div><span>"+c+"</span></div>"}).join("");["nexus-mix","nexus-analytics-mix"].forEach(id=>{const n=document.getElementById(id);if(n)n.innerHTML=mix});const canvas=document.getElementById("nexus-chart");if(canvas){const ctx=canvas.getContext("2d"),w=canvas.width,h=canvas.height,style=getComputedStyle(document.documentElement);ctx.clearRect(0,0,w,h);ctx.strokeStyle=style.getPropertyValue("--line");for(let i=0;i<4;i++){ctx.beginPath();ctx.moveTo(40,20+i*58);ctx.lineTo(w-15,20+i*58);ctx.stroke()}const names=(allChannels||[]).map(c=>c.name).slice(0,8),vals=names.map(n=>jobs.filter(j=>j.channel_name===n).length),max=Math.max(1,...vals);if(vals.length){const gap=(w-70)/vals.length;vals.forEach((v,i)=>{const bh=v/max*145,x=48+i*gap;ctx.fillStyle=style.getPropertyValue("--accent");ctx.fillRect(x,h-28-bh,Math.max(12,gap-12),bh);ctx.fillStyle=style.getPropertyValue("--muted");ctx.font="11px sans-serif";ctx.fillText(names[i].slice(0,12),x,h-9)})}else{ctx.fillStyle=style.getPropertyValue("--muted");ctx.font="16px sans-serif";ctx.fillText("채널별 작업 데이터가 없습니다.",45,110)}}}
+function initNexusShell(){const old=document.querySelector("body > main");if(!old)return;const sections=[...old.children];const shell=document.createElement("div");shell.className="nexus-shell";const side=document.createElement("aside");side.className="nexus-sidebar";side.innerHTML="<div class='side-brand'>NEXUS / WORKSPACE</div><nav class='side-nav' aria-label='주 메뉴'></nav><div class='side-foot'>Human approval required<br>YouTube upload · Private by default</div>";const nav=side.querySelector("nav");const main=document.createElement("main");main.className="workspace";const runtimeStatus=document.createElement("div");runtimeStatus.id="nexus-runtime-status";runtimeStatus.className="nexus-runtime-status";runtimeStatus.hidden=true;main.append(runtimeStatus);const names=[["dashboard","Dashboard","▦"],["studio","AI Content Studio","✦"],["discovery","Discovery","◎"],["review","Review","✓"],["publishing","Publishing","↗"],["analytics","Analytics","⌁"],["operations","Operations","⚙"]];const views={};names.forEach(([id,label,icon],i)=>{const b=document.createElement("button");b.type="button";b.dataset.workspace=id;b.textContent=icon+"  "+label;b.onclick=()=>showWorkspace(id);if(!i)b.className="active";nav.append(b);const v=document.createElement("section");v.className="workspace-view"+(!i?" active":"");v.dataset.workspace=id;const head=document.createElement("div");head.className="workspace-heading";head.innerHTML="<div><div class='eyebrow'>NEXUS STUDIO PRO</div><h1>"+label+"</h1></div>";v.append(head);main.append(v);views[id]=v});const put=(id,el)=>{if(el)views[id].append(el)};put("dashboard",sections[0]);const sample=document.createElement("section");sample.id="nexus-sample-data";sample.className="sample-data-panel";sample.hidden=true;sample.innerHTML="<div style='display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap'><div><span class='sample-tag'>SAMPLE DATA · DEMO ONLY</span><h2 style='font-size:18px;margin-top:8px'>NEXUS 운영 데이터 미리보기</h2><p class='sample-note'>화면 구성 확인을 위한 예시 데이터입니다. 실제 API·운영 데이터에는 저장되지 않습니다.</p></div><button type='button' class='btn-dark' onclick='removeSampleData()'>샘플 닫기</button></div><div class='sample-kpis'><div class='sample-kpi'><span>제작 완료</span><strong>128</strong><span>최근 30일 · 예시</span></div><div class='sample-kpi'><span>최종 검수 대기</span><strong>12</strong><span>승인 전 · 예시</span></div><div class='sample-kpi'><span>비공개 업로드</span><strong>36</strong><span>공개 전환 없음 · 예시</span></div><div class='sample-kpi'><span>분석 채널</span><strong>08</strong><span>KR · US · JP · GB · 예시</span></div></div><div class='sample-lower'><div><b>지역별 콘텐츠 분포</b><div class='sample-bars'><span style='width:82%'>KR 82</span><span style='width:68%'>US 68</span><span style='width:51%'>JP 51</span><span style='width:34%'>GB 34</span></div></div><div><b>콘텐츠 파이프라인</b><div class='sample-stage-list'><span>Discovery <strong>48</strong></span><span>AI 제작 <strong>32</strong></span><span>검수 대기 <strong>12</strong></span><span>게시 완료 <strong>36</strong></span></div></div></div>";views.dashboard.insertBefore(sample,views.dashboard.children[1]||null);const dash=document.createElement("div");dash.className="dash-grid";dash.innerHTML="<section class='card chart-card'><div class='eyebrow'>CHANNEL PRODUCTION</div><h2>Channel Production Volume</h2><canvas id='nexus-chart' width='900' height='230'></canvas></section><section class='card chart-card'><div class='eyebrow'>CONTENT MIX</div><h2>Regional Distribution</h2><div id='nexus-mix' class='mix-list'></div></section>";views.dashboard.append(dash);const q=document.createElement("section");q.className="card";q.innerHTML="<div class='eyebrow'>PRODUCTION QUEUE</div><h2 style='font-size:17px;margin-bottom:14px'>제작 파이프라인 현황</h2><div id='nexus-queue' class='queue-list'></div>";views.dashboard.append(q);put("operations",sections[1]);put("discovery",sections[2]);put("studio",sections[3]);put("review",sections[4]);const publish=document.createElement("section");publish.className="card";publish.innerHTML="<div class='eyebrow'>PUBLISHING CONTROL</div><h2>게시 준비 및 안전 상태</h2><div id='nexus-publish-status' class='publish-status-grid' style='margin-top:16px'></div><p style='color:var(--muted);margin-top:14px;font-size:12px'>최종 검수 승인 후 비공개 업로드를 진행합니다. 자동 공개 전환은 수행하지 않습니다.</p><button class='btn-dark' style='margin-top:14px' onclick='showWorkspace(\"review\")'>검수 대기열 열기</button>";views.publishing.append(publish);const analytics=document.createElement("div");analytics.className="dash-grid";analytics.innerHTML="<section class='card'><div class='eyebrow'>REGIONAL CONTENT MIX</div><h2>지역별 콘텐츠 분포</h2><div id='nexus-analytics-mix' class='mix-list'></div></section><section class='card'><div class='eyebrow'>PIPELINE SUMMARY</div><h2>제작 파이프라인</h2><div id='nexus-analytics-queue' class='queue-list'></div></section><section class='card' style='grid-column:1/-1'><div class='eyebrow'>LOCAL PRODUCTION & PUBLISHING</div><h2>실제 제작·게시 지표</h2><div id='nexus-analytics-kpis' class='ops-grid' style='margin-top:12px'></div></section><section class='card' style='grid-column:1/-1'><div class='workspace-heading'><div><div class='eyebrow'>PROVIDER ANALYTICS · READ ONLY</div><h2>YouTube 성과 데이터</h2></div><button type='button' id='nexus-analytics-refresh' class='btn-dark'>실제 성과 새로고침</button></div><div id='nexus-analytics-platform' class='analytics-note'>분석 데이터 연결 상태 확인 중</div><div id='nexus-analytics-platform-cards' class='ops-grid' style='margin-top:12px'></div><div id='nexus-analytics-discovery' class='analytics-note' style='margin-top:10px'></div></section>";views.analytics.append(analytics);analytics.querySelector("#nexus-analytics-refresh").onclick=()=>loadAnalyticsSummary(true);old.replaceWith(shell);shell.append(side,document.createElement("div"));const mainWrap=shell.lastElementChild;mainWrap.className="workspace-main";const flow=document.createElement("nav");flow.className="nexus-workflow";flow.setAttribute("aria-label","콘텐츠 제작 업무 흐름");const flowSteps=[["discovery","01","발굴"],["studio","02","AI 제작"],["review","03","검수·승인"],["publishing","04","게시"],["analytics","05","성과 분석"]];flowSteps.forEach((s,i)=>{const b=document.createElement("button");b.type="button";b.className="flow-step";b.dataset.flow=s[0];const no=document.createElement("span");no.className="flow-no";no.textContent=s[1];b.append(no,document.createTextNode(s[2]));b.onclick=()=>showWorkspace(s[0]);flow.append(b);if(i<flowSteps.length-1){const arrow=document.createElement("span");arrow.className="flow-arrow";arrow.textContent="→";flow.append(arrow)}});mainWrap.append(flow,main);const controls=document.querySelector("header .controls");if(controls){const galleryBtn=document.createElement("button");galleryBtn.type="button";galleryBtn.className="btn-dark";galleryBtn.textContent="테마 시안";galleryBtn.onclick=openDesignGallery;controls.prepend(galleryBtn);const addSample=document.createElement("button");addSample.type="button";addSample.id="nexus-add-sample";addSample.className="btn-dark";addSample.textContent="샘플 넣기";addSample.onclick=addSampleData;controls.prepend(addSample);const removeSample=document.createElement("button");removeSample.type="button";removeSample.id="nexus-remove-sample";removeSample.className="btn-red";removeSample.textContent="샘플 제거";removeSample.hidden=true;removeSample.onclick=removeSampleData;controls.prepend(removeSample);const sel=document.createElement("select");sel.id="nexus-theme";sel.className="theme-select";sel.setAttribute("aria-label","색상 스킨 선택");sel.title="색상 스킨 · 레이아웃과 별도 설정";sel.innerHTML="<option value='mono'>Monochrome</option><option value='ocean'>Ocean Blue</option><option value='forest'>Forest Green</option><option value='coral'>Editorial Coral</option><option value='violet'>Indigo Violet</option>";sel.onchange=()=>setTheme(sel.value);controls.prepend(sel);const layout=document.createElement("select");layout.id="nexus-layout";layout.className="theme-select";layout.setAttribute("aria-label","전체 디자인 테마 선택");layout.title="전체 디자인 테마 · 화면 구성과 정보 배치 변경";layout.innerHTML="<option value='intelligence'>A · Intelligence</option><option value='creator'>B · Creator</option><option value='global'>C · Global Analytics</option><option value='executive'>D · Executive</option>";layout.onchange=()=>setLayout(layout.value);controls.prepend(layout);const accent=document.createElement("input");accent.type="color";accent.id="nexus-accent";accent.title="강조 색상";accent.setAttribute("aria-label","강조 색상");accent.style.cssText="width:38px;height:34px;padding:2px;border-radius:8px";accent.oninput=()=>setAccent(accent.value);controls.prepend(accent);const density=document.createElement("select");density.id="nexus-density";density.className="theme-select";density.setAttribute("aria-label","화면 밀도");density.innerHTML="<option value='comfortable'>기본 밀도</option><option value='compact'>컴팩트</option><option value='spacious'>여유롭게</option>";density.onchange=()=>setDensity(density.value);controls.prepend(density)}let theme="mono",layoutMode="intelligence",densityMode="comfortable",accentColor="#38BDF8";try{theme=localStorage.getItem("nexus-theme")||theme;layoutMode=localStorage.getItem("nexus-layout")||layoutMode;densityMode=localStorage.getItem("nexus-density")||densityMode;accentColor=localStorage.getItem("nexus-accent")||accentColor}catch(e){}setTheme(theme);setLayout(layoutMode);setDensity(densityMode);setAccent(accentColor);try{if(localStorage.getItem("nexus-demo-sample")==="visible")addSampleData()}catch(e){};const designCurrent=document.getElementById("nexus-design-current");if(designCurrent){const selected=NEXUS_LAYOUT_SAMPLES.find(x=>x.id===layoutMode)||NEXUS_LAYOUT_SAMPLES[0];designCurrent.textContent=selected.code+" · "+selected.name}const accentInput=document.getElementById("nexus-accent");if(accentInput)accentInput.value=accentColor}
 
-    let currentPeriod = "daily", currentRankFilter = "TOP10", allRadarItems = [], allJobs = [], allChannels = [], activeJobId = null, selectedModalItem = null;
+    let currentPeriod = "daily", currentRankFilter = "ALL", allRadarItems = [], allJobs = [], allChannels = [], queuePending = 0, activeJobId = null, selectedModalItem = null, radarScanMeta = null, radarDataStatus = "not_scanned", analyticsSummary = null;
 
     let studioStarted = false, opsRefreshTimer = null;
-    async function checkSession() {
-      const overlay = document.getElementById("auth-overlay");
-      const error = document.getElementById("auth-error");
-      try {
-        const response = await fetch("/api/session/status", { credentials: "same-origin" });
-        const state = await response.json();
-        if (!state.configured) {
-          error.textContent = "서버 .env에 NEXUS_API_PASSWORD와 NEXUS_SESSION_SECRET을 설정해야 합니다.";
-          document.getElementById("auth-submit").disabled = true;
-          return;
-        }
-        if (state.authenticated) {
-          overlay.hidden = true;
-          startStudio();
-        } else {
-          overlay.hidden = false;
-          document.getElementById("auth-password").focus();
-        }
-      } catch (_) {
-        error.textContent = "인증 서버에 연결할 수 없습니다. API 컨테이너 상태를 확인하세요.";
+    function setRuntimeStatus(message, kind = "info") {
+      const node = document.getElementById("nexus-runtime-status");
+      if (!node) return;
+      node.textContent = message;
+      node.dataset.kind = kind;
+      node.hidden = false;
+    }
+
+    function showNexusLogin(message = "") {
+      const overlay = document.getElementById("nexus-login-overlay");
+      const error = document.getElementById("nexus-login-error");
+      if (error) error.textContent = message;
+      if (overlay) {
+        overlay.hidden = false;
+        const input = document.getElementById("nexus-login-password");
+        if (input) input.focus();
       }
     }
-    async function loginStudio() {
-      const password = document.getElementById("auth-password").value;
-      const error = document.getElementById("auth-error");
-      const button = document.getElementById("auth-submit");
-      button.disabled = true;
-      error.textContent = "";
+
+    async function submitNexusLogin(event) {
+      event.preventDefault();
+      const input = document.getElementById("nexus-login-password");
+      const button = document.getElementById("nexus-login-submit");
+      const error = document.getElementById("nexus-login-error");
+      if (button) button.disabled = true;
+      if (error) error.textContent = "";
       try {
         const response = await fetch("/api/session/login", {
           method: "POST", credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ password })
+          body: JSON.stringify({ password: input ? input.value : "" })
         });
-        const result = await response.json();
+        const contentType = response.headers.get("content-type") || "";
+        if (!contentType.toLowerCase().includes("application/json")) {
+          throw new Error("FastAPI 로그인 API에 연결되지 않았습니다. 로컬 NEXUS 서버 주소에서 로그인해 주세요.");
+        }
+        const result = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(result.detail || "로그인에 실패했습니다.");
-        document.getElementById("auth-password").value = "";
-        document.getElementById("auth-overlay").hidden = true;
+        if (input) input.value = "";
+        const overlay = document.getElementById("nexus-login-overlay");
+        if (overlay) overlay.hidden = true;
+        const status = document.getElementById("nexus-runtime-status");
+        if (status) status.hidden = true;
         startStudio();
-      } catch (err) {
-        error.textContent = err.message || "로그인에 실패했습니다.";
-      } finally { button.disabled = false; }
+      } catch (errorValue) {
+        if (error) error.textContent = errorValue.message || "로그인에 실패했습니다.";
+      } finally {
+        if (button) button.disabled = false;
+      }
     }
-    async function logoutStudio() {
-      await fetch("/api/session/logout", { method: "POST", credentials: "same-origin" });
-      studioStarted = false;
-      if (opsRefreshTimer !== null) { window.clearInterval(opsRefreshTimer); opsRefreshTimer = null; }
-      document.getElementById("auth-overlay").hidden = false;
-      document.getElementById("auth-password").focus();
+
+    function installSessionExpiryHandler() {
+      if (window.__nexusSessionHandlerInstalled) return;
+      window.__nexusSessionHandlerInstalled = true;
+      const nativeFetch = window.fetch.bind(window);
+      window.fetch = async function(input, init) {
+        const response = await nativeFetch(input, init);
+        const url = typeof input === "string" ? input : (input && input.url) || "";
+        if (response.status === 401 && url.includes("/api/") && !url.includes("/api/session/")) {
+          showNexusLogin("세션이 만료되었습니다. 다시 로그인해 주세요.");
+        }
+        return response;
+      };
     }
+
+    async function initializeNexusRuntime() {
+      initNexusShell();
+      installSessionExpiryHandler();
+      const form = document.getElementById("nexus-login-form");
+      if (form) form.addEventListener("submit", submitNexusLogin);
+      try {
+        const response = await fetch("/api/session/status", { credentials: "same-origin", cache: "no-store" });
+        const contentType = response.headers.get("content-type") || "";
+        if (response.status === 404 || !contentType.toLowerCase().includes("application/json")) {
+          setRuntimeStatus("미리보기 전용 · FastAPI 서버와 연결되지 않았습니다. 샘플 데이터와 디자인 테마만 확인할 수 있습니다.", "warning");
+          return;
+        }
+        if (!response.ok) throw new Error("API 세션 상태 확인 실패: " + response.status);
+        const session = await response.json();
+        if (session.required && !session.configured) {
+          setRuntimeStatus("운영자 인증 설정이 필요합니다. .env에 NEXUS_API_PASSWORD와 NEXUS_SESSION_SECRET을 설정한 뒤 서버를 재시작해 주세요.", "warning");
+          return;
+        }
+        if (session.required && !session.authenticated) {
+          showNexusLogin();
+          return;
+        }
+        startStudio();
+      } catch (error) {
+        setRuntimeStatus("API 서버에 연결할 수 없습니다. 로컬 NEXUS API를 실행하면 실제 데이터와 제작 기능이 활성화됩니다. " + (error.message || ""), "warning");
+      }
+    }
+
     function startStudio() {
       if (studioStarted) return;
       studioStarted = true;
-      loadRadar("daily");
-      loadOverview();
+      loadRadar("daily").catch(error => {
+        const statusNode = document.getElementById("radar-scan-status");
+        if (statusNode) statusNode.textContent = error.message || "Discovery 데이터를 불러오지 못했습니다.";
+      });
+      loadOverview().catch(error => {
+        setRuntimeStatus("실제 운영 데이터를 불러오지 못했습니다. API 연결과 운영자 세션을 확인해 주세요. " + (error.message || ""), "warning");
+      });
       loadOpsMetrics();
       if (opsRefreshTimer === null) opsRefreshTimer = window.setInterval(loadOpsMetrics, 15000);
     }
@@ -290,58 +520,121 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
       if (on) { a.classList.add("spin"); l.textContent = "스캔 중..."; b.disabled = true; }
       else { a.classList.remove("spin"); l.textContent = "즉시 재스캔"; b.disabled = false; }
     }
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, ch => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      })[ch]);
+    }
     async function loadRadar(p = currentPeriod) {
-      currentPeriod = p; setScanningState(true);
-      try { const r = await fetch("/api/radar/" + p); const d = await r.json(); allRadarItems = d.items || []; renderRadar(); }
-      finally { setScanningState(false); }
+      currentPeriod = p;
+      const response = await fetch("/api/radar/" + p, { credentials: "same-origin" });
+      if (!response.ok) throw new Error("Discovery data request failed: " + response.status);
+      const data = await response.json();
+      allRadarItems = data.items || [];
+      radarScanMeta = data.scan || null;
+      radarDataStatus = data.data_status || "not_scanned";
+      const statusText = {
+        not_scanned: "아직 수집하지 않았습니다.",
+        fresh: "모든 수집원이 정상 갱신되었습니다.",
+        partial: "일부 수집원만 갱신되었습니다. 오래된 원천 데이터가 표시될 수 있습니다.",
+        stale: "최근 수집에 실패했습니다. 마지막 정상 데이터를 표시합니다."
+      };
+      const statusNode = document.getElementById("radar-scan-status");
+      if (statusNode) statusNode.textContent = statusText[radarDataStatus] || "수집 상태를 확인할 수 없습니다.";
+      renderRadar();
+      renderDashboardData();
     }
     function setRankFilter(rf) {
       currentRankFilter = rf;
-      document.querySelectorAll(".rf-btn").forEach(b => { b.className = b.dataset.rf === rf ? "rf-btn btn-blue" : "rf-btn btn-dark"; });
+      document.querySelectorAll(".rf-btn").forEach(b => {
+        b.className = b.dataset.rf === rf ? "rf-btn btn-blue" : "rf-btn btn-dark";
+      });
       renderRadar();
     }
     function switchPeriod(p) {
       document.getElementById("tab-daily").className = p === "daily" ? "btn-blue" : "btn-dark";
       document.getElementById("tab-weekly").className = p === "weekly" ? "btn-blue" : "btn-dark";
-      loadRadar(p);
+      loadRadar(p).catch(() => {
+        const statusNode = document.getElementById("radar-scan-status");
+        if (statusNode) statusNode.textContent = "Discovery 데이터를 불러오지 못했습니다.";
+      });
     }
     function renderRadar() {
-      document.getElementById("kpi-trends").textContent = allRadarItems.length;
-      if (allRadarItems.length > 0) {
-        const avgG = Math.round(allRadarItems.reduce((s, x) => s + (x.growth_pct || 0), 0) / allRadarItems.length);
-        const avgV = (allRadarItems.reduce((s, x) => s + (x.viral_score || 0), 0) / allRadarItems.length).toFixed(1);
-        document.getElementById("kpi-growth").textContent = "+" + avgG + "%";
-        document.getElementById("avg-viral-score").textContent = avgV;
-        document.getElementById("avg-viral-bar").style.width = Math.min(100, avgV) + "%";
-      }
+      document.getElementById("avg-viral-score").textContent = "산출 불가";
       const regs = [{c:"KR",n:"🇰🇷 한국"},{c:"US",n:"🇺🇸 미국"},{c:"JP",n:"🇯🇵 일본"},{c:"GB",n:"🇬🇧 영국"}];
-      const tot = Math.max(1, allRadarItems.length);
-      document.getElementById("region-bars").innerHTML = regs.map(r => {
-        const cnt = allRadarItems.filter(x => x.region === r.c).length;
-        const pct = Math.round((cnt / tot) * 100);
-        return "<div><div style='display:flex;justify-content:space-between;'><span>" + r.n + "</span><strong style='color:#38BDF8;'>" + cnt + "건 (" + pct + "%)</strong></div><div class='bar-bg'><div class='bar-fill' style='width:" + pct + "%'></div></div></div>";
+      const total = Math.max(1, allRadarItems.length);
+      document.getElementById("region-bars").innerHTML = regs.map(region => {
+        const count = allRadarItems.filter(item => item.region === region.c).length;
+        const percent = Math.round((count / total) * 100);
+        return "<div><div style='display:flex;justify-content:space-between;'><span>" + region.n +
+          "</span><strong style='color:#38BDF8;'>" + count + "건 (" + percent + "%)</strong></div>" +
+          "<div class='bar-bg'><div class='bar-fill' style='width:" + percent + "%'></div></div></div>";
       }).join("");
-      let list = [...allRadarItems];
-      if (currentRankFilter === "TOP10") list = list.filter(x => x.is_global_top10 > 0).sort((a, b) => a.is_global_top10 - b.is_global_top10);
-      else list = list.filter(x => x.region === currentRankFilter).sort((a, b) => a.rank_no - b.rank_no);
-      document.getElementById("radar-count-label").textContent = "총 " + list.length + "건 순위 표시 중";
-      document.getElementById("radar-grid").innerHTML = list.map(it => {
-        const badge = currentRankFilter === "TOP10" ? "<span class='badge b-gold'>종합 #" + it.is_global_top10 + "</span>" : "<span class='badge b-blue'>" + it.region + " #" + it.rank_no + "</span>";
-        return "<div onclick='openRadarById(" + it.id + ")' class='r-card'><div style='display:flex;justify-content:space-between;'><div>" + badge + " <span class='badge b-ch'>" + it.matched_channel + "</span></div><span style='color:#34D399;font-size:12px;font-weight:800;'>⚡ " + it.viral_score + "점 · +" + it.growth_pct + "%</span></div><div style='font-size:14px;font-weight:700;'>" + it.topic + "</div><div style='display:flex;justify-content:space-between;font-size:11px;color:#94A3B8;border-top:1px solid #1E293B;padding-top:6px;'><span>출처: " + it.source_name + "</span><span style='color:#38BDF8;font-weight:700;'>상세·제작 ↗</span></div></div>";
-      }).join("");
+      let list = currentRankFilter === "ALL"
+        ? [...allRadarItems]
+        : allRadarItems.filter(item => item.region === currentRankFilter);
+      list.sort((a, b) => String(a.source_name || "").localeCompare(String(b.source_name || "")) ||
+        Number(a.source_rank || a.rank_no || 0) - Number(b.source_rank || b.rank_no || 0));
+      document.getElementById("radar-count-label").textContent = "총 " + list.length + "건 · 원천별 순서";
+      document.getElementById("radar-grid").innerHTML = list.map(item => {
+        const rank = Number(item.source_rank || item.rank_no || 0);
+        const score = item.source_score == null
+          ? "원천 순위 #" + rank
+          : escapeHtml(item.source_score_label || "원천 점수") + " " + escapeHtml(item.source_score);
+        const stale = item.source_status === "failed"
+          ? "<span class='badge b-gold'>이전 수집 데이터</span>"
+          : item.source_status === "unknown"
+            ? "<span class='badge b-ch'>수집 상태 미확인</span>" : "";
+        return "<div onclick='openRadarById(" + Number(item.id) + ")' class='r-card'>" +
+          "<div style='display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;'>" +
+          "<div><span class='badge b-blue'>" + escapeHtml(item.region) + " · #" + rank + "</span> " +
+          "<span class='badge b-ch'>" + escapeHtml(item.matched_channel || "미분류") + "</span></div>" +
+          "<span style='font-size:11px;color:var(--muted);'>" + stale + "</span></div>" +
+          "<div style='font-size:14px;font-weight:700;'>" + escapeHtml(item.topic) + "</div>" +
+          "<div style='font-size:11px;color:var(--muted);'>" + escapeHtml(item.source_name) +
+          " · " + score + "</div></div>";
+      }).join("") || "<div class='analytics-note'>표시할 Discovery 데이터가 없습니다. 상단의 즉시 재스캔을 실행해 주세요.</div>";
     }
     function openRadarById(id) {
-      const it = allRadarItems.find(x => x.id === id); if (!it) return; selectedModalItem = it;
-      document.getElementById("mod-title").textContent = it.topic; document.getElementById("mod-source").textContent = it.source_name;
-      document.getElementById("mod-url").href = it.source_url; document.getElementById("mod-avg-views").textContent = Number(it.avg_cat_views).toLocaleString() + " 회";
-      document.getElementById("mod-est-views").textContent = Number(it.est_views).toLocaleString() + " 회 (+" + it.growth_pct + "%)";
-      document.getElementById("mod-reason").textContent = it.ai_reason; document.getElementById("radar-modal").classList.add("open");
+      const item = allRadarItems.find(candidate => Number(candidate.id) === Number(id));
+      if (!item) return;
+      selectedModalItem = item;
+      document.getElementById("mod-title").textContent = item.topic || "";
+      document.getElementById("mod-source").textContent = item.source_name || "";
+      const link = document.getElementById("mod-url");
+      try {
+        const url = new URL(item.source_url);
+        if (url.protocol === "https:" || url.protocol === "http:") {
+          link.href = url.href; link.rel = "noopener noreferrer"; link.style.display = "";
+        } else { link.removeAttribute("href"); link.style.display = "none"; }
+      } catch (_) { link.removeAttribute("href"); link.style.display = "none"; }
+      document.getElementById("mod-avg-views").textContent =
+        "#" + Number(item.source_rank || item.rank_no || 0) + " · " + (item.source_name || "원천 미상");
+      document.getElementById("mod-est-views").textContent = item.source_score == null
+        ? "제공되지 않음"
+        : String(item.source_score_label || "원천 점수") + " " + String(item.source_score);
+      document.getElementById("mod-reason").textContent =
+        (item.ai_reason || "원천에서 수집된 항목입니다.") +
+        (item.source_is_stale ? " · 마지막 정상 수집 데이터이며 최신 갱신은 실패했습니다." : "");
+      document.getElementById("radar-modal").classList.add("open");
     }
     function closeModal() { document.getElementById("radar-modal").classList.remove("open"); }
     async function produceFromModal() {
       if (!selectedModalItem) return;
-      const r = await fetch("/api/create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ channel_name: selectedModalItem.matched_channel, topic: selectedModalItem.topic }) });
-      closeModal(); alert((await r.json()).msg); setTimeout(loadOverview, 3000);
+      try {
+        const response = await fetch("/api/create", {
+          method: "POST", credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ channel_name: selectedModalItem.matched_channel, topic: selectedModalItem.topic })
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.detail || "제작 요청을 등록하지 못했습니다.");
+        closeModal();
+        alert(result.msg || "제작 요청을 등록했습니다.");
+        await loadOverview();
+      } catch (error) {
+        alert(error.message || "제작 요청 중 오류가 발생했습니다.");
+      }
     }
     async function loadOpsMetrics() {
       const metricsNode = document.getElementById("ops-metrics");
@@ -358,12 +651,19 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
         const sources = m.sources || [];
         const sourceOk = sources.filter(source => source.last_status === "success").length;
         const sourceFailed = sources.filter(source => source.last_status !== "success").length;
+        const scans = m.radar_scans || {};
+        const scanLabel = scan => scan ? scan.status + " · " + (scan.item_count || 0) + "건" : "미수집";
         const cards = [
           ["제작 큐 대기", queue.pending || 0],
           ["실행 중", queue.running || 0],
           ["실패 격리", queue.failed || 0],
-          ["검수 대기", pipeline["최종컨펌 대기"] || 0],
+          ["최종 검수 대기", pipeline["최종컨펌 대기"] || 0],
+          ["수정 재제작 대기", pipeline["재제작 대기"] || 0],
+          ["수정 재제작 실패", pipeline["재제작 실패"] || 0],
           ["피드 정상 / 오류", sourceOk + " / " + sourceFailed],
+          ["일간 Discovery", scanLabel(scans.daily)],
+          ["주간 Discovery", scanLabel(scans.weekly)],
+          ["가장 오래된 대기", m.oldest_pending_queue_created_at ? new Date(m.oldest_pending_queue_created_at).toLocaleString("ko-KR") : "없음"],
           ["최근 24시간 이벤트", m.events_last_24h || 0]
         ];
         metricsNode.replaceChildren();
@@ -406,68 +706,272 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
         document.getElementById("ops-updated").textContent = "운영 지표를 불러오지 못했습니다.";
       }
     }
+    async function loadAnalyticsSummary(forceRefresh = false) {
+      const root = document.getElementById("nexus-analytics-kpis");
+      const platformNode = document.getElementById("nexus-analytics-platform");
+      const platformCards = document.getElementById("nexus-analytics-platform-cards");
+      const discoveryNode = document.getElementById("nexus-analytics-discovery");
+      if (!root || !platformNode || !platformCards || !discoveryNode) return;
+      try {
+        const url = "/api/analytics/summary" + (forceRefresh ? "?refresh=true" : "");
+        const response = await fetch(url, { credentials: "same-origin" });
+        if (!response.ok) throw new Error("Analytics summary request failed: " + response.status);
+        analyticsSummary = await response.json();
+        const production = analyticsSummary.production || {};
+        const publishing = analyticsSummary.publishing || {};
+        const cards = [
+          ["전체 제작 작업", production.jobs_total || 0],
+          ["최종 검수 대기", (production.by_stage || {})["최종컨펌 대기"] || 0],
+          ["수정 재제작 대기", publishing.regeneration_pending || 0],
+          ["비공개 업로드 완료", publishing.private_uploads || 0],
+          ["업로드 상태 확인", publishing.privacy_unverified || 0]
+        ];
+        root.replaceChildren();
+        cards.forEach(([label, value]) => {
+          const card = document.createElement("div"); card.className = "ops-metric";
+          const name = document.createElement("div"); name.className = "label"; name.textContent = label;
+          const number = document.createElement("div"); number.className = "value"; number.textContent = Number(value).toLocaleString();
+          card.append(name, number); root.append(card);
+        });
+        const metrics = analyticsSummary.platform_metrics || {};
+        const statusLabels = {
+          connected: "실제 YouTube Analytics 연결됨",
+          partial: "일부 채널만 연결됨",
+          scope_required: "읽기 전용 권한 재동의 필요",
+          not_connected: "YouTube Analytics 미연결",
+          error: "YouTube Analytics 조회 오류"
+        };
+        platformNode.textContent = (statusLabels[metrics.status] || "분석 상태 확인 필요") + " · " +
+          (metrics.note || "조회수·참여율·수익은 확인된 provider 데이터만 표시합니다.");
+        const number = value => value == null ? "—" : Number(value).toLocaleString("ko-KR", { maximumFractionDigits: 1 });
+        const duration = value => {
+          if (value == null) return "—";
+          const seconds = Math.max(0, Math.round(Number(value)));
+          return Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
+        };
+        const platformCardsData = [
+          ["현재 구독자", number(metrics.subscriber_count)],
+          ["최근 28일 조회수", number(metrics.views_28d)],
+          ["최근 28일 시청 시간(분)", number(metrics.watch_minutes_28d)],
+          ["평균 시청 지속시간", duration(metrics.average_view_duration_seconds)],
+          ["참여율", metrics.engagement_rate == null ? "—" : Number(metrics.engagement_rate).toFixed(2) + "%"],
+          ["최근 28일 구독자 순증", metrics.subscribers_gained_28d == null || metrics.subscribers_lost_28d == null ? "—" : number(metrics.subscribers_gained_28d - metrics.subscribers_lost_28d)]
+        ];
+        platformCards.replaceChildren();
+        platformCardsData.forEach(([label, value]) => {
+          const card = document.createElement("div"); card.className = "ops-metric";
+          const name = document.createElement("div"); name.className = "label"; name.textContent = label;
+          const amount = document.createElement("div"); amount.className = "value"; amount.textContent = value;
+          card.append(name, amount); platformCards.append(card);
+        });
+        const discovery = analyticsSummary.discovery || {};
+        const daily = discovery.daily_scan || {};
+        const weekly = discovery.weekly_scan || {};
+        discoveryNode.textContent = "Discovery 수집 상태 · 일간: " + (daily.status || "미수집") +
+          " (" + (daily.item_count ?? 0) + "건), 주간: " + (weekly.status || "미수집") +
+          " (" + (weekly.item_count ?? 0) + "건). 비교 가능한 글로벌 인기 점수는 아직 산출하지 않습니다.";
+      } catch (error) {
+        platformNode.textContent = "분석 요약을 불러오지 못했습니다: " + error.message;
+      }
+    }
+
     async function loadOverview() {
-      const r = await fetch("/api/overview"); const d = await r.json(); const chs = d.channels || []; allChannels = chs; allJobs = d.jobs || [];
-      document.getElementById("kpi-trends").textContent = allJobs.length;
+      const r = await fetch("/api/overview"); if (!r.ok) throw new Error("overview API request failed: " + r.status); const d = await r.json(); const chs = d.channels || []; allChannels = chs; allJobs = d.jobs || []; queuePending = Number.isFinite(Number(d.queue_pending)) ? Number(d.queue_pending) : 0;
+      document.getElementById("kpi-trends").textContent = allJobs.length + queuePending;
       document.getElementById("kpi-growth").textContent = allJobs.filter(j => String(j.script || "").trim().length > 0).length;
       document.getElementById("kpi-channels").textContent = "—";
       document.getElementById("kpi-jobs").textContent = "—";
       const sel = document.getElementById("single-channel");
-      if (sel.options.length === 0 && chs.length > 0) sel.innerHTML = chs.map(c => "<option value='" + c.name + "'>" + c.name + "</option>").join("");
-      renderJobs();renderDashboardData();
+      if (sel.options.length === 0 && chs.length > 0) chs.forEach(c => { const option = document.createElement("option"); option.value = String(c.name || ""); option.textContent = String(c.name || ""); sel.append(option); });
+      if (activeJobId && !allJobs.some(job => job.id === activeJobId)) activeJobId = null;
+      renderJobs();
+      if (activeJobId) selectJob(activeJobId);
+      renderDashboardData();
     }
     function renderJobs() {
       const box = document.getElementById("job-list");
-      if (!allJobs.length) { box.innerHTML = "<div style='text-align:center;padding:30px;color:#64748B;font-size:12px;'>생성된 영상 작업이 없습니다.</div>"; return; }
-      box.innerHTML = allJobs.map(j => "<div onclick='selectJob(" + j.id + ")' class='job-item " + (j.id === activeJobId ? "active" : "") + "'><input type='checkbox' value='" + j.id + "' onclick='event.stopPropagation(); updateSelectedCount();' class='job-chk' style='margin-top:4px;'><div style='flex:1;min-width:0;'><div style='font-size:11px;color:#38BDF8;font-weight:700;'>" + j.channel_name + " · <span style='color:#FBBF24;'>" + j.stage + "</span></div><div style='font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>" + j.title + "</div></div></div>").join("");
-      if (!activeJobId && allJobs.length > 0) selectJob(allJobs.slice(0, 1).pop().id);
+      box.replaceChildren();
+      if (!allJobs.length) {
+        const empty = document.createElement("div");
+        empty.style.cssText = "text-align:center;padding:30px;color:#64748B;font-size:12px;";
+        empty.textContent = "생성된 영상 작업이 없습니다.";
+        box.append(empty);
+        return;
+      }
+      allJobs.forEach(j => {
+        const row = document.createElement("div");
+        row.className = "job-item" + (j.id === activeJobId ? " active" : "");
+        row.addEventListener("click", () => selectJob(j.id));
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.value = String(j.id);
+        checkbox.className = "job-chk";
+        checkbox.style.marginTop = "4px";
+        checkbox.addEventListener("click", event => event.stopPropagation());
+        checkbox.addEventListener("change", updateSelectedCount);
+        const details = document.createElement("div");
+        details.style.cssText = "flex:1;min-width:0;";
+        const meta = document.createElement("div");
+        meta.style.cssText = "font-size:11px;color:#38BDF8;font-weight:700;";
+        const channel = document.createElement("span");
+        channel.textContent = String(j.channel_name || "");
+        const stage = document.createElement("span");
+        stage.style.color = "#FBBF24";
+        stage.textContent = String(j.stage || "");
+        meta.append(channel, document.createTextNode(" · "), stage);
+        const title = document.createElement("div");
+        title.style.cssText = "font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+        title.textContent = String(j.title || "");
+        details.append(meta, title);
+        row.append(checkbox, details);
+        box.append(row);
+      });
+      if (!activeJobId && allJobs.length > 0) selectJob(allJobs[0].id);
     }
     function selectJob(id) {
       activeJobId = id; const jb = allJobs.find(x => x.id === id); if (!jb) return;
-      document.getElementById("editor-channel").textContent = jb.channel_name; document.getElementById("editor-stage").textContent = jb.stage;
+      document.getElementById("editor-channel").textContent = jb.channel_name;
+      document.getElementById("editor-stage").textContent = jb.stage +
+        (jb.youtube_video_id ? " · YouTube ID " + jb.youtube_video_id + " · " + (jb.privacy_status || "privacy unknown") : "");
       document.getElementById("editor-title").value = jb.title; document.getElementById("editor-script").value = jb.script;
       const reviewable = jb.stage === "최종컨펌 대기";
+      const editable = ["최종컨펌 대기", "반려(수정 필요)", "재제작 실패"].includes(jb.stage);
       document.getElementById("btn-approve").disabled = !reviewable;
       document.getElementById("btn-reject").disabled = !reviewable;
-      if (jb.video_path) document.getElementById("preview-video").src = "/" + jb.video_path.replace(/^\//, "");
+      document.getElementById("editor-title").disabled = !editable;
+      document.getElementById("editor-script").disabled = !editable;
+      document.getElementById("btn-save-edit").disabled = !editable;
+      document.getElementById("btn-save-edit").textContent = editable ? "↻ 수정 후 재제작" : "재제작 진행 중";
+      const hint = document.getElementById("editor-hint");
+      if (hint) hint.textContent = editable
+        ? "수정 대본은 4~8문장으로 구성해야 합니다. 저장하면 기존 작업 ID로 새 영상을 만들고 QA 후 다시 검수 대기합니다."
+        : "업로드 또는 재제작 진행 중에는 편집할 수 없습니다.";
+      document.getElementById("preview-video").src = jb.video_path ? "/" + jb.video_path.replace(/^\//, "") : "";
       renderJobs();
     }
     function toggleSelectAll(c) { document.querySelectorAll(".job-chk").forEach(x => x.checked = c); updateSelectedCount(); }
     function updateSelectedCount() { document.getElementById("selected-count").textContent = document.querySelectorAll(".job-chk:checked").length; }
     async function bulkDeleteJobs() {
-      const ids = Array.from(document.querySelectorAll(".job-chk:checked")).map(c => Number(c.value)); if (!ids.length) return;
-      await fetch("/api/jobs/bulk-delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job_ids: ids }) });
-      activeJobId = null; loadOverview();
+      const ids = Array.from(document.querySelectorAll(".job-chk:checked")).map(c => Number(c.value));
+      if (!ids.length) return;
+      try {
+        const response = await fetch("/api/jobs/bulk-delete", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          credentials: "same-origin", body: JSON.stringify({ job_ids: ids })
+        });
+        const result = await response.json();
+        if (!response.ok || result.ok === false) throw new Error(result.detail || result.msg || "삭제 요청을 처리하지 못했습니다.");
+        alert(result.msg || "선택한 작업을 삭제했습니다.");
+        await loadOverview();
+      } catch (error) { alert(error.message || "삭제 요청 중 오류가 발생했습니다."); }
     }
     async function saveJobEdit() {
       if (!activeJobId) return;
-      await fetch("/api/jobs/" + activeJobId, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: document.getElementById("editor-title").value, script: document.getElementById("editor-script").value }) });
-      alert("저장되었습니다."); loadOverview();
+      try {
+        const response = await fetch("/api/jobs/" + activeJobId, {
+          method: "PUT", headers: { "Content-Type": "application/json" },
+          credentials: "same-origin", body: JSON.stringify({
+            title: document.getElementById("editor-title").value,
+            script: document.getElementById("editor-script").value
+          })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "재제작 요청을 처리하지 못했습니다.");
+        alert(result.msg || "수정 대본으로 재제작을 등록했습니다.");
+        await loadOverview();
+      } catch (error) { alert(error.message || "재제작 요청 중 오류가 발생했습니다."); }
     }
     async function rejectJob() {
       if (!activeJobId) return;
       const note = document.getElementById("reject-note").value.trim();
       if (!confirm("선택한 영상을 반려하고 수정 요청으로 이동하시겠습니까?")) return;
-      const r = await fetch("/api/reject/" + activeJobId, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ note })
-      });
-      const result = await r.json();
-      alert(result.msg || result.detail || "반려 요청을 처리하지 못했습니다.");
-      if (r.ok) { activeJobId = null; loadOverview(); }
+      try {
+        const response = await fetch("/api/reject/" + activeJobId, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          credentials: "same-origin", body: JSON.stringify({ note })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "반려 요청을 처리하지 못했습니다.");
+        alert(result.msg || "반려 및 수정 요청이 기록되었습니다.");
+        await loadOverview();
+      } catch (error) { alert(error.message || "반려 요청 중 오류가 발생했습니다."); }
     }
-    async function approveUpload() { if (!activeJobId) return; const r = await fetch("/api/approve/" + activeJobId, { method: "POST" }); alert((await r.json()).msg); loadOverview(); }
+    async function approveUpload() {
+      if (!activeJobId) return;
+      if (!confirm("선택한 영상을 YouTube에 비공개로 업로드하도록 승인하시겠습니까?")) return;
+      try {
+        const response = await fetch("/api/approve/" + activeJobId, {
+          method: "POST", credentials: "same-origin"
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "업로드 승인을 처리하지 못했습니다.");
+        alert(result.msg || "업로드 요청을 처리했습니다. 비공개 상태를 확인합니다.");
+        await loadOverview();
+      } catch (error) { alert(error.message || "업로드 승인 중 오류가 발생했습니다."); }
+    }
     async function createSingleVideo() {
       const topic = document.getElementById("single-topic").value.trim(); if (!topic) return;
-      const r = await fetch("/api/create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ channel_name: document.getElementById("single-channel").value, topic }) });
-      alert((await r.json()).msg);
+      try {
+        const response = await fetch("/api/create", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ channel_name: document.getElementById("single-channel").value, topic }) });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "제작 요청을 등록하지 못했습니다.");
+        alert(result.msg || "제작 요청이 등록되었습니다.");
+        await loadOverview();
+      } catch (error) { alert(error.message || "제작 요청 중 오류가 발생했습니다."); }
     }
-    async function createAllVideos() { const r = await fetch("/api/create-all", { method: "POST" }); alert((await r.json()).msg); }
-    async function saveCloudQueue() { const r = await fetch("/api/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ topics_text: document.getElementById("queue-text").value }) }); alert((await r.json()).msg); }
-    async function forceScan() { setScanningState(true); try { await fetch("/api/radar/scan/" + currentPeriod, { method: "POST" }); await loadRadar(currentPeriod); } finally { setScanningState(false); } }
-    async function changeInterval(m) { await fetch("/api/radar/interval/" + m, { method: "POST" }); }
-    async function triggerTop3Auto() { const r = await fetch("/api/radar/auto-produce-now", { method: "POST" }); alert((await r.json()).msg); }
-    checkSession();
+    async function createAllVideos() {
+      try {
+        const response = await fetch("/api/create-all", { method: "POST", credentials: "same-origin" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "일괄 제작 요청을 등록하지 못했습니다.");
+        alert(result.msg || "일괄 제작 요청이 등록되었습니다.");
+        await loadOverview();
+      } catch (error) { alert(error.message || "일괄 제작 요청 중 오류가 발생했습니다."); }
+    }
+    async function saveCloudQueue() {
+      try {
+        const response = await fetch("/api/queue", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ topics_text: document.getElementById("queue-text").value }) });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "제작 큐를 저장하지 못했습니다.");
+        alert(result.msg || "제작 큐를 저장했습니다.");
+        await loadOverview();
+      } catch (error) { alert(error.message || "제작 큐 저장 중 오류가 발생했습니다."); }
+    }
+    async function forceScan() {
+      setScanningState(true);
+      try {
+        const response = await fetch("/api/radar/scan/" + currentPeriod, { method: "POST" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "Discovery scan failed");
+        await loadRadar(currentPeriod);
+        if (result.msg) document.getElementById("radar-scan-status").textContent =
+          result.msg + " · 상태: " + (result.scan?.status || "unknown");
+      } catch (error) {
+        document.getElementById("radar-scan-status").textContent = error.message;
+      } finally { setScanningState(false); }
+    }
+    async function changeInterval(m) {
+      try {
+        const response = await fetch("/api/radar/interval/" + m, { method: "POST", credentials: "same-origin" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "자동 수집 주기를 변경하지 못했습니다.");
+        const status = document.getElementById("radar-scan-status");
+        if (status) status.textContent = result.msg || "자동 수집 주기를 변경했습니다.";
+      } catch (error) {
+        const status = document.getElementById("radar-scan-status");
+        if (status) status.textContent = error.message || "자동 수집 주기 변경 중 오류가 발생했습니다.";
+      }
+    }
+    async function triggerTop3Auto() {
+      try {
+        const response = await fetch("/api/radar/auto-produce-now", { method: "POST", credentials: "same-origin" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "자동 제작 요청을 등록하지 못했습니다.");
+        alert(result.msg || "지역별 상위 후보 제작 요청을 등록했습니다.");
+        await Promise.all([loadOverview(), loadOpsMetrics()]);
+      } catch (error) { alert(error.message || "자동 제작 요청 중 오류가 발생했습니다."); }
+    }
+    initializeNexusRuntime();
   </script>
 </body>
 </html>
