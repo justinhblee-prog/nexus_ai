@@ -68,7 +68,9 @@ class NexusUiContractTests(unittest.TestCase):
         self.assertIn("수정 후 재제작", self.html)
         self.assertIn("수정 대본은 4~8문장", self.html)
         # Preserve the selected job while the refreshed overview reports its new regeneration state.
-        self.assertIn("if (response.ok) { await loadOverview(); }", self.script)
+        edit_handler = self.script.split("async function saveJobEdit()", 1)[1].split("async function rejectJob()", 1)[0]
+        self.assertIn("await loadOverview();", edit_handler)
+        self.assertIn("if (!response.ok) throw new Error", edit_handler)
         overview = self.script.split("async function loadOverview()", 1)[1].split("function renderJobs()", 1)[0]
         self.assertIn("if (activeJobId) selectJob(activeJobId);", overview)
         self.assertIn('"재제작 대기"', self.script)
