@@ -35,6 +35,8 @@ _ALLOWED_TABLES = {
     "shorts_analytics_snapshots",
     "shorts_assets",
     "shorts_topic_queue",
+    "public_trend_signals",
+    "public_trend_scans",
 }
 
 
