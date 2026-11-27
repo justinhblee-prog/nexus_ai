@@ -146,10 +146,11 @@ class SupabaseAdminClientTests(unittest.TestCase):
         }]
         http.return_value = response
         client = SupabaseAdminRestClient(ENV, http_request=http)
-        rows = client.list_account_deletion_storage_objects("11111111-1111-4111-8111-111111111111", limit=500, offset=0)
+        rows = client.list_account_deletion_storage_objects("11111111-1111-4111-8111-111111111111", limit=500, offset=0, workspace_ids=["wsp_11111111-1111-4111-8111-111111111111"])
         self.assertEqual(len(rows), 1)
         self.assertIn("/rpc/list_account_deletion_storage_objects", http.call_args.args[1])
         self.assertEqual(http.call_args.kwargs["json"]["p_limit"], 500)
+        self.assertEqual(http.call_args.kwargs["json"]["p_workspace_ids"], ["wsp_11111111-1111-4111-8111-111111111111"])
 
     def test_account_storage_delete_uses_storage_api_and_rejects_unsafe_paths(self):
         http = Mock()
