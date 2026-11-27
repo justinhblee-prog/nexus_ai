@@ -16,7 +16,7 @@ class SignedSessionTests(unittest.TestCase):
             "NEXUS_API_PASSWORD": "unit-test-password-12",
             "NEXUS_SESSION_SECRET": "s" * 48,
             "NEXUS_AUTH_ENABLED": "true",
-        })
+        }, clear=True)
         cls.env_patch.start()
         stubs = {
             "video_maker": types.ModuleType("video_maker"),
@@ -60,6 +60,11 @@ class SignedSessionTests(unittest.TestCase):
             'client': ('127.0.0.1', 12345),
         }
         return Request(scope)
+
+    def test_session_status_reports_passwordless_default(self):
+        with patch.object(self.api, "AUTH_ENABLED", False):
+            status = self.api.session_status(self._request('/api/session/status'))
+        self.assertEqual(status, {"configured": True, "authenticated": True, "auth_enabled": False})
 
     def test_api_and_output_are_open_when_authentication_is_disabled(self):
         async def next_response(_request):
