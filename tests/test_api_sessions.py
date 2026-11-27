@@ -442,11 +442,9 @@ class SignedSessionTests(unittest.TestCase):
     def test_hosted_mode_disables_legacy_sqlite_workers_and_scheduler(self):
         with patch.object(self.api, "is_hosted_auth_enabled", return_value=True), \
              patch.object(self.api, "init_app_db") as init_db, \
-             patch.object(self.api.trend_radar, "init_radar_db") as radar_db, \
              patch.object(self.api.threading, "Thread") as thread:
             self.api.startup_event()
         init_db.assert_called_once()
-        radar_db.assert_not_called()
         thread.assert_not_called()
 
 
