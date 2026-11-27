@@ -8,7 +8,7 @@
 **IN PROGRESS · PR #11 Draft/Open · 운영 전환 차단**
 
 - 작업 브랜치: `feat/nexus-user-onboarding-web-oauth-20261127`
-- PR #11 현재 HEAD: `2087953e70f6f6e5b7d513014b0be9ba77882fa5` (상태 문서 갱신 커밋)
+- PR #11에는 최신 애플리케이션 코드 검증 뒤 상태 문서 정합성 갱신만 추가됨. 현재 branch HEAD는 PR 화면에서 확인하며, 애플리케이션 검증 기준은 아래 code HEAD임.
 - 최신 검증 애플리케이션 코드 HEAD: `ccf24ee4808de05c738993d7b2b151c8d0ae8039`
 - 최신 코드 검증: [GitHub Actions run 46039623628](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46039623628) — **340 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, Playwright browser interaction smoke 모두 통과.
 - PR #11: [SaaS onboarding and private Shorts automation pipeline](https://github.com/justinhblee-prog/nexus_ai/pull/11). Draft/Open/unmerged 유지.
