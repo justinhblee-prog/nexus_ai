@@ -117,9 +117,12 @@ async def enforce_local_origin_and_session(request, call_next):
                 request.state.hosted_user = verify_access_token(token)
                 request.state.hosted_access_token = token
                 tombstone_client = SupabaseRestClient(token)
-                if tombstone_client.rpc("is_account_deletion_tombstoned", {}):
-                    # Allow only the idempotent deletion-request retry path so a
-                    # tombstoned account can finish global session revocation.
+                request.state.account_deletion_tombstoned = bool(
+                    tombstone_client.rpc("is_account_deletion_tombstoned", {})
+                )
+                if request.state.account_deletion_tombstoned:
+                    # Only the existing deletion request may be retried, and only
+                    # to finish session revocation; no other API remains available.
                     if not (path == "/api/hosted/account/deletion/request" and request.method == "POST"):
                         return JSONResponse(status_code=401, content={"detail": "This account is no longer active"})
             except SupabaseRestError:
@@ -570,25 +573,32 @@ def hosted_account_deletion_request(req: HostedAccountDeletionReq, request: Requ
     if not has_recent_password_reauthentication(user):
         raise HTTPException(status_code=403, detail="Fresh password sign-in is required before account deletion")
 
-    preflight = hosted_account_deletion_preflight(request)
-    if not preflight.get("account_deletion_enabled"):
-        raise HTTPException(status_code=503, detail="The account deletion worker is not online; no deletion request was queued")
-    if not preflight.get("preflight_clear"):
-        raise HTTPException(status_code=409, detail={
-            "message": "Resolve account deletion blockers before confirming deletion",
-            "blockers": preflight.get("blockers", []),
-        })
-
     user_id = user["user_id"]
     try:
         admin = SupabaseAdminRestClient()
-        queued = admin.enqueue_account_deletion(user_id, {
-            "preflight_clear": True,
-            "workspace_ids": [item["workspace_id"] for item in preflight.get("workspaces", [])],
-            "requested_at": datetime.now(timezone.utc).isoformat(),
-        })
-        if not queued:
-            raise SupabaseAdminError("Account deletion queue did not return a durable request")
+        if getattr(request.state, "account_deletion_tombstoned", False):
+            # A prior request already passed preflight and atomically created both
+            # tombstone and queue row. Do not rerun preflight: active leases or
+            # changed membership visibility must not strand session revocation.
+            queued = admin.get_account_deletion_request(user_id)
+            if not queued:
+                raise SupabaseAdminError("Existing tombstone has no verifiable deletion request")
+        else:
+            preflight = hosted_account_deletion_preflight(request)
+            if not preflight.get("account_deletion_enabled"):
+                raise HTTPException(status_code=503, detail="The account deletion worker is not online; no deletion request was queued")
+            if not preflight.get("preflight_clear"):
+                raise HTTPException(status_code=409, detail={
+                    "message": "Resolve account deletion blockers before confirming deletion",
+                    "blockers": preflight.get("blockers", []),
+                })
+            queued = admin.enqueue_account_deletion(user_id, {
+                "preflight_clear": True,
+                "workspace_ids": [item["workspace_id"] for item in preflight.get("workspaces", [])],
+                "requested_at": datetime.now(timezone.utc).isoformat(),
+            })
+            if not queued:
+                raise SupabaseAdminError("Account deletion queue did not return a durable request")
         if not queued.get("sessions_revoked"):
             admin.revoke_user_sessions(request.state.hosted_access_token)
             if not admin.mark_account_deletion_sessions_revoked(user_id):
