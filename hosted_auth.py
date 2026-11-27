@@ -6,6 +6,8 @@ loads or exposes a service-role key.
 """
 from __future__ import annotations
 
+import base64
+import json
 import os
 import uuid
 from typing import Mapping
@@ -36,6 +38,20 @@ def _supabase_url(env: Mapping[str, str]) -> str:
     return url
 
 
+def _is_service_role_key(value: str) -> bool:
+    if value.lower().startswith(("service_role", "sb_secret_")):
+        return True
+    parts = value.split(".")
+    if len(parts) != 3:
+        return False
+    try:
+        payload = parts[1] + ("=" * (-len(parts[1]) % 4))
+        claims = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
+        return claims.get("role") == "service_role"
+    except (ValueError, UnicodeError, json.JSONDecodeError):
+        return False
+
+
 def public_auth_config(env: Mapping[str, str] | None = None) -> dict[str, str]:
     """Return only the browser-safe project URL and publishable key."""
     values = os.environ if env is None else env
@@ -43,8 +59,8 @@ def public_auth_config(env: Mapping[str, str] | None = None) -> dict[str, str]:
         raise HostedAuthConfigurationError("Hosted authentication is disabled")
     url = _supabase_url(values)
     publishable_key = values.get("NEXUS_SUPABASE_PUBLISHABLE_KEY", "").strip()
-    if not publishable_key or publishable_key.lower().startswith(("service_role", "sb_secret_")):
-        raise HostedAuthConfigurationError("A Supabase publishable key is required")
+    if not publishable_key or _is_service_role_key(publishable_key):
+        raise HostedAuthConfigurationError("A Supabase publishable key is required; service-role keys are forbidden")
     return {"supabase_url": url, "publishable_key": publishable_key}
 
 
