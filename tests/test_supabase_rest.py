@@ -57,6 +57,25 @@ class SupabaseRestClientTests(unittest.TestCase):
         self.assertIn("RLS", raised.exception.public_message)
         self.assertNotIn("database password", raised.exception.public_message.lower())
 
+
+    def test_ownership_transfer_rpc_uses_verified_user_jwt_and_allowlist(self):
+        http = Mock()
+        response = Mock(status_code=204)
+        http.return_value = response
+        client = SupabaseRestClient("verified.user.jwt", env=ENV, http_request=http)
+        result = client.rpc("transfer_workspace_ownership", {
+            "p_workspace_id": "wsp_11111111-1111-4111-8111-111111111111",
+            "p_new_owner_id": "22222222-2222-4222-8222-222222222222",
+        })
+        self.assertIsNone(result)
+        args, kwargs = http.call_args
+        self.assertEqual(args[0], "POST")
+        self.assertTrue(args[1].endswith("/rest/v1/rpc/transfer_workspace_ownership"))
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer verified.user.jwt")
+        self.assertEqual(kwargs["json"]["p_workspace_id"], "wsp_11111111-1111-4111-8111-111111111111")
+        with self.assertRaises(ValueError):
+            client.rpc("delete_auth_user", {"p_user_id": "any"})
+
     def test_network_errors_become_safe_gateway_errors(self):
         http = Mock(side_effect=requests.Timeout("private connection details"))
         client = SupabaseRestClient("verified.user.jwt", env=ENV, http_request=http)
