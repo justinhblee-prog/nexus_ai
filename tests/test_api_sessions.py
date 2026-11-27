@@ -765,6 +765,7 @@ class SignedSessionTests(unittest.TestCase):
         self.assertEqual(params["workspace_id"], f"eq.{workspace_id}")
         self.assertEqual(params["limit"], "3")
         self.assertEqual(params["offset"], "4")
+        self.assertEqual(params["order"], "created_at.desc,job_id.desc")
         self.assertEqual([item["job_id"] for item in result["items"]], ["job-1", "job-2"])
         self.assertFalse(result["items"][0]["has_preview"])
         self.assertTrue(result["items"][1]["has_preview"])
