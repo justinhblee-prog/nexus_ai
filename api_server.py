@@ -162,6 +162,13 @@ def hosted_session(request: Request):
     return {"authenticated": True, "user": user}
 
 
+class WorkspaceMemberRoleUpdateReq(BaseModel):
+    role: str = Field(pattern="^(admin|editor|viewer)$")
+
+    class Config:
+        extra = "forbid"
+
+
 class WorkspaceOwnershipTransferReq(BaseModel):
     new_owner_id: UUID
 
@@ -216,6 +223,45 @@ def hosted_workspaces(request: Request):
         for item in items:
             item["member_role"] = roles.get(item["workspace_id"])
         return {"items": items}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+@app.patch("/api/hosted/workspaces/{workspace_id}/members/{member_id}/role")
+def hosted_update_workspace_member_role(
+    workspace_id: str,
+    member_id: UUID,
+    req: WorkspaceMemberRoleUpdateReq,
+    request: Request,
+):
+    """Allow only the current owner to promote or change a non-owner member role."""
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    user_id = request.state.hosted_user["user_id"]
+    if str(member_id) == str(user_id):
+        raise HTTPException(status_code=400, detail="The current owner role cannot be changed here")
+    try:
+        own_membership = client.select("workspace_members", {
+            "select": "role",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{user_id}",
+            "limit": "1",
+        }) or []
+        if not own_membership or own_membership[0].get("role") != "owner":
+            raise HTTPException(status_code=403, detail="Workspace owner permission required")
+        target = client.select("workspace_members", {
+            "select": "user_id",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{member_id}",
+            "limit": "1",
+        }) or []
+        if not target:
+            raise HTTPException(status_code=404, detail="Workspace member not found")
+        updated = client.update("workspace_members", {
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{member_id}",
+        }, {"role": req.role}) or []
+        return {"updated": bool(updated), "user_id": str(member_id), "role": req.role}
     except SupabaseRestError as exc:
         _hosted_rest_error(exc)
 
