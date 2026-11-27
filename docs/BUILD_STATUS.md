@@ -205,3 +205,12 @@
 - Added regression coverage for failed-scan health publication, period continuation, same-second ordering, and retry behavior.
 - Exact PR #11 head `343654d8b2db8d9d2e070cb3b7b4336eb06e9a49` passed GitHub Actions [run 46038867728](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46038867728): **339 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, and Playwright browser interaction smoke.
 - This is code-level and CI verification only. The shared-trend migration is not applied; hosted trend worker remains disabled; no Vercel deployment or live database write was performed.
+
+
+### Hosted trend retry-cycle semantics — 2026-11-28
+
+- A failed daily or weekly scan now still attempts to publish its recorded scan-health metadata and does not prevent the other period from running.
+- The cycle is then marked failed so the outer opt-in worker loop waits for its configured polling interval and retries, rather than silently treating a failed scan as a successful cycle. Persistence failures are handled the same way.
+- Regression coverage verifies the failed scan is published, the other period still runs, and the failure is surfaced to the retry loop.
+- Exact application head `65679a02e62685383d6a8f3c1fc4ac4fdc99844a` passed GitHub Actions [run 46039354298](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46039354298): **339 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, and Playwright browser interaction smoke.
+- Worker remains disabled by default; no live Supabase schema/data write, migration, or worker activation was performed.
