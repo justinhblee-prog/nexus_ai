@@ -691,7 +691,23 @@ def hosted_workspace_trends(workspace_id: str, request: Request):
         }) or []
         if not memberships:
             raise HTTPException(status_code=404, detail="Workspace not found")
-        conn = trend_radar.init_radar_db()
+        # The hosted API runs on a read-only serverless filesystem. Never call
+        # init_radar_db() here: it creates directories/tables and writes schema.
+        # Read a bundled snapshot only when it exists; otherwise return a valid
+        # empty state until the shared trend store is moved to a hosted data source.
+        radar_db_path = getattr(trend_radar, "DB_PATH", "data/studio_data.db")
+        if not os.path.isfile(radar_db_path):
+            return {
+                "items": [],
+                "scan": {
+                    "status": "not_scanned",
+                    "completed_at": None,
+                    "item_count": 0,
+                },
+                "scope": "shared_public_signals",
+                "available": False,
+            }
+        conn = sqlite3.connect(f"file:{radar_db_path}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
         try:
             rows = conn.execute(
@@ -714,15 +730,22 @@ def hosted_workspace_trends(workspace_id: str, request: Request):
                 source_url = str(item.get("source_url") or "")
                 item["source_url"] = source_url if source_url.startswith("https://") else None
                 items.append(item)
-            scan = trend_radar.get_scan_status("daily")
+            scan_row = conn.execute(
+                """SELECT status, completed_at, item_count
+                   FROM radar_scans
+                   WHERE period_type='daily'
+                   ORDER BY started_at DESC
+                   LIMIT 1"""
+            ).fetchone()
             return {
                 "items": items,
                 "scan": {
-                    "status": scan.get("status") if scan else "not_scanned",
-                    "completed_at": scan.get("completed_at") if scan else None,
-                    "item_count": scan.get("item_count", 0) if scan else 0,
+                    "status": scan_row["status"] if scan_row else "not_scanned",
+                    "completed_at": scan_row["completed_at"] if scan_row else None,
+                    "item_count": scan_row["item_count"] if scan_row else 0,
                 },
                 "scope": "shared_public_signals",
+                "available": True,
             }
         finally:
             conn.close()
