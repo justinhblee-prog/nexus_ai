@@ -103,6 +103,17 @@
     function setBusy(form, busy) {
       form.querySelectorAll("button").forEach(button => { button.disabled = busy; });
     }
+    function clearHostedSession() {
+      activeAccessToken = null;
+      activeWorkspaceId = null;
+      activeWorkspaceRole = null;
+      sessionPanel.style.display = "none";
+      authForms.classList.remove("hidden");
+      document.getElementById("connections").replaceChildren();
+      document.getElementById("jobs").replaceChildren();
+      document.getElementById("workspace-select").replaceChildren();
+      document.getElementById("job-channel").replaceChildren();
+    }
     function selectTab(mode) {
       const signup = mode === "signup";
       document.getElementById("tab-signup").setAttribute("aria-selected", String(signup));
@@ -265,8 +276,7 @@
       const { data: { session }, error } = await supabase.auth.getSession();
       if (error) throw error;
       if (!session) {
-        sessionPanel.style.display = "none";
-        authForms.classList.remove("hidden");
+        clearHostedSession();
         return;
       }
       const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -331,31 +341,49 @@
     document.getElementById("workspace-select").addEventListener("change", async event => {
       const select = event.currentTarget;
       const selected = select.value;
-      const response = await fetch("/api/hosted/workspaces", {
-        headers: { Authorization: "Bearer " + activeAccessToken }
-      });
-      if (!response.ok) {
-        showMessage("워크스페이스 권한을 다시 확인하지 못했습니다.", "error");
-        return;
-      }
-      const workspaces = (await response.json()).items || [];
-      const workspace = workspaces.find(item => item.workspace_id === selected);
-      if (!workspace) {
-        showMessage("선택한 워크스페이스에 접근할 권한이 없습니다.", "error");
-        await loadSession();
-        return;
-      }
+      const previousWorkspaceId = activeWorkspaceId;
       select.disabled = true;
-      activeWorkspaceId = workspace.workspace_id;
-      activeWorkspaceRole = workspace.member_role;
-      document.getElementById("connect-youtube").hidden =
-        !(activeWorkspaceRole === "owner" || activeWorkspaceRole === "admin");
-      document.getElementById("connections").textContent = "워크스페이스 데이터를 불러오고 있습니다.";
-      document.getElementById("jobs").replaceChildren();
       try {
+        const response = await fetch("/api/hosted/workspaces", {
+          headers: { Authorization: "Bearer " + activeAccessToken }
+        });
+        if (!response.ok) throw new Error("워크스페이스 권한을 다시 확인하지 못했습니다.");
+        const workspaces = (await response.json()).items || [];
+        const workspace = workspaces.find(item => item.workspace_id === selected);
+        if (!workspace) {
+          await loadSession();
+          throw new Error("선택한 워크스페이스에 접근할 권한이 없습니다.");
+        }
+        activeWorkspaceId = workspace.workspace_id;
+        activeWorkspaceRole = workspace.member_role;
+        document.getElementById("connect-youtube").hidden =
+          !(activeWorkspaceRole === "owner" || activeWorkspaceRole === "admin");
+        document.getElementById("connections").textContent = "워크스페이스 데이터를 불러오고 있습니다.";
+        document.getElementById("jobs").replaceChildren();
         await loadConnections();
         showMessage("워크스페이스를 전환했습니다. 해당 워크스페이스의 채널과 작업만 표시됩니다.", "success");
       } catch (error) {
+        if (activeWorkspaceId !== previousWorkspaceId) {
+          activeWorkspaceId = previousWorkspaceId;
+          const previous = (await supabase.auth.getSession()).data.session;
+          if (previous) {
+            const membershipsResponse = await fetch("/api/hosted/workspaces", {
+              headers: { Authorization: "Bearer " + previous.access_token }
+            });
+            if (membershipsResponse.ok) {
+              const memberships = (await membershipsResponse.json()).items || [];
+              const oldWorkspace = memberships.find(item => item.workspace_id === previousWorkspaceId);
+              if (oldWorkspace) activeWorkspaceRole = oldWorkspace.member_role;
+            }
+          }
+          document.getElementById("connect-youtube").hidden =
+            !(activeWorkspaceRole === "owner" || activeWorkspaceRole === "admin");
+          try { await loadConnections(); } catch (_) {
+            document.getElementById("connections").textContent = "워크스페이스 데이터를 다시 불러오지 못했습니다.";
+            document.getElementById("jobs").replaceChildren();
+          }
+        }
+        select.value = activeWorkspaceId || "";
         showMessage(error.message || "워크스페이스 데이터를 불러오지 못했습니다.", "error");
       } finally {
         select.disabled = false;
@@ -529,18 +557,14 @@
       if (!supabase) return;
       const { error } = await supabase.auth.signOut();
       if (error) return showMessage(error.message || "로그아웃에 실패했습니다.", "error");
-      sessionPanel.style.display = "none";
-      authForms.classList.remove("hidden");
+      clearHostedSession();
       selectTab("login");
       showMessage("로그아웃했습니다.", "success");
     });
 
     if (supabase) {
       supabase.auth.onAuthStateChange((_event, session) => {
-        if (!session) {
-          sessionPanel.style.display = "none";
-          authForms.classList.remove("hidden");
-        }
+        if (!session) clearHostedSession();
       });
     }
   </script>
