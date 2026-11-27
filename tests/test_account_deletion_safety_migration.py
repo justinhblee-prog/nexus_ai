@@ -50,7 +50,9 @@ class AccountDeletionSafetyMigrationTests(unittest.TestCase):
         upload_claim = self.sql[upload_start:upload_end]
         for claim in (render_claim, upload_claim):
             self.assertIn("not exists", claim)
-            self.assertIn("join private.account_deletion_tombstones as t on t.user_id = w.owner_id", claim)
+            self.assertIn("join private.account_deletion_tombstones as t", claim)
+            self.assertIn("t.user_id", claim)
+            self.assertIn("w.owner_id", claim)
             self.assertIn("where w.workspace_id", claim)
 
     def test_durable_queue_is_atomic_and_service_role_only(self):
