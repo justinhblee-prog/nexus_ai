@@ -179,6 +179,17 @@ class SignedSessionTests(unittest.TestCase):
             ))
         self.assertEqual(response.status_code, 401)
 
+    def test_recent_password_amr_is_required_for_account_deletion(self):
+        self.assertTrue(self.api.has_recent_password_reauthentication(
+            {"amr": [{"method": "password", "timestamp": 950}]}, now=1000
+        ))
+        self.assertFalse(self.api.has_recent_password_reauthentication(
+            {"amr": [{"method": "token_refresh", "timestamp": 999}]}, now=1000
+        ))
+        self.assertFalse(self.api.has_recent_password_reauthentication(
+            {"amr": [{"method": "password", "timestamp": 399}]}, now=1000
+        ))
+
     def test_tombstoned_account_can_only_retry_account_deletion_request(self):
         async def next_response(_request):
             return Response(status_code=204)
