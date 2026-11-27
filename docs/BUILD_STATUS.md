@@ -8,9 +8,9 @@
 **IN PROGRESS · PR #11 Draft/Open**
 
 - 작업 브랜치: `feat/nexus-user-onboarding-web-oauth-20261127`
-- 최신 검증 커밋: `1e27338ce0277e443cc315ddef00efed53761ac3`
+- 최신 검증 커밋: `cd56a63ff8c85cf771c9c4684b01f3001123bcf8`
 - Pull Request: [#11 — User onboarding and hosted OAuth](https://github.com/justinhblee-prog/nexus_ai/pull/11)
-- 최신 CI: [run 46013800343](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46013800343) — **309 Python tests PASS**, Docker Compose 검증, Python 컴파일, 브라우저 JavaScript 구문, Playwright 브라우저 smoke 모두 통과.
+- 최신 CI: [run 46014117426](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46013800343) — **309 Python tests PASS**, Docker Compose 검증, Python 컴파일, 브라우저 JavaScript 구문, Playwright 브라우저 smoke 모두 통과.
 - Vercel 새 Preview 배포는 무료 플랜 일일 배포 한도 때문에 대기 중. 이전 Preview는 현재 PR head를 반영하지 않으므로 최신 화면으로 간주하지 않음.
 - Supabase 운영 프로젝트에는 이번 작업에서 DDL/마이그레이션을 적용하지 않음.
 
