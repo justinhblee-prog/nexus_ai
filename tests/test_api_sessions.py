@@ -164,6 +164,36 @@ class SignedSessionTests(unittest.TestCase):
         self.assertEqual(seen_requests[0].state.hosted_user["role"], "authenticated")
         self.assertEqual(denied.status_code, 401)
 
+    def test_tombstoned_hosted_account_is_rejected_before_route_execution(self):
+        async def next_response(_request):
+            return Response(status_code=204)
+        with patch.dict(os.environ, {"NEXUS_HOSTED_AUTH_ENABLED": "true"}), \
+             patch.object(self.api, "verify_access_token", return_value={
+                 "user_id": "11111111-1111-4111-8111-111111111111",
+                 "role": "authenticated",
+             }), patch.object(self.api, "SupabaseRestClient") as rest_client:
+            rest_client.return_value.rpc.return_value = True
+            response = asyncio.run(self.api.enforce_local_origin_and_session(
+                self._request("/api/hosted/session", authorization="Bearer valid.jwt.token"),
+                next_response,
+            ))
+        self.assertEqual(response.status_code, 401)
+
+    def test_hosted_account_status_check_fails_closed_when_tombstone_lookup_fails(self):
+        async def next_response(_request):
+            return Response(status_code=204)
+        with patch.dict(os.environ, {"NEXUS_HOSTED_AUTH_ENABLED": "true"}), \
+             patch.object(self.api, "verify_access_token", return_value={
+                 "user_id": "11111111-1111-4111-8111-111111111111",
+                 "role": "authenticated",
+             }), patch.object(self.api, "SupabaseRestClient") as rest_client:
+            rest_client.return_value.rpc.side_effect = self.api.SupabaseRestError(503, "unavailable")
+            response = asyncio.run(self.api.enforce_local_origin_and_session(
+                self._request("/api/hosted/session", authorization="Bearer valid.jwt.token"),
+                next_response,
+            ))
+        self.assertEqual(response.status_code, 503)
+
     def test_hosted_auth_config_is_public_but_legacy_auth_is_not_reused(self):
         async def next_response(_request):
             return Response(status_code=204)
