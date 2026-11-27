@@ -24,6 +24,12 @@ SESSION_TTL_SECONDS = 12 * 60 * 60
 def auth_is_configured() -> bool:
     return len(API_PASSWORD) >= 12 and len(SESSION_SECRET) >= 32
 
+
+def auth_is_required() -> bool:
+    """Require browser API authentication by default; only an explicit false opts out."""
+    configured = os.getenv("NEXUS_AUTH_ENABLED")
+    return configured is None or configured.strip().lower() not in ("0", "false", "no", "off")
+
 def create_session_cookie(now: int | None = None) -> str:
     if not auth_is_configured():
         raise RuntimeError('API session secrets are not configured')
@@ -70,11 +76,7 @@ async def enforce_local_origin_and_session(request, call_next):
     path = request.url.path
     public_paths = {"/api/session/status", "/api/session/login", "/api/session/logout"}
     protected = (path.startswith("/api/") and path not in public_paths) or path.startswith("/output/")
-    # Authentication is temporarily disabled for the local operator UI.
-    # Re-enable it later by setting NEXUS_AUTH_ENABLED=true; the signed-cookie
-    # implementation and login endpoints remain available for that transition.
-    auth_enabled = os.getenv("NEXUS_AUTH_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
-    if protected and auth_enabled:
+    if protected and auth_is_required():
         if not auth_is_configured():
             return JSONResponse(status_code=503, content={"detail": "Set NEXUS_API_PASSWORD and NEXUS_SESSION_SECRET to enable API authentication."})
         if not verify_session_cookie(request.cookies.get(SESSION_COOKIE_NAME)):
@@ -765,7 +767,7 @@ def serve_home():
 
 @app.get("/api/session/status")
 def session_status(request: Request):
-    return {"configured": auth_is_configured(), "authenticated": verify_session_cookie(request.cookies.get(SESSION_COOKIE_NAME))}
+    return {"configured": auth_is_configured(), "authenticated": verify_session_cookie(request.cookies.get(SESSION_COOKIE_NAME)), "required": auth_is_required()}
 
 def session_cookie_is_secure(request: Request) -> bool:
     """Use Secure cookies automatically on HTTPS while preserving local HTTP development."""
