@@ -3,7 +3,7 @@ import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-MIGRATION = ROOT / "supabase" / "migrations" / "20261127130000_nexus_auth_identity_foundation.sql"
+MIGRATION = ROOT / "supabase" / "migrations" / "20261127091116_nexus_auth_identity_foundation.sql"
 
 
 class SaaSIdentityMigrationContractTests(unittest.TestCase):
