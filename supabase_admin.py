@@ -350,7 +350,7 @@ class SupabaseAdminRestClient:
 
     def _account_workspace_ids(self, workspace_ids):
         ids = [str(item) for item in (workspace_ids or [])]
-        if len(ids) > 100 or any(not re.fullmatch(r"wsp_[0-9a-fA-F-]{36}", item) for item in ids):
+        if len(ids) > 100 or any(not re.fullmatch(r"wsp_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", item) for item in ids):
             raise ValueError("Workspace ID list is invalid")
         return ids
 
@@ -529,7 +529,7 @@ class SupabaseAdminRestClient:
             raise ValueError("User ID is invalid")
         workspace_values = [str(item) for item in (workspace_ids or [])]
         if len(workspace_values) > 100 or any(
-            not re.fullmatch(r"wsp_[0-9a-fA-F-]{36}", item)
+            not re.fullmatch(r"wsp_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", item)
             for item in workspace_values
         ):
             raise ValueError("Workspace Storage inventory request is invalid")
@@ -544,7 +544,7 @@ class SupabaseAdminRestClient:
     def list_account_deletion_active_leases(self, workspace_ids):
         """List unexpired render/upload leases for workspaces scheduled for deletion."""
         ids = [str(value) for value in workspace_ids]
-        if len(ids) > 100 or any(not re.fullmatch(r"wsp_[0-9a-fA-F-]{36}", value) for value in ids):
+        if len(ids) > 100 or any(not re.fullmatch(r"wsp_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", value) for value in ids):
             raise ValueError("Workspace lease inventory request is invalid")
         return self.rpc("list_account_deletion_active_leases", {
             "p_workspace_ids": ids,
@@ -638,7 +638,7 @@ class SupabaseAdminRestClient:
     def list_youtube_connections_for_workspaces(self, workspace_ids):
         """List workspace-scoped YouTube connection metadata, never token material."""
         ids = [str(value) for value in workspace_ids]
-        if len(ids) > 100 or any(not re.fullmatch(r"wsp_[0-9a-fA-F-]{36}", value) for value in ids):
+        if len(ids) > 100 or any(not re.fullmatch(r"wsp_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", value) for value in ids):
             raise ValueError("Workspace connection inventory request is invalid")
         if not ids:
             return []
@@ -656,7 +656,7 @@ class SupabaseAdminRestClient:
     def has_active_connection_outside_workspaces(self, provider_account_id, workspace_ids):
         """Check whether a provider grant is still used outside workspaces being deleted."""
         ids = [str(value) for value in workspace_ids]
-        if len(ids) > 100 or any(not re.fullmatch(r"wsp_[0-9a-fA-F-]{36}", value) for value in ids):
+        if len(ids) > 100 or any(not re.fullmatch(r"wsp_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", value) for value in ids):
             raise ValueError("Workspace connection inventory request is invalid")
         if not provider_account_id:
             return False
