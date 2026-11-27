@@ -123,5 +123,23 @@ class SupabaseRestClientTests(unittest.TestCase):
             client.count("private.youtube_oauth_credentials", {"select": "*"})
 
 
+    def test_topic_queue_delete_is_allowed_and_uses_user_jwt(self):
+        http = Mock()
+        http.return_value = Mock(status_code=204)
+        client = SupabaseRestClient("verified.user.jwt", env=ENV, http_request=http)
+        result = client.delete("shorts_topic_queue", {
+            "topic_id": "eq.11111111-1111-4111-8111-111111111111",
+            "workspace_id": "eq.wsp_11111111-1111-4111-8111-111111111111",
+            "user_id": "eq.22222222-2222-4222-8222-222222222222",
+        })
+        self.assertIsNone(result)
+        args, kwargs = http.call_args
+        self.assertEqual(args[0], "DELETE")
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer verified.user.jwt")
+        self.assertEqual(kwargs["params"]["workspace_id"], "eq.wsp_11111111-1111-4111-8111-111111111111")
+        self.assertEqual(kwargs["params"]["user_id"], "eq.22222222-2222-4222-8222-222222222222")
+
+
+
 if __name__ == "__main__":
     unittest.main()
