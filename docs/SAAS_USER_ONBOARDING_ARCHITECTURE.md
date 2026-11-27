@@ -26,7 +26,8 @@ Target: `feat/nexus-user-onboarding-web-oauth-20261127`, based on the current fu
 - Added private `youtube_oauth_credentials` and `youtube_oauth_states` tables with RLS enabled, no client grants, and no client policies (intentional deny-by-default).
 - Added an AES-256-GCM token vault with authenticated associated data, ciphertext-only storage, strict 32-byte key validation, and versioned key rotation. Encryption keys are server-only environment values and are never committed.
 - Added server-only Supabase admin access and RPCs for one-time OAuth state consumption and private credential read/write/delete. RPC execution is explicitly denied to `anon` and `authenticated` and granted only to `service_role`.
-- Added Google Web OAuth helpers for PKCE, offline consent, exact callback URI, channel identity lookup from YouTube API, and provider token revocation.
+- Added Google Web OAuth helpers for PKCE, offline consent, exact callback URI, Google account identity lookup, all-channel discovery from YouTube API, and provider token revocation.
+- Stored one encrypted refresh token per Google account/workspace connection and linked every discovered channel to that connection. Disconnect revokes the Google grant only when no other active workspace connection uses the same Google account.
 - Added API routes for owner/admin YouTube connect initiation, public one-time callback, channel listing, and disconnect/revoke. The callback binds Google identity to the workspace from the consumed server-side state and encrypts refresh tokens before persistence.
 - Added role-aware RLS for owner/admin/editor/viewer access, restricted column-level mutation grants, and a trigger that permits approval-status changes only by workspace owners/admins.
 - Enforced private-only upload privacy and disallowed approved/uploading/published job stages until approval is recorded; published jobs also require provider video ID and upload timestamp.
