@@ -359,7 +359,7 @@ BEGIN
   RETURN QUERY
   WITH candidate AS (
     SELECT r.user_id FROM private.account_deletion_requests r
-    WHERE r.sessions_revoked = true AND ((r.status IN ('pending','retry') AND r.next_attempt_at <= now())
+    WHERE r.sessions_revoked = true AND ((r.status IN ('pending','retry','blocked') AND r.next_attempt_at <= now())
        OR (r.status='running' AND r.lease_until < now()))
     ORDER BY r.requested_at FOR UPDATE SKIP LOCKED LIMIT 1
   )
@@ -420,7 +420,7 @@ BEGIN
  END IF;
  UPDATE private.account_deletion_requests
  SET status=p_status,phase=p_phase,last_error_code=p_error_code,
-     next_attempt_at=CASE WHEN p_status='retry' THEN now()+make_interval(secs=>p_retry_seconds) ELSE next_attempt_at END,
+     next_attempt_at=CASE WHEN p_status IN ('retry','blocked') THEN now()+make_interval(secs=>p_retry_seconds) ELSE next_attempt_at END,
      lease_owner=NULL,lease_until=NULL,updated_at=now(),
      completed_at=CASE WHEN p_status='completed' THEN now() ELSE NULL END
  WHERE user_id=p_user_id AND status='running' AND lease_owner=p_worker_id;
