@@ -1,0 +1,25 @@
+services:
+  shorts-center:
+    build: .
+    container_name: nexus_ai_shorts_center
+    environment:
+      NEXUS_API_PASSWORD: ${NEXUS_API_PASSWORD:-}
+      NEXUS_SESSION_SECRET: ${NEXUS_SESSION_SECRET:-}
+      NEXUS_COOKIE_SECURE: ${NEXUS_COOKIE_SECURE:-false}
+    ports:
+      - "127.0.0.1:${NEXUS_STREAMLIT_HOST_PORT:-28502}:8502"
+      - "127.0.0.1:${NEXUS_API_HOST_PORT:-28503}:8503"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8503/api/session/status', timeout=3); urllib.request.urlopen('http://127.0.0.1:8502/_stcore/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    volumes:
+      - .:/app
+    command: sh -c "uvicorn api_server:app --host 0.0.0.0 --port 8503 & exec streamlit run app.py --server.port=8502 --server.address=0.0.0.0"
+    restart: unless-stopped

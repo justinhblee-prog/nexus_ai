@@ -1,0 +1,31 @@
+name: Shorts runtime checks
+
+on:
+  pull_request:
+    branches: [main, fix/shorts-runtime-security-bootstrap]
+  push:
+    branches:
+      - "fix/shorts-runtime-security-bootstrap"
+
+jobs:
+  python-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install lightweight test dependency
+        run: python -m pip install requests fastapi
+      - name: Validate Docker Compose configuration
+        run: docker compose config --quiet
+      - name: Compile application modules
+        run: python -m compileall -q api_server.py app.py streamlit_auth.py audit_log.py video_qa.py upload_safety.py review_workflow.py script_templates.py trend_radar.py video_maker.py yt_uploader.py
+      - name: Verify local authentication setup files
+        run: test -f .env.example && test -f docs/LOCAL_API_AUTH_SETUP.md
+      - name: Validate browser studio JavaScript syntax
+        run: |
+          python -c "from pathlib import Path; import re; html=Path('index.html').read_text(encoding='utf-8'); scripts=re.findall(r'<script>(.*?)</script>', html, re.S); assert scripts; Path('/tmp/nexus-studio.js').write_text(scripts[-1], encoding='utf-8')"
+          node --check /tmp/nexus-studio.js
+      - name: Run radar, queue, authentication, and audit-log tests
+        run: python -m unittest discover -s tests -v

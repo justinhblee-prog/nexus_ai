@@ -33,3 +33,25 @@ google-services.json
 
 # Android Profiling
 *.hprof
+.env
+.env.*
+**/tokens/
+**/client_secret.json
+**/credentials.json
+**/.credentials
+**/.credentials_rsaparams
+**/actions-runner/
+**/data/
+**/output/
+**/uploads/
+**/__pycache__/
+**/.venv/
+**/venv/
+**/node_modules/
+*.sqlite
+*.sqlite3
+*.db
+*.pem
+*.key
+*.p12
+*.pfx

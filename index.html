@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NEXUS STUDIO PRO</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #050811; color: #F8FAFC; font-family: 'Malgun Gothic', sans-serif; line-height: 1.5; }
+    header { position: sticky; top: 0; z-index: 40; height: 64px; background: #050811; border-bottom: 1px solid #1E293B; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; }
+    .logo { width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, #2563EB, #06B6D4); display: flex; align-items: center; justify-content: center; font-weight: 900; color: #fff; }
+    .live-badge { padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 700; background: rgba(16,185,129,0.15); color: #34D399; border: 1px solid rgba(16,185,129,0.4); margin-left: 6px; }
+    .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    select, input, textarea { background: #060A14; color: #F8FAFC; border: 1px solid #1E293B; border-radius: 10px; padding: 8px 12px; font-size: 13px; outline: none; }
+    button { border: none; border-radius: 10px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; color: #fff; }
+    .btn-blue { background: #2563EB; } .btn-green { background: #059669; } .btn-purple { background: #7C3AED; }
+    .btn-dark { background: #060A14; color: #94A3B8; border: 1px solid #1E293B; }
+    .btn-red { background: rgba(225,29,72,0.2); color: #FB7185; border: 1px solid rgba(225,29,72,0.4); }
+    main { max-width: 1380px; margin: 0 auto; padding: 24px; display: flex; flex-direction: column; gap: 24px; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+    .card { background: #0B101D; border: 1px solid #1E293B; border-radius: 16px; padding: 20px; }
+    .inset { background: #060A14; border: 1px solid #1E293B; border-radius: 12px; padding: 16px; }
+    .radar-layout { display: grid; grid-template-columns: 320px 1fr; gap: 20px; }
+    .radar-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; max-height: 520px; overflow-y: auto; }
+    .r-card { background: #060A14; border: 1px solid #1E293B; border-radius: 12px; padding: 14px; cursor: pointer; display: flex; flex-direction: column; gap: 8px; }
+    .r-card:hover { border-color: #38BDF8; }
+    .badge { padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; }
+    .b-gold { background: rgba(245,158,11,0.2); color: #FCD34D; } .b-blue { background: rgba(59,130,246,0.2); color: #7DD3FC; } .b-ch { background: #1E293B; color: #CBD5E1; }
+    .studio-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+    .work-grid { display: grid; grid-template-columns: 340px 1fr 250px; gap: 16px; }
+    .job-item { background: #060A14; border: 1px solid #1E293B; border-radius: 10px; padding: 12px; cursor: pointer; display: flex; gap: 10px; margin-bottom: 8px; }
+    .job-item.active { border-color: #38BDF8; background: rgba(30,58,138,0.2); }
+    .bar-bg { width: 100%; height: 6px; background: #1E293B; border-radius: 99px; overflow: hidden; margin-top: 4px; }
+    .bar-fill { height: 100%; background: linear-gradient(90deg, #2563EB, #10B981); }
+    @keyframes spin360 { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .spin { display: inline-block; animation: spin360 0.8s linear infinite; }
+    .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
+    .modal-bg.open { display: flex; }
+    .auth-overlay { position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(2,6,18,.96); }
+    .auth-overlay[hidden] { display:none; }
+    .auth-card { width:min(420px,100%); background:#0B101D; border:1px solid #24334D; border-radius:16px; padding:26px; box-shadow:0 24px 80px rgba(0,0,0,.5); }
+    .auth-card input { width:100%; margin:14px 0 10px; }
+    .auth-error { min-height:20px; color:#FDA4AF; font-size:12px; }
+    .ops-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(155px,1fr)); gap:10px; }
+    .ops-metric { background:#060A14; border:1px solid #1E293B; border-radius:12px; padding:14px; }
+    .ops-metric .label { color:#94A3B8; font-size:11px; font-weight:700; }
+    .ops-metric .value { color:#F8FAFC; font-size:24px; font-weight:900; margin-top:4px; }
+    .event-list { display:flex; flex-direction:column; gap:8px; margin-top:12px; }
+    .event-row { display:flex; justify-content:space-between; align-items:center; gap:12px; background:#060A14; border:1px solid #1E293B; border-radius:9px; padding:10px 12px; font-size:12px; }
+    .event-name { color:#E2E8F0; font-weight:700; }
+    .event-meta { color:#64748B; text-align:right; font-size:11px; }
+    @media (max-width:760px) { main { padding:14px; } header { padding:0 14px; height:auto; min-height:64px; } .work-grid { grid-template-columns:1fr; } .radar-layout { grid-template-columns:1fr; } }
+
+:root{--bg:#fff;--surface:#fff;--panel:#f7f7f7;--text:#111;--muted:#666;--line:#dedede;--accent:#111;--soft:#eee;--shadow:0 8px 28px rgba(0,0,0,.04)}
+body{background:var(--bg);color:var(--text);font-family:Inter,Pretendard,'Malgun Gothic',sans-serif}
+header{background:var(--surface);color:var(--text);border-color:var(--line)}
+.logo{background:#111;color:#fff}
+.live-badge{background:var(--soft);color:var(--text);border-color:var(--line)}
+select,input,textarea{background:var(--surface);color:var(--text);border-color:var(--line)}
+.btn-blue,.btn-green,.btn-purple{background:var(--accent);color:var(--bg)}
+.btn-dark{background:var(--surface);color:var(--text);border-color:var(--line)}
+.btn-red{background:var(--soft);color:var(--text);border-color:var(--line)}
+.card,.inset,.r-card,.job-item,.ops-metric,.event-row{background:var(--surface);color:var(--text);border-color:var(--line);box-shadow:var(--shadow)}
+.inset{background:var(--panel)}.bar-bg{background:var(--line)}.bar-fill{background:var(--accent)}
+.auth-overlay{background:rgba(255,255,255,.97)}.auth-card{background:#fff;color:#111;border-color:#ddd}
+.nexus-shell{display:grid;grid-template-columns:238px minmax(0,1fr);min-height:calc(100vh - 64px)}
+.nexus-sidebar{position:sticky;top:64px;height:calc(100vh - 64px);border-right:1px solid var(--line);background:var(--surface);padding:20px 13px;display:flex;flex-direction:column;gap:20px}
+.side-brand{font-size:11px;letter-spacing:1.5px;font-weight:900;color:var(--muted);padding:0 12px}
+.side-nav{display:flex;flex-direction:column;gap:5px}.side-nav button{width:100%;text-align:left;background:transparent;color:var(--muted);border:1px solid transparent;padding:12px;border-radius:10px}
+.side-nav button.active{background:var(--soft);color:var(--text);border-color:var(--line)}
+.side-foot{margin-top:auto;padding:12px;color:var(--muted);font-size:11px;border-top:1px solid var(--line)}
+.workspace{min-width:0;padding:24px;display:flex;flex-direction:column;gap:20px}
+.workspace-view{display:none;flex-direction:column;gap:20px;min-width:0}.workspace-view.active{display:flex}
+.workspace-heading{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
+.workspace-heading h1{font-size:26px;letter-spacing:-.8px}.eyebrow{font-size:10px;letter-spacing:1.5px;font-weight:900;color:var(--muted);margin-bottom:6px}
+.dash-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr);gap:16px}
+.chart-card{min-height:260px}.chart-card canvas{width:100%;height:190px;display:block}
+.mix-list{display:flex;flex-direction:column;gap:14px;margin-top:18px}.mix-row{display:grid;grid-template-columns:38px 1fr 38px;gap:10px;align-items:center;font-size:12px}
+.mix-track{height:8px;border-radius:9px;background:var(--line);overflow:hidden}.mix-track i{display:block;height:100%;background:var(--accent)}
+.queue-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.queue-tile{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--panel)}.queue-tile strong{display:block;font-size:22px;margin-top:5px}
+[data-theme="ocean"]{--bg:#071426;--surface:#0d2038;--panel:#102944;--text:#edf5ff;--muted:#9bb2cc;--line:#25415e;--accent:#4d9cff;--soft:#183958;--shadow:none}
+[data-theme="forest"]{--bg:#071b16;--surface:#0d281f;--panel:#12362a;--text:#e8fff4;--muted:#9ac8b2;--line:#285341;--accent:#36c995;--soft:#174333;--shadow:none}
+[data-theme="coral"]{--bg:#211e1e;--surface:#2c2828;--panel:#373131;--text:#fff5f1;--muted:#c4b0aa;--line:#514544;--accent:#ff806e;--soft:#513832;--shadow:none}
+[data-theme="violet"]{--bg:#111326;--surface:#191c35;--panel:#222746;--text:#f0f1ff;--muted:#a9afd2;--line:#393f69;--accent:#9296ff;--soft:#30365d;--shadow:none}
+[data-theme="ocean"] .logo,[data-theme="forest"] .logo,[data-theme="coral"] .logo,[data-theme="violet"] .logo{background:var(--accent);color:#08111f}
+[data-theme="ocean"] .btn-blue,[data-theme="forest"] .btn-blue,[data-theme="coral"] .btn-blue,[data-theme="violet"] .btn-blue{background:var(--accent);color:#08111f}
+:root{--accent:#111}
+[data-layout="creator"] .dash-grid{grid-template-columns:minmax(0,1.1fr) minmax(300px,1fr)}
+[data-layout="creator"] .workspace-view[data-workspace="dashboard"] .queue-list{grid-template-columns:repeat(2,minmax(0,1fr))}
+[data-layout="global"] .dash-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+[data-layout="global"] .workspace-view[data-workspace="dashboard"] .chart-card:first-child{grid-column:1/-1}
+[data-layout="global"] .workspace-view[data-workspace="dashboard"] .chart-card:first-child canvas{height:230px}
+[data-layout="executive"] .workspace-view[data-workspace="dashboard"] .workspace-heading{padding:22px;border:1px solid var(--line);border-radius:16px;background:var(--panel)}
+[data-layout="executive"] .workspace-view[data-workspace="dashboard"] .queue-list{grid-template-columns:repeat(4,minmax(0,1fr))}
+[data-layout="intelligence"] .dash-grid{grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr)}
+[data-density="compact"] .workspace{gap:12px;padding:16px}
+[data-density="compact"] .card{padding:14px}
+[data-density="spacious"] .workspace{gap:28px;padding:32px}
+[data-density="spacious"] .card{padding:26px}
+.theme-select{max-width:180px}
+@media(max-width:760px){[data-layout] .dash-grid{grid-template-columns:1fr}[data-layout="global"] .workspace-view[data-workspace="dashboard"] .chart-card:first-child{grid-column:auto}}
+@media(max-width:900px){.nexus-shell{grid-template-columns:1fr}.nexus-sidebar{position:relative;top:auto;height:auto;padding:10px 12px;border-right:0;border-bottom:1px solid var(--line)}.side-brand,.side-foot{display:none}.side-nav{flex-direction:row;overflow-x:auto}.side-nav button{white-space:nowrap;width:auto}.workspace{padding:15px}.dash-grid{grid-template-columns:1fr}}
+
+  </style>
+</head>
+<body>
+  <div id="auth-overlay" class="auth-overlay">
+    <form class="auth-card" onsubmit="event.preventDefault(); loginStudio();">
+      <div style="font-size:11px;font-weight:800;color:#38BDF8;letter-spacing:1px;">NEXUS STUDIO PRO · SECURE SESSION</div>
+      <h2 style="font-size:21px;margin-top:10px;">관리자 로그인</h2>
+      <p style="font-size:12px;color:#94A3B8;margin-top:8px;">로컬 운영 비밀번호를 입력해 스튜디오 세션을 시작하세요.</p>
+      <input id="auth-password" type="password" autocomplete="current-password" placeholder="운영 비밀번호" required />
+      <button id="auth-submit" type="submit" class="btn-blue" style="width:100%;">안전하게 로그인</button>
+      <div id="auth-error" class="auth-error"></div>
+    </form>
+  </div>
+  <header>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div class="logo">N</div>
+      <div>
+        <div style="font-weight:900;font-size:15px;">NEXUS STUDIO PRO <span class="live-badge">● LIVE NEURAL</span></div>
+        <div style="font-size:11px;color:#94A3B8;">GLOBAL COMMAND CENTER V5.0</div>
+      </div>
+    </div>
+    <div class="controls">
+      <button onclick="logoutStudio()" class="btn-dark">로그아웃</button>
+      <select id="scan-interval" onchange="changeInterval(this.value)"><option value="1">1분마다</option><option value="5" selected>5분마다</option><option value="15">15분마다</option></select>
+      <button onclick="forceScan()" id="btn-scan" class="btn-blue"><span id="scan-arrow">↻</span> <span id="scan-label">즉시 재스캔</span></button>
+    </div>
+  </header>
+  <main>
+    <section class="kpi-grid">
+      <div class="card"><div style="font-size:12px;color:#94A3B8;">Videos in Pipeline</div><div id="kpi-trends" style="font-size:30px;font-weight:900;margin-top:6px;">0</div></div>
+      <div class="card"><div style="font-size:12px;color:#94A3B8;">Scripts Ready</div><div id="kpi-growth" style="font-size:30px;font-weight:900;margin-top:6px;color:#34D399;">+0%</div></div>
+      <div class="card"><div style="font-size:12px;color:#94A3B8;">Scheduled Posts</div><div id="kpi-channels" style="font-size:30px;font-weight:900;margin-top:6px;">0</div></div>
+      <div class="card"><div style="font-size:12px;color:#94A3B8;">Avg. Engagement</div><div id="kpi-jobs" style="font-size:30px;font-weight:900;margin-top:6px;color:#FBBF24;">0 / 0</div></div>
+    </section>
+    <section class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+        <div><div style="font-size:11px;font-weight:800;color:#38BDF8;">LIVE OPERATIONS</div><h2 style="font-size:18px;font-weight:800;">자동화 운영 현황 & 작업 이벤트</h2></div>
+        <span id="ops-updated" style="font-size:11px;color:#64748B;">상태 확인 대기</span>
+      </div>
+      <div id="ops-metrics" class="ops-grid">
+        <div class="ops-metric"><div class="label">제작 큐 대기</div><div class="value">—</div></div>
+        <div class="ops-metric"><div class="label">실행 중</div><div class="value">—</div></div>
+        <div class="ops-metric"><div class="label">실패 격리</div><div class="value">—</div></div>
+        <div class="ops-metric"><div class="label">검수 대기</div><div class="value">—</div></div>
+        <div class="ops-metric"><div class="label">최근 24시간 이벤트</div><div class="value">—</div></div>
+      </div>
+      <div id="ops-events" class="event-list"><div style="color:#64748B;font-size:12px;">아직 기록된 이벤트가 없습니다.</div></div>
+      <div style="font-size:12px;font-weight:800;color:#38BDF8;margin-top:18px;">트렌드 수집 소스 상태</div>
+      <div id="ops-sources" class="event-list"><div style="color:#64748B;font-size:12px;">수집 상태 확인 대기</div></div>
+    </section>
+    <section class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1E293B;padding-bottom:16px;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <div><div style="font-size:11px;font-weight:800;color:#38BDF8;">GLOBAL NEURAL RADAR</div><h2 style="font-size:19px;font-weight:800;">글로벌 신경망 트렌드 레이더 & 국가별 TOP 10</h2></div>
+        <div class="controls">
+          <button onclick="switchPeriod('daily')" id="tab-daily" class="btn-blue">일간 편성</button>
+          <button onclick="switchPeriod('weekly')" id="tab-weekly" class="btn-dark">주간 편성</button>
+          <button onclick="triggerTop3Auto()" class="btn-green">⚡ TOP 3 즉시 자동 제작</button>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+        <div class="controls">
+          <button onclick="setRankFilter('TOP10')" data-rf="TOP10" class="rf-btn btn-blue">🏆 글로벌 종합 TOP 10</button>
+          <button onclick="setRankFilter('KR')" data-rf="KR" class="rf-btn btn-dark">🇰🇷 한국 TOP 10</button>
+          <button onclick="setRankFilter('US')" data-rf="US" class="rf-btn btn-dark">🇺🇸 미국 TOP 10</button>
+          <button onclick="setRankFilter('JP')" data-rf="JP" class="rf-btn btn-dark">🇯🇵 일본 TOP 10</button>
+          <button onclick="setRankFilter('GB')" data-rf="GB" class="rf-btn btn-dark">🇬🇧 영국 TOP 10</button>
+        </div>
+        <div id="radar-count-label" style="font-size:12px;color:#94A3B8;font-weight:700;">0건 표시 중</div>
+      </div>
+      <div class="radar-layout">
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <div class="inset"><div style="font-size:12px;font-weight:700;margin-bottom:10px;">권역별 트렌드 포착 비중</div><div id="region-bars" style="display:flex;flex-direction:column;gap:10px;font-size:12px;"></div></div>
+          <div class="inset"><div style="font-size:12px;font-weight:700;">평균 바이럴 적합도</div><div style="font-size:28px;font-weight:900;color:#38BDF8;margin:4px 0;"><span id="avg-viral-score">0</span> / 100</div><div class="bar-bg"><div id="avg-viral-bar" class="bar-fill" style="width:0%"></div></div></div>
+        </div>
+        <div id="radar-grid" class="radar-cards"></div>
+      </div>
+    </section>
+    <section class="studio-grid">
+      <div class="card" style="display:flex;flex-direction:column;gap:10px;"><h3 style="font-size:15px;font-weight:800;">🎬 단건 AI 아나운서 영상 제작</h3><select id="single-channel" style="width:100%;"></select><input id="single-topic" type="text" placeholder="주제 입력" style="width:100%;" /><button onclick="createSingleVideo()" class="btn-blue" style="width:100%;">아나운서 숏폼 즉시 생성</button></div>
+      <div class="card" style="display:flex;flex-direction:column;justify-content:space-between;gap:10px;"><div><h3 style="font-size:15px;font-weight:800;">⚡ 전 채널 일괄 제작</h3><p style="font-size:12px;color:#94A3B8;margin-top:6px;">10개 채널 전용 남성·여성 아나운서 음성과 페르소나로 동시 제작합니다.</p></div><button onclick="createAllVideos()" class="btn-purple" style="width:100%;">전 채널 일괄 실행</button></div>
+      <div class="card" style="display:flex;flex-direction:column;gap:10px;"><h3 style="font-size:15px;font-weight:800;">💾 원격 자동 제작 큐 (topics.txt)</h3><textarea id="queue-text" rows="3" style="width:100%;"></textarea><button onclick="saveCloudQueue()" class="btn-green" style="width:100%;">큐 저장</button></div>
+    </section>
+    <section class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1E293B;padding-bottom:16px;margin-bottom:16px;">
+        <h2 style="font-size:19px;font-weight:800;">3단 검수 & YouTube 비공개 안전 배포</h2>
+        <div class="controls"><label style="font-size:12px;cursor:pointer;"><input type="checkbox" id="chk-select-all" onchange="toggleSelectAll(this.checked)"> 전체 선택</label><button onclick="bulkDeleteJobs()" class="btn-red">🗑️ 선택 삭제 (<span id="selected-count">0</span>)</button></div>
+      </div>
+      <div class="work-grid">
+        <div id="job-list" style="max-height:480px;overflow-y:auto;"></div>
+        <div class="inset" style="display:flex;flex-direction:column;gap:12px;">
+          <div style="display:flex;justify-content:space-between;font-size:12px;"><span id="editor-channel" style="font-weight:800;color:#38BDF8;">선택된 작업 없음</span><span id="editor-stage" style="color:#94A3B8;">-</span></div>
+          <input id="editor-title" type="text" style="width:100%;font-weight:700;" />
+          <textarea id="editor-script" rows="9" style="width:100%;line-height:1.6;"></textarea>
+          <input id="reject-note" type="text" maxlength="2000" placeholder="반려 사유 (선택)" style="width:100%;" />
+          <div style="display:flex;gap:8px;"><button onclick="saveJobEdit()" class="btn-dark" style="flex:1;">💾 수정 저장</button><button onclick="rejectJob()" id="btn-reject" class="btn-red" style="flex:1;">↩ 반려 및 수정 요청</button><button onclick="approveUpload()" id="btn-approve" class="btn-green" style="flex:1;">✅ 최종 승인 및 업로드</button></div>
+        </div>
+        <div class="inset" style="display:flex;flex-direction:column;align-items:center;justify-content:center;"><div style="font-size:12px;font-weight:700;margin-bottom:8px;">9:16 실물 프리뷰</div><video id="preview-video" style="width:210px;aspect-ratio:9/16;border-radius:16px;background:#000;" controls playsinline></video></div>
+      </div>
+    </section>
+  </main>
+  <div id="radar-modal" class="modal-bg">
+    <div class="card" style="max-width:540px;width:100%;display:flex;flex-direction:column;gap:14px;">
+      <div style="display:flex;justify-content:space-between;"><h3 id="mod-title" style="font-size:17px;font-weight:800;"></h3><button onclick="closeModal()" class="btn-dark" style="padding:4px 10px;">✕</button></div>
+      <div class="inset" style="display:flex;justify-content:space-between;align-items:center;"><span id="mod-source" style="font-size:12px;font-weight:800;color:#38BDF8;"></span><a id="mod-url" href="#" target="_blank" style="background:#1E293B;color:#fff;text-decoration:none;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;">원문 출처 페이지 열기 ↗</a></div>
+      <div class="inset" style="font-size:12px;"><div>동일 카테고리 평균 조회수: <strong id="mod-avg-views"></strong></div><div style="color:#34D399;margin-top:4px;">포착 트렌드 추정 파급력: <strong id="mod-est-views"></strong></div></div>
+      <p id="mod-reason" class="inset" style="font-size:12px;"></p>
+      <div style="display:flex;gap:10px;"><button onclick="closeModal()" class="btn-dark" style="flex:1;">닫기</button><button onclick="produceFromModal()" class="btn-blue" style="flex:1;">🚀 이 근거로 AI 쇼츠 즉시 제작</button></div>
+    </div>
+  </div>
+  <script>
+
+const NEXUS_THEMES=["mono","ocean","forest","violet","coral"];
+const NEXUS_LAYOUTS=["intelligence","creator","global","executive"];
+function setTheme(t){if(!NEXUS_THEMES.includes(t))t="mono";document.documentElement.dataset.theme=t;const s=document.getElementById("nexus-theme");if(s)s.value=t;try{localStorage.setItem("nexus-theme",t)}catch(e){};renderDashboardData()}
+function setLayout(t){if(!NEXUS_LAYOUTS.includes(t))t="intelligence";document.documentElement.dataset.layout=t;const s=document.getElementById("nexus-layout");if(s)s.value=t;try{localStorage.setItem("nexus-layout",t)}catch(e){};renderDashboardData()}
+function setAccent(v){if(!/^#[0-9a-f]{6}$/i.test(v))return;document.documentElement.style.setProperty("--accent",v);try{localStorage.setItem("nexus-accent",v)}catch(e){};renderDashboardData()}
+function setDensity(v){if(!["compact","comfortable","spacious"].includes(v))v="comfortable";document.documentElement.dataset.density=v;try{localStorage.setItem("nexus-density",v)}catch(e){}}
+function showWorkspace(n){document.querySelectorAll(".workspace-view").forEach(v=>v.classList.toggle("active",v.dataset.workspace===n));document.querySelectorAll(".side-nav button").forEach(b=>b.classList.toggle("active",b.dataset.workspace===n));if(n==="operations")loadOpsMetrics();if(n==="dashboard"||n==="analytics")renderDashboardData()}
+function renderDashboardData(){const jobs=allJobs||[],items=allRadarItems||[],regions=["KR","US","JP","GB"];const counts=[jobs.filter(j=>/대기|pending/i.test(j.stage)).length,jobs.filter(j=>/진행|running|생성/i.test(j.stage)).length,jobs.filter(j=>j.stage==="최종컨펌 대기").length,jobs.filter(j=>/Uploaded|완료/i.test(j.stage)).length];const labels=["제작 대기","제작 중","검수 대기","업로드 완료"];const tiles=labels.map((x,i)=>"<div class='queue-tile'><span style='color:var(--muted);font-size:11px'>"+x+"</span><strong>"+counts[i]+"</strong></div>").join("");["nexus-queue","nexus-analytics-queue"].forEach(id=>{const n=document.getElementById(id);if(n)n.innerHTML=tiles});const mix=regions.map(r=>{const c=items.filter(x=>x.region===r).length;return "<div class='mix-row'><b>"+r+"</b><div class='mix-track'><i style='width:"+Math.round(c/Math.max(1,items.length)*100)+"%'></i></div><span>"+c+"</span></div>"}).join("");["nexus-mix","nexus-analytics-mix"].forEach(id=>{const n=document.getElementById(id);if(n)n.innerHTML=mix});const canvas=document.getElementById("nexus-chart");if(canvas){const ctx=canvas.getContext("2d"),w=canvas.width,h=canvas.height,style=getComputedStyle(document.documentElement);ctx.clearRect(0,0,w,h);ctx.strokeStyle=style.getPropertyValue("--line");for(let i=0;i<4;i++){ctx.beginPath();ctx.moveTo(40,20+i*58);ctx.lineTo(w-15,20+i*58);ctx.stroke()}const names=(allChannels||[]).map(c=>c.name).slice(0,8),vals=names.map(n=>jobs.filter(j=>j.channel_name===n).length),max=Math.max(1,...vals);if(vals.length){const gap=(w-70)/vals.length;vals.forEach((v,i)=>{const bh=v/max*145,x=48+i*gap;ctx.fillStyle=style.getPropertyValue("--accent");ctx.fillRect(x,h-28-bh,Math.max(12,gap-12),bh);ctx.fillStyle=style.getPropertyValue("--muted");ctx.font="11px sans-serif";ctx.fillText(names[i].slice(0,12),x,h-9)})}else{ctx.fillStyle=style.getPropertyValue("--muted");ctx.font="16px sans-serif";ctx.fillText("채널별 작업 데이터가 없습니다.",45,110)}}}
+function initNexusShell(){const old=document.querySelector("body > main");if(!old)return;const sections=[...old.children];const shell=document.createElement("div");shell.className="nexus-shell";const side=document.createElement("aside");side.className="nexus-sidebar";side.innerHTML="<div class='side-brand'>NEXUS / WORKSPACE</div><nav class='side-nav' aria-label='주 메뉴'></nav><div class='side-foot'>Human approval required<br>YouTube upload · Private by default</div>";const nav=side.querySelector("nav");const main=document.createElement("main");main.className="workspace";const names=[["dashboard","Dashboard","▦"],["studio","AI Content Studio","✦"],["discovery","Discovery","◎"],["review","Review","✓"],["publishing","Publishing","↗"],["analytics","Analytics","⌁"],["operations","Operations","⚙"]];const views={};names.forEach(([id,label,icon],i)=>{const b=document.createElement("button");b.type="button";b.dataset.workspace=id;b.textContent=icon+"  "+label;b.onclick=()=>showWorkspace(id);if(!i)b.className="active";nav.append(b);const v=document.createElement("section");v.className="workspace-view"+(!i?" active":"");v.dataset.workspace=id;const head=document.createElement("div");head.className="workspace-heading";head.innerHTML="<div><div class='eyebrow'>NEXUS STUDIO PRO</div><h1>"+label+"</h1></div>";v.append(head);main.append(v);views[id]=v});const put=(id,el)=>{if(el)views[id].append(el)};put("dashboard",sections[0]);const dash=document.createElement("div");dash.className="dash-grid";dash.innerHTML="<section class='card chart-card'><div class='eyebrow'>CHANNEL PERFORMANCE</div><h2>Global Trend Momentum</h2><canvas id='nexus-chart' width='900' height='230'></canvas></section><section class='card chart-card'><div class='eyebrow'>CONTENT MIX</div><h2>Regional Distribution</h2><div id='nexus-mix' class='mix-list'></div></section>";views.dashboard.append(dash);const q=document.createElement("section");q.className="card";q.innerHTML="<div class='eyebrow'>PRODUCTION QUEUE</div><h2 style='font-size:17px;margin-bottom:14px'>제작 파이프라인 현황</h2><div id='nexus-queue' class='queue-list'></div>";views.dashboard.append(q);put("operations",sections[1]);put("discovery",sections[2]);put("studio",sections[3]);put("review",sections[4]);const publish=document.createElement("section");publish.className="card";publish.innerHTML="<h2>Human approval · Private by default</h2><p style='color:var(--muted);margin-top:8px'>최종 검수 승인 후 YouTube 비공개 업로드를 진행합니다. 자동 공개 전환은 수행하지 않습니다.</p><button class='btn-dark' style='margin-top:14px' onclick='showWorkspace(\"review\")'>검수 대기열 열기</button>";views.publishing.append(publish);const analytics=document.createElement("div");analytics.className="dash-grid";analytics.innerHTML="<section class='card'><div class='eyebrow'>REGIONAL CONTENT MIX</div><div id='nexus-analytics-mix' class='mix-list'></div></section><section class='card'><div class='eyebrow'>PIPELINE SUMMARY</div><div id='nexus-analytics-queue' class='queue-list'></div></section>";views.analytics.append(analytics);old.replaceWith(shell);shell.append(side,main);const controls=document.querySelector("header .controls");if(controls){const sel=document.createElement("select");sel.id="nexus-theme";sel.className="theme-select";sel.setAttribute("aria-label","테마 선택");sel.innerHTML="<option value='mono'>Monochrome</option><option value='ocean'>Ocean Blue</option><option value='forest'>Forest Green</option><option value='coral'>Editorial Coral</option><option value='violet'>Indigo Violet</option>";sel.onchange=()=>setTheme(sel.value);controls.prepend(sel);const layout=document.createElement("select");layout.id="nexus-layout";layout.className="theme-select";layout.setAttribute("aria-label","대시보드 표현 방식");layout.innerHTML="<option value='intelligence'>A · Intelligence</option><option value='creator'>B · Creator</option><option value='global'>C · Global Analytics</option><option value='executive'>D · Executive</option>";layout.onchange=()=>setLayout(layout.value);controls.prepend(layout);const accent=document.createElement("input");accent.type="color";accent.id="nexus-accent";accent.title="강조 색상";accent.setAttribute("aria-label","강조 색상");accent.style.cssText="width:38px;height:34px;padding:2px;border-radius:8px";accent.oninput=()=>setAccent(accent.value);controls.prepend(accent);const density=document.createElement("select");density.id="nexus-density";density.className="theme-select";density.setAttribute("aria-label","화면 밀도");density.innerHTML="<option value='comfortable'>기본 밀도</option><option value='compact'>컴팩트</option><option value='spacious'>여유롭게</option>";density.onchange=()=>setDensity(density.value);controls.prepend(density)}let theme="mono",layoutMode="intelligence",densityMode="comfortable",accentColor="#111111";try{theme=localStorage.getItem("nexus-theme")||theme;layoutMode=localStorage.getItem("nexus-layout")||layoutMode;densityMode=localStorage.getItem("nexus-density")||densityMode;accentColor=localStorage.getItem("nexus-accent")||accentColor}catch(e){}setTheme(theme);setLayout(layoutMode);setDensity(densityMode);setAccent(accentColor);const accentInput=document.getElementById("nexus-accent");if(accentInput)accentInput.value=accentColor}
+
+    let currentPeriod = "daily", currentRankFilter = "TOP10", allRadarItems = [], allJobs = [], allChannels = [], activeJobId = null, selectedModalItem = null;
+
+    let studioStarted = false, opsRefreshTimer = null;
+    async function checkSession() {
+      const overlay = document.getElementById("auth-overlay");
+      const error = document.getElementById("auth-error");
+      try {
+        const response = await fetch("/api/session/status", { credentials: "same-origin" });
+        const state = await response.json();
+        if (!state.configured) {
+          error.textContent = "서버 .env에 NEXUS_API_PASSWORD와 NEXUS_SESSION_SECRET을 설정해야 합니다.";
+          document.getElementById("auth-submit").disabled = true;
+          return;
+        }
+        if (state.authenticated) {
+          overlay.hidden = true;
+          startStudio();
+        } else {
+          overlay.hidden = false;
+          document.getElementById("auth-password").focus();
+        }
+      } catch (_) {
+        error.textContent = "인증 서버에 연결할 수 없습니다. API 컨테이너 상태를 확인하세요.";
+      }
+    }
+    async function loginStudio() {
+      const password = document.getElementById("auth-password").value;
+      const error = document.getElementById("auth-error");
+      const button = document.getElementById("auth-submit");
+      button.disabled = true;
+      error.textContent = "";
+      try {
+        const response = await fetch("/api/session/login", {
+          method: "POST", credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "로그인에 실패했습니다.");
+        document.getElementById("auth-password").value = "";
+        document.getElementById("auth-overlay").hidden = true;
+        startStudio();
+      } catch (err) {
+        error.textContent = err.message || "로그인에 실패했습니다.";
+      } finally { button.disabled = false; }
+    }
+    async function logoutStudio() {
+      await fetch("/api/session/logout", { method: "POST", credentials: "same-origin" });
+      studioStarted = false;
+      if (opsRefreshTimer !== null) { window.clearInterval(opsRefreshTimer); opsRefreshTimer = null; }
+      document.getElementById("auth-overlay").hidden = false;
+      document.getElementById("auth-password").focus();
+    }
+    function startStudio() {
+      if (studioStarted) return;
+      studioStarted = true;
+      loadRadar("daily");
+      loadOverview();
+      loadOpsMetrics();
+      if (opsRefreshTimer === null) opsRefreshTimer = window.setInterval(loadOpsMetrics, 15000);
+    }
+
+    function setScanningState(on) {
+      const a = document.getElementById("scan-arrow"), l = document.getElementById("scan-label"), b = document.getElementById("btn-scan");
+      if (on) { a.classList.add("spin"); l.textContent = "스캔 중..."; b.disabled = true; }
+      else { a.classList.remove("spin"); l.textContent = "즉시 재스캔"; b.disabled = false; }
+    }
+    async function loadRadar(p = currentPeriod) {
+      currentPeriod = p; setScanningState(true);
+      try { const r = await fetch("/api/radar/" + p); const d = await r.json(); allRadarItems = d.items || []; renderRadar(); }
+      finally { setScanningState(false); }
+    }
+    function setRankFilter(rf) {
+      currentRankFilter = rf;
+      document.querySelectorAll(".rf-btn").forEach(b => { b.className = b.dataset.rf === rf ? "rf-btn btn-blue" : "rf-btn btn-dark"; });
+      renderRadar();
+    }
+    function switchPeriod(p) {
+      document.getElementById("tab-daily").className = p === "daily" ? "btn-blue" : "btn-dark";
+      document.getElementById("tab-weekly").className = p === "weekly" ? "btn-blue" : "btn-dark";
+      loadRadar(p);
+    }
+    function renderRadar() {
+      document.getElementById("kpi-trends").textContent = allRadarItems.length;
+      if (allRadarItems.length > 0) {
+        const avgG = Math.round(allRadarItems.reduce((s, x) => s + (x.growth_pct || 0), 0) / allRadarItems.length);
+        const avgV = (allRadarItems.reduce((s, x) => s + (x.viral_score || 0), 0) / allRadarItems.length).toFixed(1);
+        document.getElementById("kpi-growth").textContent = "+" + avgG + "%";
+        document.getElementById("avg-viral-score").textContent = avgV;
+        document.getElementById("avg-viral-bar").style.width = Math.min(100, avgV) + "%";
+      }
+      const regs = [{c:"KR",n:"🇰🇷 한국"},{c:"US",n:"🇺🇸 미국"},{c:"JP",n:"🇯🇵 일본"},{c:"GB",n:"🇬🇧 영국"}];
+      const tot = Math.max(1, allRadarItems.length);
+      document.getElementById("region-bars").innerHTML = regs.map(r => {
+        const cnt = allRadarItems.filter(x => x.region === r.c).length;
+        const pct = Math.round((cnt / tot) * 100);
+        return "<div><div style='display:flex;justify-content:space-between;'><span>" + r.n + "</span><strong style='color:#38BDF8;'>" + cnt + "건 (" + pct + "%)</strong></div><div class='bar-bg'><div class='bar-fill' style='width:" + pct + "%'></div></div></div>";
+      }).join("");
+      let list = [...allRadarItems];
+      if (currentRankFilter === "TOP10") list = list.filter(x => x.is_global_top10 > 0).sort((a, b) => a.is_global_top10 - b.is_global_top10);
+      else list = list.filter(x => x.region === currentRankFilter).sort((a, b) => a.rank_no - b.rank_no);
+      document.getElementById("radar-count-label").textContent = "총 " + list.length + "건 순위 표시 중";
+      document.getElementById("radar-grid").innerHTML = list.map(it => {
+        const badge = currentRankFilter === "TOP10" ? "<span class='badge b-gold'>종합 #" + it.is_global_top10 + "</span>" : "<span class='badge b-blue'>" + it.region + " #" + it.rank_no + "</span>";
+        return "<div onclick='openRadarById(" + it.id + ")' class='r-card'><div style='display:flex;justify-content:space-between;'><div>" + badge + " <span class='badge b-ch'>" + it.matched_channel + "</span></div><span style='color:#34D399;font-size:12px;font-weight:800;'>⚡ " + it.viral_score + "점 · +" + it.growth_pct + "%</span></div><div style='font-size:14px;font-weight:700;'>" + it.topic + "</div><div style='display:flex;justify-content:space-between;font-size:11px;color:#94A3B8;border-top:1px solid #1E293B;padding-top:6px;'><span>출처: " + it.source_name + "</span><span style='color:#38BDF8;font-weight:700;'>상세·제작 ↗</span></div></div>";
+      }).join("");
+    }
+    function openRadarById(id) {
+      const it = allRadarItems.find(x => x.id === id); if (!it) return; selectedModalItem = it;
+      document.getElementById("mod-title").textContent = it.topic; document.getElementById("mod-source").textContent = it.source_name;
+      document.getElementById("mod-url").href = it.source_url; document.getElementById("mod-avg-views").textContent = Number(it.avg_cat_views).toLocaleString() + " 회";
+      document.getElementById("mod-est-views").textContent = Number(it.est_views).toLocaleString() + " 회 (+" + it.growth_pct + "%)";
+      document.getElementById("mod-reason").textContent = it.ai_reason; document.getElementById("radar-modal").classList.add("open");
+    }
+    function closeModal() { document.getElementById("radar-modal").classList.remove("open"); }
+    async function produceFromModal() {
+      if (!selectedModalItem) return;
+      const r = await fetch("/api/create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ channel_name: selectedModalItem.matched_channel, topic: selectedModalItem.topic }) });
+      closeModal(); alert((await r.json()).msg); setTimeout(loadOverview, 3000);
+    }
+    async function loadOpsMetrics() {
+      const metricsNode = document.getElementById("ops-metrics");
+      const eventsNode = document.getElementById("ops-events");
+      try {
+        const [metricsResponse, eventsResponse] = await Promise.all([
+          fetch("/api/ops/metrics", { credentials: "same-origin" }),
+          fetch("/api/events?limit=8", { credentials: "same-origin" })
+        ]);
+        if (!metricsResponse.ok || !eventsResponse.ok) throw new Error("운영 지표 조회 실패");
+        const m = await metricsResponse.json();
+        const events = (await eventsResponse.json()).items || [];
+        const queue = m.queue_by_status || {}, pipeline = m.pipeline_by_stage || {};
+        const sources = m.sources || [];
+        const sourceOk = sources.filter(source => source.last_status === "success").length;
+        const sourceFailed = sources.filter(source => source.last_status !== "success").length;
+        const cards = [
+          ["제작 큐 대기", queue.pending || 0],
+          ["실행 중", queue.running || 0],
+          ["실패 격리", queue.failed || 0],
+          ["검수 대기", pipeline["최종컨펌 대기"] || 0],
+          ["피드 정상 / 오류", sourceOk + " / " + sourceFailed],
+          ["최근 24시간 이벤트", m.events_last_24h || 0]
+        ];
+        metricsNode.replaceChildren();
+        cards.forEach(([label, value]) => {
+          const card = document.createElement("div"); card.className = "ops-metric";
+          const name = document.createElement("div"); name.className = "label"; name.textContent = label;
+          const number = document.createElement("div"); number.className = "value"; number.textContent = typeof value === "number" ? value.toLocaleString() : String(value);
+          card.append(name, number); metricsNode.append(card);
+        });
+        eventsNode.replaceChildren();
+        if (!events.length) {
+          const empty = document.createElement("div"); empty.style.cssText = "color:#64748B;font-size:12px;"; empty.textContent = "아직 기록된 이벤트가 없습니다."; eventsNode.append(empty);
+        } else {
+          events.forEach(event => {
+            const row = document.createElement("div"); row.className = "event-row";
+            const name = document.createElement("span"); name.className = "event-name"; name.textContent = event.event_type;
+            const meta = document.createElement("span"); meta.className = "event-meta";
+            meta.textContent = [event.entity_type, event.entity_id ? "#" + event.entity_id : "", event.occurred_at].filter(Boolean).join(" · ");
+            row.append(name, meta); eventsNode.append(row);
+          });
+        }
+        const sourceNode = document.getElementById("ops-sources");
+        sourceNode.replaceChildren();
+        if (!sources.length) {
+          const empty = document.createElement("div"); empty.style.cssText = "color:#64748B;font-size:12px;";
+          empty.textContent = "아직 수집 시도 기록이 없습니다."; sourceNode.append(empty);
+        } else {
+          sources.forEach(source => {
+            const row = document.createElement("div"); row.className = "event-row";
+            const name = document.createElement("span"); name.className = "event-name";
+            name.textContent = source.region + " · " + source.source_name + " · " + (source.last_status === "success" ? "정상" : "오류");
+            const meta = document.createElement("span"); meta.className = "event-meta";
+            meta.textContent = "항목 " + source.item_count + " · 연속 실패 " + source.consecutive_failures +
+              " · 마지막 성공 " + (source.last_success_at || "없음");
+            row.append(name, meta); sourceNode.append(row);
+          });
+        }
+        document.getElementById("ops-updated").textContent = "마지막 갱신: " + new Date().toLocaleTimeString("ko-KR");
+      } catch (_) {
+        document.getElementById("ops-updated").textContent = "운영 지표를 불러오지 못했습니다.";
+      }
+    }
+    async function loadOverview() {
+      const r = await fetch("/api/overview"); const d = await r.json(); const chs = d.channels || []; allChannels = chs; allJobs = d.jobs || [];
+      document.getElementById("kpi-trends").textContent = allJobs.length;
+      document.getElementById("kpi-growth").textContent = allJobs.filter(j => String(j.script || "").trim().length > 0).length;
+      document.getElementById("kpi-channels").textContent = "—";
+      document.getElementById("kpi-jobs").textContent = "—";
+      const sel = document.getElementById("single-channel");
+      if (sel.options.length === 0 && chs.length > 0) sel.innerHTML = chs.map(c => "<option value='" + c.name + "'>" + c.name + "</option>").join("");
+      renderJobs();renderDashboardData();
+    }
+    function renderJobs() {
+      const box = document.getElementById("job-list");
+      if (!allJobs.length) { box.innerHTML = "<div style='text-align:center;padding:30px;color:#64748B;font-size:12px;'>생성된 영상 작업이 없습니다.</div>"; return; }
+      box.innerHTML = allJobs.map(j => "<div onclick='selectJob(" + j.id + ")' class='job-item " + (j.id === activeJobId ? "active" : "") + "'><input type='checkbox' value='" + j.id + "' onclick='event.stopPropagation(); updateSelectedCount();' class='job-chk' style='margin-top:4px;'><div style='flex:1;min-width:0;'><div style='font-size:11px;color:#38BDF8;font-weight:700;'>" + j.channel_name + " · <span style='color:#FBBF24;'>" + j.stage + "</span></div><div style='font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>" + j.title + "</div></div></div>").join("");
+      if (!activeJobId && allJobs.length > 0) selectJob(allJobs.slice(0, 1).pop().id);
+    }
+    function selectJob(id) {
+      activeJobId = id; const jb = allJobs.find(x => x.id === id); if (!jb) return;
+      document.getElementById("editor-channel").textContent = jb.channel_name; document.getElementById("editor-stage").textContent = jb.stage;
+      document.getElementById("editor-title").value = jb.title; document.getElementById("editor-script").value = jb.script;
+      const reviewable = jb.stage === "최종컨펌 대기";
+      document.getElementById("btn-approve").disabled = !reviewable;
+      document.getElementById("btn-reject").disabled = !reviewable;
+      if (jb.video_path) document.getElementById("preview-video").src = "/" + jb.video_path.replace(/^\//, "");
+      renderJobs();
+    }
+    function toggleSelectAll(c) { document.querySelectorAll(".job-chk").forEach(x => x.checked = c); updateSelectedCount(); }
+    function updateSelectedCount() { document.getElementById("selected-count").textContent = document.querySelectorAll(".job-chk:checked").length; }
+    async function bulkDeleteJobs() {
+      const ids = Array.from(document.querySelectorAll(".job-chk:checked")).map(c => Number(c.value)); if (!ids.length) return;
+      await fetch("/api/jobs/bulk-delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job_ids: ids }) });
+      activeJobId = null; loadOverview();
+    }
+    async function saveJobEdit() {
+      if (!activeJobId) return;
+      await fetch("/api/jobs/" + activeJobId, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: document.getElementById("editor-title").value, script: document.getElementById("editor-script").value }) });
+      alert("저장되었습니다."); loadOverview();
+    }
+    async function rejectJob() {
+      if (!activeJobId) return;
+      const note = document.getElementById("reject-note").value.trim();
+      if (!confirm("선택한 영상을 반려하고 수정 요청으로 이동하시겠습니까?")) return;
+      const r = await fetch("/api/reject/" + activeJobId, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note })
+      });
+      const result = await r.json();
+      alert(result.msg || result.detail || "반려 요청을 처리하지 못했습니다.");
+      if (r.ok) { activeJobId = null; loadOverview(); }
+    }
+    async function approveUpload() { if (!activeJobId) return; const r = await fetch("/api/approve/" + activeJobId, { method: "POST" }); alert((await r.json()).msg); loadOverview(); }
+    async function createSingleVideo() {
+      const topic = document.getElementById("single-topic").value.trim(); if (!topic) return;
+      const r = await fetch("/api/create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ channel_name: document.getElementById("single-channel").value, topic }) });
+      alert((await r.json()).msg);
+    }
+    async function createAllVideos() { const r = await fetch("/api/create-all", { method: "POST" }); alert((await r.json()).msg); }
+    async function saveCloudQueue() { const r = await fetch("/api/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ topics_text: document.getElementById("queue-text").value }) }); alert((await r.json()).msg); }
+    async function forceScan() { setScanningState(true); try { await fetch("/api/radar/scan/" + currentPeriod, { method: "POST" }); await loadRadar(currentPeriod); } finally { setScanningState(false); } }
+    async function changeInterval(m) { await fetch("/api/radar/interval/" + m, { method: "POST" }); }
+    async function triggerTop3Auto() { const r = await fetch("/api/radar/auto-produce-now", { method: "POST" }); alert((await r.json()).msg); }
+    checkSession();
+  </script>
+</body>
+</html>
