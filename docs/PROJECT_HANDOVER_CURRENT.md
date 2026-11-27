@@ -1,5 +1,5 @@
 # NEXUS STUDIO PRO — 현재 운영·개발 인수인계서
-기준일: 2026-11-26  
+기준일: 2026-11-27  
 저장소: `justinhblee-prog/nexus_ai`  
 개발 브랜치: `fix/shorts-runtime-security-bootstrap`  
 PR: [#1 — Draft](https://github.com/justinhblee-prog/nexus_ai/pull/1)
@@ -31,6 +31,7 @@ PR: [#1 — Draft](https://github.com/justinhblee-prog/nexus_ai/pull/1)
 필수 변수:
 - `NEXUS_API_PASSWORD`: 12자 이상, 두 UI 공통 운영자 비밀번호
 - `NEXUS_SESSION_SECRET`: 32자 이상, FastAPI 서명용 별도 랜덤 키
+- `NEXUS_AUTH_ENABLED=true`: 기본값이며 운영자 인증을 필수로 적용합니다. false는 격리된 loopback 개발 환경에서만 명시적으로 허용합니다.
 - `NEXUS_COOKIE_SECURE=false`: localhost HTTP 개발 환경. HTTPS 프록시를 사용할 때만 true로 전환
 - `NEXUS_STREAMLIT_HOST_PORT=28502`, `NEXUS_API_HOST_PORT=28503`: 호스트 포트가 사용 중일 때만 사용 가능한 포트로 변경
 
@@ -49,6 +50,22 @@ $SessionSecret = python -c "import secrets; print(secrets.token_urlsafe(48))"
 기존 `.env`가 존재하면 덮어쓰기 전에 반드시 보존 여부를 확인합니다. 비밀번호나 세션 키가 이미 설정돼 있다면 새로 만들 필요가 없습니다.
 
 ## 4. 안전한 시작·중지·상태 확인
+
+Windows PowerShell 7에서 저장소 루트의 자동 설정/검증 스크립트를 사용할 수 있습니다.
+
+```powershell
+# .env가 없으면 운영자 비밀번호를 안전하게 입력받고 세션 키를 생성
+pwsh -File .\scripts\setup-local-nexus.ps1
+
+# Docker Compose 이미지 빌드 및 localhost 서비스 시작까지 수행
+pwsh -File .\scripts\setup-local-nexus.ps1 -Start
+
+# API 인증 차단, Streamlit health, 단위 테스트, 실제 MP4 렌더링을 검증
+pwsh -File .\scripts\verify-local-nexus.ps1
+```
+
+설정 스크립트는 기존 .env 항목을 보존하며 비밀번호/세션 키 값을 출력하지 않습니다. 실행 전 기존 컨테이너·포트·데이터를 삭제하지 않습니다.
+
 
 먼저 올바른 Git 작업 폴더인지 확인합니다. 현재 복구 작업 폴더는 다음과 같습니다.
 
@@ -132,22 +149,20 @@ docker compose stop
 
 ## 9. 검증 현황과 미완료 사항
 
-GitHub Actions [run #217](https://github.com/justinhblee-prog/nexus_ai/actions/runs/45835214093)에서 Docker Compose 설정 검증, Python compile, 브라우저 JavaScript 구문 검사, 40개 단위 테스트를 통과했습니다. 이 검증은 Windows 로컬 실행을 대신하지 않습니다.
+2026-11-27 기준 원격 검증:
+- Backend CI [run #427](https://github.com/justinhblee-prog/nexus_ai/actions/runs/45943955880): Docker Compose 설정, Python compile, 인증/큐/레이더/감사 로그 회귀 테스트 77개 통과.
+- 동일 run의 Docker render-integration: 실제 1080×1920 H.264/AAC MP4 렌더링 후 ffprobe QA 통과. 테스트는 외부 AI/TTS 계정 없이 결정적 fixture를 사용합니다.
+- UI Playwright 검증: A/B/C/D 네 테마의 실제 grid geometry, 색상 스킨 독립성, 샘플 넣기/제거, 워크스페이스 이동, 모바일 전환 통과.
+- UI 로그인·HttpOnly 세션 쿠키·세션 만료 검증은 최신 PR CI에서 추가 실행 중입니다.
+- Vercel Preview는 [READY 주소](https://neural-network-nymvfjc1s-justinhblee-9540.vercel.app/)에서 확인할 수 있습니다. 이 주소는 정적 UI 미리보기이며 FastAPI/SQLite 운영 백엔드와 연결된 주소가 아닙니다.
+- Vercel 무료 배포 일일 한도 초과로 최신 커밋의 새 배포가 제한된 상태입니다. 기존 READY 미리보기는 UI 소스가 마지막으로 변경된 커밋을 포함합니다.
+- 위 CI 결과는 Windows 로컬 실행, 실계정 OAuth 또는 실제 YouTube 업로드를 대신하지 않습니다.
 
 아직 Windows 호스트에서 직접 확인해야 하는 항목:
-- 기존 Docker 컨테이너와 현재 브랜치 코드의 안전한 연결 및 실제 로그인
-- 실제 MP4 생성과 ffprobe QA 통과
-- 실제 뉴스 피드 접근 성공률
-- 채널별 OAuth 및 실제 YouTube Private 업로드/응답 확인
-- 컨테이너 재시작 후 큐·스케줄 복구
-- 다중 컨테이너 공유 스토리지 동작 (현재 SQLite/단일 컨테이너 설계에서는 확장 전 검증 필요)
-
-로컬 실환경 검증 전에는 Phase 0 전체 완료로 표시하지 않습니다.
-
 ## 10. GitHub 작업 정책
 
-- 개발은 `fix/shorts-runtime-security-bootstrap` 브랜치에서 수행합니다.
-- PR #1은 Draft/Open 상태로 유지합니다.
+- 기준 브랜치는 `fix/shorts-runtime-security-bootstrap`이며 후속 변경은 PR #6 Backend와 PR #5 UI에서 분리 관리합니다.
+- PR #1, #5, #6은 Draft/Open 상태로 유지합니다.
 - `main` 직접 수정, 병합, 운영 배포, 강제 푸시, 이력 재작성은 하지 않습니다.
 - 로컬 기존 DB·영상·토큰·환경설정은 저장소 복구를 이유로 삭제하거나 초기화하지 않습니다.
 
