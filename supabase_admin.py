@@ -487,13 +487,19 @@ class SupabaseAdminRestClient:
         }) or []
         return rows[0] if rows else None
 
+    def _youtube_connection_uuid(self, connection_id):
+        value = str(connection_id)
+        if not re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", value):
+            raise ValueError("YouTube connection ID is invalid")
+        return value
+
     def get_youtube_disconnect_state(self, connection_id):
-        value = self._account_uuid(connection_id, "YouTube connection ID")
+        value = self._youtube_connection_uuid(connection_id)
         rows = self.rpc("get_youtube_disconnect_state", {"p_connection_id": value}) or []
         return rows[0].get("state") if rows else None
 
     def set_youtube_disconnect_state(self, connection_id, state):
-        value = self._account_uuid(connection_id, "YouTube connection ID")
+        value = self._youtube_connection_uuid(connection_id)
         if state not in {"revocation_started", "revoked", "preserved", "not_required"}:
             raise ValueError("YouTube disconnect state is invalid")
         rows = self.rpc("set_youtube_disconnect_state", {
