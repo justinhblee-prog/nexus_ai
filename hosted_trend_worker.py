@@ -37,7 +37,7 @@ def persist_period(admin, period_type: str, db_path: str | None = None) -> int:
             """SELECT status, started_at, completed_at, item_count,
                       successful_sources, failed_sources, source_summary_json
                FROM radar_scans WHERE period_type=?
-               ORDER BY started_at DESC LIMIT 1""",
+               ORDER BY started_at DESC, id DESC LIMIT 1""",
             (period_type,),
         ).fetchone()
     finally:
@@ -96,9 +96,23 @@ def run_once(admin=None, scanner=None, db_path: str | None = None) -> dict:
     if admin is None:
         admin = SupabaseAdminRestClient()
     result = {}
+    persistence_errors = []
     for period in ("daily", "weekly"):
-        scanner(period)
-        result[period] = persist_period(admin, period, trend_radar.DB_PATH)
+        try:
+            scanner(period)
+        except Exception as exc:
+            # The scanner records its failed scan in SQLite before re-raising.
+            # Still publish that health record so hosted clients do not see stale
+            # "success" metadata when the latest collection attempt failed.
+            logger.warning("Trend scan failed for %s (%s)", period, type(exc).__name__)
+        try:
+            result[period] = persist_period(admin, period, trend_radar.DB_PATH)
+        except Exception as exc:
+            persistence_errors.append((period, exc))
+            logger.warning("Trend persistence failed for %s (%s)", period, type(exc).__name__)
+    if persistence_errors:
+        failed_periods = ", ".join(period for period, _ in persistence_errors)
+        raise RuntimeError(f"Trend persistence failed for: {failed_periods}") from persistence_errors[0][1]
     return result
 
 
