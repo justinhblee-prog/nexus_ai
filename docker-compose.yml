@@ -40,3 +40,19 @@ services:
       - .:/app
     command: sh -c "uvicorn api_server:app --host 0.0.0.0 --port 8503 & exec streamlit run app.py --server.port=8502 --server.address=0.0.0.0"
     restart: unless-stopped
+
+  hosted-render-worker:
+    build: .
+    container_name: nexus_ai_hosted_render_worker
+    profiles: ["hosted"]
+    environment:
+      NEXUS_HOSTED_WORKER_ENABLED: ${NEXUS_HOSTED_WORKER_ENABLED:-false}
+      NEXUS_HOSTED_WORKER_POLL_SECONDS: ${NEXUS_HOSTED_WORKER_POLL_SECONDS:-5}
+      NEXUS_HOSTED_WORKER_ID: ${NEXUS_HOSTED_WORKER_ID:-}
+      NEXUS_SUPABASE_URL: ${NEXUS_SUPABASE_URL:-}
+      NEXUS_SUPABASE_SERVICE_ROLE_KEY: ${NEXUS_SUPABASE_SERVICE_ROLE_KEY:-}
+      NEXUS_LOG_LEVEL: ${NEXUS_LOG_LEVEL:-INFO}
+    volumes:
+      - .:/app
+    command: ["python", "hosted_worker.py"]
+    restart: on-failure
