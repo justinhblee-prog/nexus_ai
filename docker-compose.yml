@@ -106,3 +106,24 @@ services:
       - .:/app
     command: ["python", "hosted_upload_worker.py"]
     restart: on-failure
+
+  hosted-trend-worker:
+    build: .
+    container_name: nexus_ai_hosted_trend_worker
+    profiles: ["hosted"]
+    environment:
+      NEXUS_TREND_WORKER_ENABLED: ${NEXUS_TREND_WORKER_ENABLED:-false}
+      NEXUS_TREND_WORKER_POLL_SECONDS: ${NEXUS_TREND_WORKER_POLL_SECONDS:-21600}
+      NEXUS_TREND_RADAR_DB_PATH: /app/data/studio_data.db
+      NEXUS_SUPABASE_URL: ${NEXUS_SUPABASE_URL:-}
+      NEXUS_SUPABASE_SECRET_KEY: ${NEXUS_SUPABASE_SECRET_KEY:-}
+      NEXUS_SUPABASE_SERVICE_ROLE_KEY: ${NEXUS_SUPABASE_SERVICE_ROLE_KEY:-}
+      NEXUS_LOG_LEVEL: ${NEXUS_LOG_LEVEL:-INFO}
+    volumes:
+      - .:/app
+      - nexus-trend-data:/app/data
+    command: ["python", "hosted_trend_worker.py"]
+    restart: on-failure
+
+volumes:
+  nexus-trend-data:
