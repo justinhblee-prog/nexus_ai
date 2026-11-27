@@ -46,7 +46,7 @@ If any external cleanup fails, retain a retryable deletion-pending record and do
 
 ## Storage and Auth adapter safeguards
 
-- Storage inventory is restricted to a service-role-only RPC and paginated in batches of at most 1,000 rows.
+- Storage inventory is restricted to a service-role-only RPC and paginated in batches of at most 1,000 rows. It includes account-owned objects across buckets and every object under sole-member workspace prefixes, so workspace deletion can clean even service-owned objects. Objects in shared workspaces or paths that cannot be mapped to a workspace block deletion.
 - Active render/upload lease inventory is restricted to a separate service-role-only RPC; it covers the hosted Shorts render and upload lease tables.
 - OAuth connection inventory returns only connection metadata, never ciphertext or token material. It checks other active connections before deciding whether a Google grant can be revoked.
 - Storage object deletion uses the Storage API with an exact bucket and object path. The adapter rejects unknown buckets, absolute paths, empty path segments, dot segments, and backslashes.
