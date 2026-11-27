@@ -28,6 +28,13 @@ class AccountDeletionSafetyMigrationTests(unittest.TestCase):
         self.assertIn("drop constraint if exists shorts_jobs_check", self.sql)
         self.assertIn("approval_status = 'approved' and approved_at is not null", self.sql)
 
+    def test_active_lease_inventory_rpc_is_service_role_only(self):
+        self.assertIn("create or replace function public.list_account_deletion_active_leases", self.sql)
+        self.assertIn("private.shorts_worker_leases", self.sql)
+        self.assertIn("private.shorts_upload_leases", self.sql)
+        self.assertIn("l.lease_until > now()", self.sql)
+        self.assertIn("to service_role", self.sql)
+
     def test_storage_inventory_rpc_is_service_role_only_and_paginates(self):
         self.assertIn("create or replace function public.list_account_deletion_storage_objects", self.sql)
         self.assertIn("auth.jwt() ->> 'role'", self.sql)
