@@ -28,6 +28,17 @@ class AccountDeletionSafetyMigrationTests(unittest.TestCase):
         self.assertIn("drop constraint if exists shorts_jobs_check", self.sql)
         self.assertIn("approval_status = 'approved' and approved_at is not null", self.sql)
 
+    def test_reviewer_fk_anonymization_does_not_weaken_authenticated_approval_guard(self):
+        self.assertIn("create or replace function private.guard_shorts_job_approval()", self.sql)
+        self.assertIn("(select auth.uid()) is null", self.sql)
+        self.assertIn("old.approval_status = 'approved'", self.sql)
+        self.assertIn("new.approval_status = 'approved'", self.sql)
+        self.assertIn("old.approved_by is not null", self.sql)
+        self.assertIn("new.approved_by is null", self.sql)
+        self.assertIn("new.approved_at is not distinct from old.approved_at", self.sql)
+        self.assertIn("new.stage is not distinct from old.stage", self.sql)
+        self.assertIn("approval must be attributed to the authenticated reviewer", self.sql)
+
     def test_ownership_transfer_requires_authenticated_current_owner(self):
         self.assertIn("create or replace function public.transfer_workspace_ownership", self.sql)
         self.assertIn("security definer", self.sql)
