@@ -593,11 +593,31 @@ def import_legacy_topics_file():
         with open(path, "w", encoding="utf-8") as handle:
             handle.write("")
 
-def watch_topics_loop():
+def configured_queue_worker_count():
+    """Bound local render concurrency to protect CPU/memory while allowing parallel jobs."""
+    try:
+        requested = int(os.getenv("NEXUS_QUEUE_WORKERS", "1"))
+    except (TypeError, ValueError):
+        requested = 1
+    return max(1, min(requested, 4))
+
+
+def watch_legacy_topics_loop():
+    """Keep the legacy OneDrive text-file bridge single-writer and separate from render workers."""
+    while True:
+        try:
+            import_legacy_topics_file()
+        except Exception:
+            logger.exception("Legacy topics bridge failed")
+        time.sleep(5)
+
+
+def watch_topics_loop(worker_id: int = 1):
+    """One durable queue consumer; SQLite leases fence competing worker threads/instances."""
+    logger.info("Queue worker %s started", worker_id)
     while True:
         item = None
         try:
-            import_legacy_topics_file()
             item = claim_next_topic()
             if item:
                 db = get_db()
@@ -624,13 +644,13 @@ def watch_topics_loop():
                 finally:
                     db.close()
         except Exception as exc:
-            logger.exception("Topic queue worker failed")
+            logger.exception("Topic queue worker %s failed", worker_id)
             if "item" in locals() and item:
                 try:
                     finish_topic(item["id"], item["lease_token"], str(exc))
                 except Exception:
                     logger.exception("Could not update failed queue item")
-        time.sleep(5)
+        time.sleep(2)
 
 
 def claim_daily_schedule(schedule_key: str, lease_seconds: int = 21600, max_attempts: int = 3):
@@ -736,8 +756,19 @@ def startup_event():
     init_app_db()
     radar_db = trend_radar.init_radar_db()
     radar_db.close()
-    threading.Thread(target=watch_topics_loop, daemon=True).start()
-    threading.Thread(target=auto_radar_and_scheduler_loop, daemon=True).start()
+    threading.Thread(
+        target=watch_legacy_topics_loop, daemon=True, name="nexus-legacy-topics-bridge"
+    ).start()
+    worker_count = configured_queue_worker_count()
+    for worker_id in range(1, worker_count + 1):
+        threading.Thread(
+            target=watch_topics_loop, args=(worker_id,), daemon=True,
+            name=f"nexus-queue-worker-{worker_id}",
+        ).start()
+    logger.info("Started %s durable queue worker(s)", worker_count)
+    threading.Thread(
+        target=auto_radar_and_scheduler_loop, daemon=True, name="nexus-radar-scheduler"
+    ).start()
 
 class LoginReq(BaseModel):
     password: str
