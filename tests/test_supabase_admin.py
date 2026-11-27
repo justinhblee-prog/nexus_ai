@@ -76,5 +76,22 @@ class SupabaseAdminClientTests(unittest.TestCase):
             client.create_signed_url("wsp_11111111-1111-4111-8111-111111111111/other/video.mp4")
 
 
+    def test_approved_upload_claim_and_private_storage_download(self):
+        http = Mock()
+        claim_response = Mock(status_code=200)
+        claim_response.json.return_value = [{"job_id": "job-1", "provider_channel_id": "UC123"}]
+        media_response = Mock(status_code=200)
+        media_response.content = b"private-mp4"
+        http.side_effect = [claim_response, media_response]
+        client = SupabaseAdminRestClient(ENV, http_request=http)
+        job = client.claim_next_approved_shorts_job("upload-worker", daily_limit=3)
+        self.assertEqual(job["provider_channel_id"], "UC123")
+        key = "wsp_11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/" + "c" * 32 + ".mp4"
+        content = client.download_storage_object(key)
+        self.assertEqual(content, b"private-mp4")
+        self.assertIn("/rpc/claim_next_approved_shorts_job", http.call_args_list[0].args[1])
+        self.assertIn("/storage/v1/object/authenticated/nexus-shorts/", http.call_args_list[1].args[1])
+
+
 if __name__ == "__main__":
     unittest.main()
