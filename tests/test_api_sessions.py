@@ -886,5 +886,11 @@ class SignedSessionTests(unittest.TestCase):
 
 
 
+    def test_hosted_topic_queue_source_is_allowlisted(self):
+        with self.assertRaises(Exception):
+            self.api.HostedTopicQueueCreateReq(topic="AI", source="worker_job")
+
+
+
 if __name__ == "__main__":
     unittest.main()
