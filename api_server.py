@@ -961,6 +961,18 @@ def hosted_youtube_callback(code: str | None = None, state: str | None = None, e
         if not code:
             raise HTTPException(status_code=400, detail="OAuth authorization code is missing")
 
+        # OAuth may take several minutes. Re-check the initiating user's current
+        # workspace role after the public callback returns; a previously valid
+        # one-time state must not preserve admin rights after membership removal
+        # or role downgrade.
+        memberships = admin.list_account_user_memberships(state_data["user_id"])
+        if not any(
+            row.get("workspace_id") == state_data["workspace_id"]
+            and row.get("role") in {"owner", "admin"}
+            for row in memberships
+        ):
+            raise HTTPException(status_code=403, detail="Workspace owner or admin permission is no longer available")
+
         token_data = config.exchange_code(code, state_data["code_verifier"])
         refresh_token = token_data.get("refresh_token")
         if not refresh_token:
