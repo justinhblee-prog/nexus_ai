@@ -9,6 +9,15 @@ from concurrent.futures import ThreadPoolExecutor
 DB_PATH = "data/studio_data.db"
 HTTP_HEADERS = {"User-Agent": "NEXUS-STUDIO-PRO/1.0 (trend research)"}
 REQUEST_TIMEOUT = 8
+HN_API_BASE = "https://hacker-news.firebaseio.com/v0"
+HN_TOP_STORIES_URL = f"{HN_API_BASE}/topstories.json"
+RSS_FEEDS = (
+    ("KR", "Google News KR", "https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko"),
+    ("US", "Google News US", "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en"),
+    ("JP", "Google News JP", "https://news.google.com/rss?hl=ja&gl=JP&ceid=JP:ja"),
+    ("GB", "Google News UK", "https://news.google.com/rss?hl=en-GB&gl=GB&ceid=GB:en"),
+    ("GB", "BBC News", "https://feeds.bbci.co.uk/news/rss.xml"),
+)
 
 
 def init_radar_db():
@@ -114,9 +123,9 @@ def record_source_health(conn, region, source_name, source_url, success, item_co
 
 
 def _fetch_hn():
-    endpoint = "https://hacker-news.firebaseio.com/v0"
+    endpoint = HN_API_BASE
     try:
-        response = requests.get(f"{endpoint}/topstories.json", headers=HTTP_HEADERS, timeout=REQUEST_TIMEOUT)
+        response = requests.get(HN_TOP_STORIES_URL, headers=HTTP_HEADERS, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         story_ids = response.json()[:12]
     except (requests.RequestException, ValueError) as exc:
@@ -191,14 +200,8 @@ def scan_global_trends(period_type="daily"):
     scan_conn.commit()
     scan_conn.close()
 
-    feeds = [
-        ("KR", "Google News KR", "https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko"),
-        ("US", "Google News US", "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en"),
-        ("JP", "Google News JP", "https://news.google.com/rss?hl=ja&gl=JP&ceid=JP:ja"),
-        ("GB", "Google News UK", "https://news.google.com/rss?hl=en-GB&gl=GB&ceid=GB:en"),
-        ("GB", "BBC News", "https://feeds.bbci.co.uk/news/rss.xml"),
-    ]
-    hn_url = "https://hacker-news.firebaseio.com/v0/topstories.json"
+    feeds = RSS_FEEDS
+    hn_url = HN_TOP_STORIES_URL
     hn_items, hn_error = _fetch_hn()
     source_results = [("US", "Hacker News", hn_url, hn_items, hn_error)]
     try:
