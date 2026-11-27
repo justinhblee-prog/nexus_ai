@@ -909,17 +909,40 @@ def hosted_job_preview(job_id: UUID, request: Request):
 
 @app.post("/api/hosted/jobs/{job_id}/approve")
 def hosted_approve_job(job_id: UUID, request: Request):
+    """Approve only a review-pending job in a workspace the caller administers."""
     client = _hosted_rest_client(request)
     user = request.state.hosted_user
-    payload = {
-        "approval_status": "approved",
-        "approved_by": user["user_id"],
-        "approved_at": datetime.now(timezone.utc).isoformat(),
-    }
     try:
-        rows = client.update("shorts_jobs", {"job_id": f"eq.{job_id}"}, payload) or []
+        jobs = client.select("shorts_jobs", {
+            "select": "job_id,workspace_id,stage,approval_status",
+            "job_id": f"eq.{job_id}",
+            "limit": "1",
+        }) or []
+        if not jobs:
+            raise HTTPException(status_code=404, detail="Job not found")
+        job = jobs[0]
+        if job.get("stage") != "review_pending" or job.get("approval_status") != "pending":
+            raise HTTPException(status_code=409, detail="Only jobs awaiting final review can be approved")
+        memberships = client.select("workspace_members", {
+            "select": "role",
+            "workspace_id": f"eq.{job['workspace_id']}",
+            "user_id": f"eq.{user['user_id']}",
+            "limit": "1",
+        }) or []
+        if not memberships or memberships[0].get("role") not in {"owner", "admin"}:
+            raise HTTPException(status_code=403, detail="Workspace owner or admin permission required")
+        payload = {
+            "approval_status": "approved",
+            "approved_by": user["user_id"],
+            "approved_at": datetime.now(timezone.utc).isoformat(),
+        }
+        rows = client.update("shorts_jobs", {
+            "job_id": f"eq.{job_id}",
+            "stage": "eq.review_pending",
+            "approval_status": "eq.pending",
+        }, payload) or []
         if not rows:
-            raise HTTPException(status_code=404, detail="Job not found or approval was denied")
+            raise HTTPException(status_code=409, detail="Job state changed before approval; refresh and review again")
         return {"job": rows[0]}
     except SupabaseRestError as exc:
         _hosted_rest_error(exc)
