@@ -78,6 +78,16 @@ class SupabaseAdminClientTests(unittest.TestCase):
 
 
 
+    def test_account_deletion_tombstone_uses_allowlisted_service_rpc(self):
+        http = Mock()
+        response = Mock(status_code=204)
+        http.return_value = response
+        client = SupabaseAdminRestClient(ENV, http_request=http)
+        self.assertIsNone(client.mark_account_deletion_tombstone("11111111-1111-4111-8111-111111111111"))
+        self.assertIn("/rpc/mark_account_deletion_tombstone", http.call_args.args[1])
+        with self.assertRaises(ValueError):
+            client.rpc("remove_tombstone", {})
+
     def test_active_account_deletion_leases_use_service_role_rpc_and_validate_workspace_ids(self):
         http = Mock()
         response = Mock(status_code=200)
