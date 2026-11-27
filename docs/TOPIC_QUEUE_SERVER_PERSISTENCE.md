@@ -4,14 +4,16 @@ Status: **application/API/UI implemented; timestamped migration artifact is pres
 
 The server queue is deliberately separate from `shorts_jobs`. It is a personal saved-topic list scoped to both the authenticated user and the selected workspace. It is never consumed by a render or upload worker.
 
-## Required migration creation
+## Migration artifact and local validation
 
 The migration filename `20261127143658_nexus_user_workspace_topic_queue.sql` was assigned by the Supabase CLI during the local attempt. That attempt created an empty file under the user home directory rather than the project checkout. The populated SQL artifact is now present on this PR branch at the CLI-assigned timestamp. Do not create a second timestamped migration or rename this file. Before any live application, sync this branch into the intended local checkout and run local validation:
 
 ```powershell
 supabase --version
-`supabase --version` followed by `supabase db lint --local` (do not run `migration new` again)
+supabase db lint --local
 ```
+
+Run the local lint only after the intended local Supabase stack is running. Do not run `supabase db push` against the live project as part of this validation.
 
 Confirm the populated file matches the SQL below, run local database validation and security advisors, and verify RLS behavior with two users before considering activation. This PR does not apply the migration to the active Supabase project.
 
@@ -55,7 +57,7 @@ CREATE POLICY shorts_topic_queue_member_read
   USING (
     user_id = (SELECT auth.uid())
     AND (SELECT private.has_workspace_role(
-      workspace_id, ARRAY['owner','admin','editor','viewer']
+      workspace_id, ARRAY['owner','admin','editor']
     ))
   );
 
@@ -64,7 +66,7 @@ CREATE POLICY shorts_topic_queue_member_insert
   WITH CHECK (
     user_id = (SELECT auth.uid())
     AND (SELECT private.has_workspace_role(
-      workspace_id, ARRAY['owner','admin','editor','viewer']
+      workspace_id, ARRAY['owner','admin','editor']
     ))
   );
 
