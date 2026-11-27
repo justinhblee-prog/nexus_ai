@@ -195,3 +195,13 @@
 - Added a regression test for environment-selected database path behavior.
 - Latest application-code head `fec1aef5f29a8ccce9a130656964a6e276b87749` passed GitHub Actions [run 46033122719](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46033122719): **325 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, and Playwright browser interaction smoke all passed.
 - PR #11 is still Draft/Open/unmerged. No live migration, worker activation, production deployment, or paid resource use.
+
+
+### Hosted trend failure visibility hardening — 2026-11-28
+
+- The opt-in hosted trend collector now publishes the latest SQLite scan-health record even when a daily/weekly scanner raises after recording a failed scan. This prevents the shared hosted status from retaining a previous successful scan state after a newer failed attempt.
+- Daily and weekly scans are isolated: failure of one period no longer prevents the other period from running and publishing its status. Supabase persistence failures are still surfaced to the worker retry loop.
+- Scan selection now uses `started_at DESC, id DESC` so scans created within the same second resolve deterministically.
+- Added regression coverage for failed-scan health publication, period continuation, same-second ordering, and retry behavior.
+- Exact PR #11 head `343654d8b2db8d9d2e070cb3b7b4336eb06e9a49` passed GitHub Actions [run 46038867728](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46038867728): **339 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, and Playwright browser interaction smoke.
+- This is code-level and CI verification only. The shared-trend migration is not applied; hosted trend worker remains disabled; no Vercel deployment or live database write was performed.
