@@ -259,6 +259,19 @@ select,input,textarea{background:var(--surface);color:var(--text);border-color:v
  .design-gallery-grid{grid-template-columns:1fr}
 }
 
+
+/* Browser session gate and truthful disconnected preview state */
+.nexus-auth-overlay{position:fixed;inset:0;z-index:120;background:rgba(2,6,18,.88);backdrop-filter:blur(12px);display:grid;place-items:center;padding:20px}
+.nexus-auth-overlay[hidden]{display:none!important}
+.nexus-auth-card{width:min(420px,100%);padding:30px;background:var(--surface);border:1px solid var(--line);border-radius:20px;box-shadow:0 24px 80px rgba(0,0,0,.45)}
+.nexus-auth-card h2{font-size:23px;margin:8px 0}
+.nexus-auth-card p{color:var(--muted);font-size:13px;line-height:1.6}
+.nexus-auth-card input{width:100%;margin:18px 0 10px;padding:13px}
+.nexus-auth-card button{width:100%;padding:13px}
+.nexus-auth-error{min-height:20px;color:#fb7185;font-size:12px;margin-top:10px}
+.nexus-runtime-status{padding:11px 14px;border:1px solid var(--line);border-radius:10px;background:var(--soft);color:var(--muted);font-size:12px}
+.nexus-runtime-status[data-kind="warning"]{border-color:#b7791f;color:#f6c66a}
+.nexus-runtime-status[hidden]{display:none!important}
 </style>
 </head>
 <body>
@@ -359,7 +372,18 @@ select,input,textarea{background:var(--surface);color:var(--text);border-color:v
     </div>
   </div>
 <div id="nexus-design-gallery" class="design-gallery" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="nexus-design-title" onclick="if(event.target===this)closeDesignGallery()"><div class="design-gallery-panel"><div class="design-gallery-head"><div><div class="eyebrow">NEXUS DESIGN SYSTEM</div><h2 id="nexus-design-title" style="font-size:22px">4가지 화면 시안</h2><p style="color:var(--muted);font-size:12px;margin-top:5px">전체 정보 구조와 시각적 위계를 비교하세요. 데이터와 기능은 동일합니다.</p><p style="color:var(--accent);font-size:11px;margin-top:8px">현재 적용: <strong id="nexus-design-current">A · Intelligence Dashboard</strong></p></div><button type="button" class="btn-dark" onclick="closeDesignGallery()">닫기 ✕</button></div><div id="nexus-design-options" class="design-gallery-grid"></div></div></div>
-  <script>
+  <div id="nexus-login-overlay" class="nexus-auth-overlay" hidden>
+  <form id="nexus-login-form" class="nexus-auth-card">
+    <div class="eyebrow">NEXUS STUDIO PRO · SECURE SESSION</div>
+    <h2>운영자 로그인</h2>
+    <p>인증된 운영자 세션으로 연결합니다. 비밀번호는 브라우저 저장소에 보관하지 않습니다.</p>
+    <label for="nexus-login-password" class="eyebrow">운영자 비밀번호</label>
+    <input id="nexus-login-password" type="password" autocomplete="current-password" required minlength="12" placeholder="운영자 비밀번호 입력"/>
+    <button id="nexus-login-submit" type="submit" class="btn-blue">안전하게 로그인</button>
+    <div id="nexus-login-error" class="nexus-auth-error" role="status" aria-live="polite"></div>
+  </form>
+</div>
+<script>
 
 const NEXUS_THEMES=["mono","ocean","forest","violet","coral"];
 const NEXUS_LAYOUTS=["intelligence","creator","global","executive"];
@@ -379,11 +403,99 @@ function setDensity(v){if(!["compact","comfortable","spacious"].includes(v))v="c
 function showWorkspace(n){document.querySelectorAll(".workspace-view").forEach(v=>v.classList.toggle("active",v.dataset.workspace===n));document.querySelectorAll(".side-nav button").forEach(b=>b.classList.toggle("active",b.dataset.workspace===n));document.querySelectorAll(".flow-step").forEach(b=>b.classList.toggle("active",b.dataset.flow===n));if(n==="operations")loadOpsMetrics();if(n==="analytics")loadAnalyticsSummary();if(["dashboard","analytics","publishing"].includes(n)){renderDashboardData();renderPublishingSummary()}}
 function renderPublishingSummary(){const root=document.getElementById("nexus-publish-status");if(!root)return;const jobs=allJobs||[];const stage=j=>String(j.stage||"");const groups=[["최종 검수 대기",jobs.filter(j=>stage(j)==="최종컨펌 대기").length],["재제작 대기",jobs.filter(j=>stage(j)==="재제작 대기").length],["재제작 실패",jobs.filter(j=>stage(j)==="재제작 실패").length],["업로드 진행 중",jobs.filter(j=>stage(j)==="업로드 진행 중").length],["비공개 게시 완료",jobs.filter(j=>stage(j)==="업로드 완료(비공개)").length],["상태 확인 필요",jobs.filter(j=>stage(j)==="업로드 상태 확인 필요").length],["반려·수정 요청",jobs.filter(j=>stage(j)==="반려(수정 필요)").length]];root.innerHTML=groups.map(([label,value])=>"<div class='publish-status'><span style='color:var(--muted);font-size:12px'>"+label+"</span><strong>"+value+"</strong></div>").join("")}
 function renderDashboardData(){const jobs=allJobs||[],items=allRadarItems||[],regions=["KR","US","JP","GB"];const stage=j=>String(j.stage||"");const counts=[Number(queuePending||0),jobs.filter(j=>stage(j)==="최종컨펌 대기").length,jobs.filter(j=>stage(j)==="재제작 대기").length,jobs.filter(j=>stage(j)==="업로드 진행 중").length,jobs.filter(j=>stage(j)==="업로드 완료(비공개)").length,jobs.filter(j=>stage(j)==="업로드 상태 확인 필요").length];const labels=["제작 큐 대기·실행","최종 검수 대기","수정 영상 재제작","업로드 진행 중","비공개 게시 완료","업로드 확인 필요"];const tiles=labels.map((x,i)=>"<div class='queue-tile'><span style='color:var(--muted);font-size:11px'>"+x+"</span><strong>"+counts[i]+"</strong></div>").join("");["nexus-queue","nexus-analytics-queue"].forEach(id=>{const n=document.getElementById(id);if(n)n.innerHTML=tiles});const mix=regions.map(r=>{const c=items.filter(x=>x.region===r).length;return "<div class='mix-row'><b>"+r+"</b><div class='mix-track'><i style='width:"+Math.round(c/Math.max(1,items.length)*100)+"%'></i></div><span>"+c+"</span></div>"}).join("");["nexus-mix","nexus-analytics-mix"].forEach(id=>{const n=document.getElementById(id);if(n)n.innerHTML=mix});const canvas=document.getElementById("nexus-chart");if(canvas){const ctx=canvas.getContext("2d"),w=canvas.width,h=canvas.height,style=getComputedStyle(document.documentElement);ctx.clearRect(0,0,w,h);ctx.strokeStyle=style.getPropertyValue("--line");for(let i=0;i<4;i++){ctx.beginPath();ctx.moveTo(40,20+i*58);ctx.lineTo(w-15,20+i*58);ctx.stroke()}const names=(allChannels||[]).map(c=>c.name).slice(0,8),vals=names.map(n=>jobs.filter(j=>j.channel_name===n).length),max=Math.max(1,...vals);if(vals.length){const gap=(w-70)/vals.length;vals.forEach((v,i)=>{const bh=v/max*145,x=48+i*gap;ctx.fillStyle=style.getPropertyValue("--accent");ctx.fillRect(x,h-28-bh,Math.max(12,gap-12),bh);ctx.fillStyle=style.getPropertyValue("--muted");ctx.font="11px sans-serif";ctx.fillText(names[i].slice(0,12),x,h-9)})}else{ctx.fillStyle=style.getPropertyValue("--muted");ctx.font="16px sans-serif";ctx.fillText("채널별 작업 데이터가 없습니다.",45,110)}}}
-function initNexusShell(){const old=document.querySelector("body > main");if(!old)return;const sections=[...old.children];const shell=document.createElement("div");shell.className="nexus-shell";const side=document.createElement("aside");side.className="nexus-sidebar";side.innerHTML="<div class='side-brand'>NEXUS / WORKSPACE</div><nav class='side-nav' aria-label='주 메뉴'></nav><div class='side-foot'>Human approval required<br>YouTube upload · Private by default</div>";const nav=side.querySelector("nav");const main=document.createElement("main");main.className="workspace";const names=[["dashboard","Dashboard","▦"],["studio","AI Content Studio","✦"],["discovery","Discovery","◎"],["review","Review","✓"],["publishing","Publishing","↗"],["analytics","Analytics","⌁"],["operations","Operations","⚙"]];const views={};names.forEach(([id,label,icon],i)=>{const b=document.createElement("button");b.type="button";b.dataset.workspace=id;b.textContent=icon+"  "+label;b.onclick=()=>showWorkspace(id);if(!i)b.className="active";nav.append(b);const v=document.createElement("section");v.className="workspace-view"+(!i?" active":"");v.dataset.workspace=id;const head=document.createElement("div");head.className="workspace-heading";head.innerHTML="<div><div class='eyebrow'>NEXUS STUDIO PRO</div><h1>"+label+"</h1></div>";v.append(head);main.append(v);views[id]=v});const put=(id,el)=>{if(el)views[id].append(el)};put("dashboard",sections[0]);const sample=document.createElement("section");sample.id="nexus-sample-data";sample.className="sample-data-panel";sample.hidden=true;sample.innerHTML="<div style='display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap'><div><span class='sample-tag'>SAMPLE DATA · DEMO ONLY</span><h2 style='font-size:18px;margin-top:8px'>NEXUS 운영 데이터 미리보기</h2><p class='sample-note'>화면 구성 확인을 위한 예시 데이터입니다. 실제 API·운영 데이터에는 저장되지 않습니다.</p></div><button type='button' class='btn-dark' onclick='removeSampleData()'>샘플 닫기</button></div><div class='sample-kpis'><div class='sample-kpi'><span>제작 완료</span><strong>128</strong><span>최근 30일 · 예시</span></div><div class='sample-kpi'><span>최종 검수 대기</span><strong>12</strong><span>승인 전 · 예시</span></div><div class='sample-kpi'><span>비공개 업로드</span><strong>36</strong><span>공개 전환 없음 · 예시</span></div><div class='sample-kpi'><span>분석 채널</span><strong>08</strong><span>KR · US · JP · GB · 예시</span></div></div><div class='sample-lower'><div><b>지역별 콘텐츠 분포</b><div class='sample-bars'><span style='width:82%'>KR 82</span><span style='width:68%'>US 68</span><span style='width:51%'>JP 51</span><span style='width:34%'>GB 34</span></div></div><div><b>콘텐츠 파이프라인</b><div class='sample-stage-list'><span>Discovery <strong>48</strong></span><span>AI 제작 <strong>32</strong></span><span>검수 대기 <strong>12</strong></span><span>게시 완료 <strong>36</strong></span></div></div></div>";views.dashboard.insertBefore(sample,views.dashboard.children[1]||null);const dash=document.createElement("div");dash.className="dash-grid";dash.innerHTML="<section class='card chart-card'><div class='eyebrow'>CHANNEL PRODUCTION</div><h2>Channel Production Volume</h2><canvas id='nexus-chart' width='900' height='230'></canvas></section><section class='card chart-card'><div class='eyebrow'>CONTENT MIX</div><h2>Regional Distribution</h2><div id='nexus-mix' class='mix-list'></div></section>";views.dashboard.append(dash);const q=document.createElement("section");q.className="card";q.innerHTML="<div class='eyebrow'>PRODUCTION QUEUE</div><h2 style='font-size:17px;margin-bottom:14px'>제작 파이프라인 현황</h2><div id='nexus-queue' class='queue-list'></div>";views.dashboard.append(q);put("operations",sections[1]);put("discovery",sections[2]);put("studio",sections[3]);put("review",sections[4]);const publish=document.createElement("section");publish.className="card";publish.innerHTML="<div class='eyebrow'>PUBLISHING CONTROL</div><h2>게시 준비 및 안전 상태</h2><div id='nexus-publish-status' class='publish-status-grid' style='margin-top:16px'></div><p style='color:var(--muted);margin-top:14px;font-size:12px'>최종 검수 승인 후 비공개 업로드를 진행합니다. 자동 공개 전환은 수행하지 않습니다.</p><button class='btn-dark' style='margin-top:14px' onclick='showWorkspace(\"review\")'>검수 대기열 열기</button>";views.publishing.append(publish);const analytics=document.createElement("div");analytics.className="dash-grid";analytics.innerHTML="<section class='card'><div class='eyebrow'>REGIONAL CONTENT MIX</div><h2>지역별 콘텐츠 분포</h2><div id='nexus-analytics-mix' class='mix-list'></div></section><section class='card'><div class='eyebrow'>PIPELINE SUMMARY</div><h2>제작 파이프라인</h2><div id='nexus-analytics-queue' class='queue-list'></div></section><section class='card' style='grid-column:1/-1'><div class='eyebrow'>LOCAL PRODUCTION & PUBLISHING</div><h2>실제 제작·게시 지표</h2><div id='nexus-analytics-kpis' class='ops-grid' style='margin-top:12px'></div></section><section class='card' style='grid-column:1/-1'><div class='eyebrow'>PROVIDER ANALYTICS</div><h2>YouTube 성과 데이터</h2><div id='nexus-analytics-platform' class='analytics-note'>분석 데이터 연결 상태 확인 중</div><div id='nexus-analytics-discovery' class='analytics-note' style='margin-top:10px'></div></section>";views.analytics.append(analytics);old.replaceWith(shell);shell.append(side,document.createElement("div"));const mainWrap=shell.lastElementChild;mainWrap.className="workspace-main";const flow=document.createElement("nav");flow.className="nexus-workflow";flow.setAttribute("aria-label","콘텐츠 제작 업무 흐름");const flowSteps=[["discovery","01","발굴"],["studio","02","AI 제작"],["review","03","검수·승인"],["publishing","04","게시"],["analytics","05","성과 분석"]];flowSteps.forEach((s,i)=>{const b=document.createElement("button");b.type="button";b.className="flow-step";b.dataset.flow=s[0];const no=document.createElement("span");no.className="flow-no";no.textContent=s[1];b.append(no,document.createTextNode(s[2]));b.onclick=()=>showWorkspace(s[0]);flow.append(b);if(i<flowSteps.length-1){const arrow=document.createElement("span");arrow.className="flow-arrow";arrow.textContent="→";flow.append(arrow)}});mainWrap.append(flow,main);const controls=document.querySelector("header .controls");if(controls){const galleryBtn=document.createElement("button");galleryBtn.type="button";galleryBtn.className="btn-dark";galleryBtn.textContent="테마 시안";galleryBtn.onclick=openDesignGallery;controls.prepend(galleryBtn);const addSample=document.createElement("button");addSample.type="button";addSample.id="nexus-add-sample";addSample.className="btn-dark";addSample.textContent="샘플 넣기";addSample.onclick=addSampleData;controls.prepend(addSample);const removeSample=document.createElement("button");removeSample.type="button";removeSample.id="nexus-remove-sample";removeSample.className="btn-red";removeSample.textContent="샘플 제거";removeSample.hidden=true;removeSample.onclick=removeSampleData;controls.prepend(removeSample);const sel=document.createElement("select");sel.id="nexus-theme";sel.className="theme-select";sel.setAttribute("aria-label","색상 스킨 선택");sel.title="색상 스킨 · 레이아웃과 별도 설정";sel.innerHTML="<option value='mono'>Monochrome</option><option value='ocean'>Ocean Blue</option><option value='forest'>Forest Green</option><option value='coral'>Editorial Coral</option><option value='violet'>Indigo Violet</option>";sel.onchange=()=>setTheme(sel.value);controls.prepend(sel);const layout=document.createElement("select");layout.id="nexus-layout";layout.className="theme-select";layout.setAttribute("aria-label","전체 디자인 테마 선택");layout.title="전체 디자인 테마 · 화면 구성과 정보 배치 변경";layout.innerHTML="<option value='intelligence'>A · Intelligence</option><option value='creator'>B · Creator</option><option value='global'>C · Global Analytics</option><option value='executive'>D · Executive</option>";layout.onchange=()=>setLayout(layout.value);controls.prepend(layout);const accent=document.createElement("input");accent.type="color";accent.id="nexus-accent";accent.title="강조 색상";accent.setAttribute("aria-label","강조 색상");accent.style.cssText="width:38px;height:34px;padding:2px;border-radius:8px";accent.oninput=()=>setAccent(accent.value);controls.prepend(accent);const density=document.createElement("select");density.id="nexus-density";density.className="theme-select";density.setAttribute("aria-label","화면 밀도");density.innerHTML="<option value='comfortable'>기본 밀도</option><option value='compact'>컴팩트</option><option value='spacious'>여유롭게</option>";density.onchange=()=>setDensity(density.value);controls.prepend(density)}let theme="mono",layoutMode="intelligence",densityMode="comfortable",accentColor="#38BDF8";try{theme=localStorage.getItem("nexus-theme")||theme;layoutMode=localStorage.getItem("nexus-layout")||layoutMode;densityMode=localStorage.getItem("nexus-density")||densityMode;accentColor=localStorage.getItem("nexus-accent")||accentColor}catch(e){}setTheme(theme);setLayout(layoutMode);setDensity(densityMode);setAccent(accentColor);try{if(localStorage.getItem("nexus-demo-sample")==="visible")addSampleData()}catch(e){};const designCurrent=document.getElementById("nexus-design-current");if(designCurrent){const selected=NEXUS_LAYOUT_SAMPLES.find(x=>x.id===layoutMode)||NEXUS_LAYOUT_SAMPLES[0];designCurrent.textContent=selected.code+" · "+selected.name}const accentInput=document.getElementById("nexus-accent");if(accentInput)accentInput.value=accentColor}
+function initNexusShell(){const old=document.querySelector("body > main");if(!old)return;const sections=[...old.children];const shell=document.createElement("div");shell.className="nexus-shell";const side=document.createElement("aside");side.className="nexus-sidebar";side.innerHTML="<div class='side-brand'>NEXUS / WORKSPACE</div><nav class='side-nav' aria-label='주 메뉴'></nav><div class='side-foot'>Human approval required<br>YouTube upload · Private by default</div>";const nav=side.querySelector("nav");const main=document.createElement("main");main.className="workspace";const runtimeStatus=document.createElement("div");runtimeStatus.id="nexus-runtime-status";runtimeStatus.className="nexus-runtime-status";runtimeStatus.hidden=true;main.append(runtimeStatus);const names=[["dashboard","Dashboard","▦"],["studio","AI Content Studio","✦"],["discovery","Discovery","◎"],["review","Review","✓"],["publishing","Publishing","↗"],["analytics","Analytics","⌁"],["operations","Operations","⚙"]];const views={};names.forEach(([id,label,icon],i)=>{const b=document.createElement("button");b.type="button";b.dataset.workspace=id;b.textContent=icon+"  "+label;b.onclick=()=>showWorkspace(id);if(!i)b.className="active";nav.append(b);const v=document.createElement("section");v.className="workspace-view"+(!i?" active":"");v.dataset.workspace=id;const head=document.createElement("div");head.className="workspace-heading";head.innerHTML="<div><div class='eyebrow'>NEXUS STUDIO PRO</div><h1>"+label+"</h1></div>";v.append(head);main.append(v);views[id]=v});const put=(id,el)=>{if(el)views[id].append(el)};put("dashboard",sections[0]);const sample=document.createElement("section");sample.id="nexus-sample-data";sample.className="sample-data-panel";sample.hidden=true;sample.innerHTML="<div style='display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap'><div><span class='sample-tag'>SAMPLE DATA · DEMO ONLY</span><h2 style='font-size:18px;margin-top:8px'>NEXUS 운영 데이터 미리보기</h2><p class='sample-note'>화면 구성 확인을 위한 예시 데이터입니다. 실제 API·운영 데이터에는 저장되지 않습니다.</p></div><button type='button' class='btn-dark' onclick='removeSampleData()'>샘플 닫기</button></div><div class='sample-kpis'><div class='sample-kpi'><span>제작 완료</span><strong>128</strong><span>최근 30일 · 예시</span></div><div class='sample-kpi'><span>최종 검수 대기</span><strong>12</strong><span>승인 전 · 예시</span></div><div class='sample-kpi'><span>비공개 업로드</span><strong>36</strong><span>공개 전환 없음 · 예시</span></div><div class='sample-kpi'><span>분석 채널</span><strong>08</strong><span>KR · US · JP · GB · 예시</span></div></div><div class='sample-lower'><div><b>지역별 콘텐츠 분포</b><div class='sample-bars'><span style='width:82%'>KR 82</span><span style='width:68%'>US 68</span><span style='width:51%'>JP 51</span><span style='width:34%'>GB 34</span></div></div><div><b>콘텐츠 파이프라인</b><div class='sample-stage-list'><span>Discovery <strong>48</strong></span><span>AI 제작 <strong>32</strong></span><span>검수 대기 <strong>12</strong></span><span>게시 완료 <strong>36</strong></span></div></div></div>";views.dashboard.insertBefore(sample,views.dashboard.children[1]||null);const dash=document.createElement("div");dash.className="dash-grid";dash.innerHTML="<section class='card chart-card'><div class='eyebrow'>CHANNEL PRODUCTION</div><h2>Channel Production Volume</h2><canvas id='nexus-chart' width='900' height='230'></canvas></section><section class='card chart-card'><div class='eyebrow'>CONTENT MIX</div><h2>Regional Distribution</h2><div id='nexus-mix' class='mix-list'></div></section>";views.dashboard.append(dash);const q=document.createElement("section");q.className="card";q.innerHTML="<div class='eyebrow'>PRODUCTION QUEUE</div><h2 style='font-size:17px;margin-bottom:14px'>제작 파이프라인 현황</h2><div id='nexus-queue' class='queue-list'></div>";views.dashboard.append(q);put("operations",sections[1]);put("discovery",sections[2]);put("studio",sections[3]);put("review",sections[4]);const publish=document.createElement("section");publish.className="card";publish.innerHTML="<div class='eyebrow'>PUBLISHING CONTROL</div><h2>게시 준비 및 안전 상태</h2><div id='nexus-publish-status' class='publish-status-grid' style='margin-top:16px'></div><p style='color:var(--muted);margin-top:14px;font-size:12px'>최종 검수 승인 후 비공개 업로드를 진행합니다. 자동 공개 전환은 수행하지 않습니다.</p><button class='btn-dark' style='margin-top:14px' onclick='showWorkspace(\"review\")'>검수 대기열 열기</button>";views.publishing.append(publish);const analytics=document.createElement("div");analytics.className="dash-grid";analytics.innerHTML="<section class='card'><div class='eyebrow'>REGIONAL CONTENT MIX</div><h2>지역별 콘텐츠 분포</h2><div id='nexus-analytics-mix' class='mix-list'></div></section><section class='card'><div class='eyebrow'>PIPELINE SUMMARY</div><h2>제작 파이프라인</h2><div id='nexus-analytics-queue' class='queue-list'></div></section><section class='card' style='grid-column:1/-1'><div class='eyebrow'>LOCAL PRODUCTION & PUBLISHING</div><h2>실제 제작·게시 지표</h2><div id='nexus-analytics-kpis' class='ops-grid' style='margin-top:12px'></div></section><section class='card' style='grid-column:1/-1'><div class='eyebrow'>PROVIDER ANALYTICS</div><h2>YouTube 성과 데이터</h2><div id='nexus-analytics-platform' class='analytics-note'>분석 데이터 연결 상태 확인 중</div><div id='nexus-analytics-discovery' class='analytics-note' style='margin-top:10px'></div></section>";views.analytics.append(analytics);old.replaceWith(shell);shell.append(side,document.createElement("div"));const mainWrap=shell.lastElementChild;mainWrap.className="workspace-main";const flow=document.createElement("nav");flow.className="nexus-workflow";flow.setAttribute("aria-label","콘텐츠 제작 업무 흐름");const flowSteps=[["discovery","01","발굴"],["studio","02","AI 제작"],["review","03","검수·승인"],["publishing","04","게시"],["analytics","05","성과 분석"]];flowSteps.forEach((s,i)=>{const b=document.createElement("button");b.type="button";b.className="flow-step";b.dataset.flow=s[0];const no=document.createElement("span");no.className="flow-no";no.textContent=s[1];b.append(no,document.createTextNode(s[2]));b.onclick=()=>showWorkspace(s[0]);flow.append(b);if(i<flowSteps.length-1){const arrow=document.createElement("span");arrow.className="flow-arrow";arrow.textContent="→";flow.append(arrow)}});mainWrap.append(flow,main);const controls=document.querySelector("header .controls");if(controls){const galleryBtn=document.createElement("button");galleryBtn.type="button";galleryBtn.className="btn-dark";galleryBtn.textContent="테마 시안";galleryBtn.onclick=openDesignGallery;controls.prepend(galleryBtn);const addSample=document.createElement("button");addSample.type="button";addSample.id="nexus-add-sample";addSample.className="btn-dark";addSample.textContent="샘플 넣기";addSample.onclick=addSampleData;controls.prepend(addSample);const removeSample=document.createElement("button");removeSample.type="button";removeSample.id="nexus-remove-sample";removeSample.className="btn-red";removeSample.textContent="샘플 제거";removeSample.hidden=true;removeSample.onclick=removeSampleData;controls.prepend(removeSample);const sel=document.createElement("select");sel.id="nexus-theme";sel.className="theme-select";sel.setAttribute("aria-label","색상 스킨 선택");sel.title="색상 스킨 · 레이아웃과 별도 설정";sel.innerHTML="<option value='mono'>Monochrome</option><option value='ocean'>Ocean Blue</option><option value='forest'>Forest Green</option><option value='coral'>Editorial Coral</option><option value='violet'>Indigo Violet</option>";sel.onchange=()=>setTheme(sel.value);controls.prepend(sel);const layout=document.createElement("select");layout.id="nexus-layout";layout.className="theme-select";layout.setAttribute("aria-label","전체 디자인 테마 선택");layout.title="전체 디자인 테마 · 화면 구성과 정보 배치 변경";layout.innerHTML="<option value='intelligence'>A · Intelligence</option><option value='creator'>B · Creator</option><option value='global'>C · Global Analytics</option><option value='executive'>D · Executive</option>";layout.onchange=()=>setLayout(layout.value);controls.prepend(layout);const accent=document.createElement("input");accent.type="color";accent.id="nexus-accent";accent.title="강조 색상";accent.setAttribute("aria-label","강조 색상");accent.style.cssText="width:38px;height:34px;padding:2px;border-radius:8px";accent.oninput=()=>setAccent(accent.value);controls.prepend(accent);const density=document.createElement("select");density.id="nexus-density";density.className="theme-select";density.setAttribute("aria-label","화면 밀도");density.innerHTML="<option value='comfortable'>기본 밀도</option><option value='compact'>컴팩트</option><option value='spacious'>여유롭게</option>";density.onchange=()=>setDensity(density.value);controls.prepend(density)}let theme="mono",layoutMode="intelligence",densityMode="comfortable",accentColor="#38BDF8";try{theme=localStorage.getItem("nexus-theme")||theme;layoutMode=localStorage.getItem("nexus-layout")||layoutMode;densityMode=localStorage.getItem("nexus-density")||densityMode;accentColor=localStorage.getItem("nexus-accent")||accentColor}catch(e){}setTheme(theme);setLayout(layoutMode);setDensity(densityMode);setAccent(accentColor);try{if(localStorage.getItem("nexus-demo-sample")==="visible")addSampleData()}catch(e){};const designCurrent=document.getElementById("nexus-design-current");if(designCurrent){const selected=NEXUS_LAYOUT_SAMPLES.find(x=>x.id===layoutMode)||NEXUS_LAYOUT_SAMPLES[0];designCurrent.textContent=selected.code+" · "+selected.name}const accentInput=document.getElementById("nexus-accent");if(accentInput)accentInput.value=accentColor}
 
     let currentPeriod = "daily", currentRankFilter = "ALL", allRadarItems = [], allJobs = [], allChannels = [], queuePending = 0, activeJobId = null, selectedModalItem = null, radarScanMeta = null, radarDataStatus = "not_scanned", analyticsSummary = null;
 
     let studioStarted = false, opsRefreshTimer = null;
+    function setRuntimeStatus(message, kind = "info") {
+      const node = document.getElementById("nexus-runtime-status");
+      if (!node) return;
+      node.textContent = message;
+      node.dataset.kind = kind;
+      node.hidden = false;
+    }
+
+    function showNexusLogin(message = "") {
+      const overlay = document.getElementById("nexus-login-overlay");
+      const error = document.getElementById("nexus-login-error");
+      if (error) error.textContent = message;
+      if (overlay) {
+        overlay.hidden = false;
+        const input = document.getElementById("nexus-login-password");
+        if (input) input.focus();
+      }
+    }
+
+    async function submitNexusLogin(event) {
+      event.preventDefault();
+      const input = document.getElementById("nexus-login-password");
+      const button = document.getElementById("nexus-login-submit");
+      const error = document.getElementById("nexus-login-error");
+      if (button) button.disabled = true;
+      if (error) error.textContent = "";
+      try {
+        const response = await fetch("/api/session/login", {
+          method: "POST", credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: input ? input.value : "" })
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.detail || "로그인에 실패했습니다.");
+        if (input) input.value = "";
+        const overlay = document.getElementById("nexus-login-overlay");
+        if (overlay) overlay.hidden = true;
+        const status = document.getElementById("nexus-runtime-status");
+        if (status) status.hidden = true;
+        startStudio();
+      } catch (errorValue) {
+        if (error) error.textContent = errorValue.message || "로그인에 실패했습니다.";
+      } finally {
+        if (button) button.disabled = false;
+      }
+    }
+
+    function installSessionExpiryHandler() {
+      if (window.__nexusSessionHandlerInstalled) return;
+      window.__nexusSessionHandlerInstalled = true;
+      const nativeFetch = window.fetch.bind(window);
+      window.fetch = async function(input, init) {
+        const response = await nativeFetch(input, init);
+        const url = typeof input === "string" ? input : (input && input.url) || "";
+        if (response.status === 401 && url.includes("/api/") && !url.includes("/api/session/")) {
+          showNexusLogin("세션이 만료되었습니다. 다시 로그인해 주세요.");
+        }
+        return response;
+      };
+    }
+
+    async function initializeNexusRuntime() {
+      initNexusShell();
+      installSessionExpiryHandler();
+      const form = document.getElementById("nexus-login-form");
+      if (form) form.addEventListener("submit", submitNexusLogin);
+      try {
+        const response = await fetch("/api/session/status", { credentials: "same-origin", cache: "no-store" });
+        if (response.status === 404) {
+          setRuntimeStatus("미리보기 전용 · FastAPI 서버와 연결되지 않았습니다. 샘플 데이터와 디자인 테마만 확인할 수 있습니다.", "warning");
+          return;
+        }
+        if (!response.ok) throw new Error("API 세션 상태 확인 실패: " + response.status);
+        const session = await response.json();
+        if (session.required && !session.configured) {
+          setRuntimeStatus("운영자 인증 설정이 필요합니다. .env에 NEXUS_API_PASSWORD와 NEXUS_SESSION_SECRET을 설정한 뒤 서버를 재시작해 주세요.", "warning");
+          return;
+        }
+        if (session.required && !session.authenticated) {
+          showNexusLogin();
+          return;
+        }
+        startStudio();
+      } catch (error) {
+        setRuntimeStatus("API 서버에 연결할 수 없습니다. 로컬 NEXUS API를 실행하면 실제 데이터와 제작 기능이 활성화됩니다. " + (error.message || ""), "warning");
+      }
+    }
+
     function startStudio() {
       if (studioStarted) return;
       studioStarted = true;
@@ -391,7 +503,9 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
         const statusNode = document.getElementById("radar-scan-status");
         if (statusNode) statusNode.textContent = error.message || "Discovery 데이터를 불러오지 못했습니다.";
       });
-      loadOverview();
+      loadOverview().catch(error => {
+        setRuntimeStatus("실제 운영 데이터를 불러오지 못했습니다. API 연결과 운영자 세션을 확인해 주세요. " + (error.message || ""), "warning");
+      });
       loadOpsMetrics();
       if (opsRefreshTimer === null) opsRefreshTimer = window.setInterval(loadOpsMetrics, 15000);
     }
@@ -811,8 +925,7 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
         await Promise.all([loadOverview(), loadOpsMetrics()]);
       } catch (error) { alert(error.message || "자동 제작 요청 중 오류가 발생했습니다."); }
     }
-    initNexusShell();
-    startStudio();
+    initializeNexusRuntime();
   </script>
 </body>
 </html>
