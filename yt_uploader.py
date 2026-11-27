@@ -18,7 +18,7 @@ def _token_path(channel_name):
 def get_channel_token_status(channel_name):
     token_file = _token_path(channel_name)
     if not os.path.exists(token_file):
-        return {"exists": False, "upload": False, "analytics": False, "expired": False, "error": None}
+        return {"exists": False, "upload": False, "analytics": False, "expired": False, "refreshable": False, "error": None}
     try:
         creds = Credentials.from_authorized_user_file(token_file)
         return {
@@ -26,10 +26,11 @@ def get_channel_token_status(channel_name):
             "upload": creds.has_scopes(UPLOAD_SCOPES),
             "analytics": creds.has_scopes(ANALYTICS_SCOPES),
             "expired": bool(creds.expired),
+            "refreshable": bool(creds.refresh_token),
             "error": None,
         }
     except Exception as exc:
-        return {"exists": True, "upload": False, "analytics": False, "expired": False, "error": type(exc).__name__}
+        return {"exists": True, "upload": False, "analytics": False, "expired": False, "refreshable": False, "error": type(exc).__name__}
 
 
 def get_auth_url(channel_name):
