@@ -572,8 +572,7 @@ class SignedSessionTests(unittest.TestCase):
             hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
             hosted_access_token="verified.user.jwt",
         ))
-        with patch.object(self.api, "SupabaseRestClient") as client_type, \\
-             patch.object(self.api, "SupabaseAdminRestClient") as admin_type:
+        with patch.object(self.api, "SupabaseRestClient") as client_type, patch.object(self.api, "SupabaseAdminRestClient") as admin_type:
             client_type.return_value.select.return_value = []
             with self.assertRaises(self.api.HTTPException) as raised:
                 self.api.hosted_job_preview(
