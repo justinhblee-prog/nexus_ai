@@ -70,7 +70,11 @@ async def enforce_local_origin_and_session(request, call_next):
     path = request.url.path
     public_paths = {"/api/session/status", "/api/session/login", "/api/session/logout"}
     protected = (path.startswith("/api/") and path not in public_paths) or path.startswith("/output/")
-    if protected:
+    # Authentication is temporarily disabled for the local operator UI.
+    # Re-enable it later by setting NEXUS_AUTH_ENABLED=true; the signed-cookie
+    # implementation and login endpoints remain available for that transition.
+    auth_enabled = os.getenv("NEXUS_AUTH_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
+    if protected and auth_enabled:
         if not auth_is_configured():
             return JSONResponse(status_code=503, content={"detail": "Set NEXUS_API_PASSWORD and NEXUS_SESSION_SECRET to enable API authentication."})
         if not verify_session_cookie(request.cookies.get(SESSION_COOKIE_NAME)):
