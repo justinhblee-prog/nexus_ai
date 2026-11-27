@@ -35,7 +35,7 @@ CREATE POLICY shorts_topic_queue_member_read
   USING (
     user_id = (SELECT auth.uid())
     AND (SELECT private.has_workspace_role(
-      workspace_id, ARRAY['owner','admin','editor','viewer']
+      workspace_id, ARRAY['owner','admin','editor']
     ))
   );
 
@@ -44,7 +44,7 @@ CREATE POLICY shorts_topic_queue_member_insert
   WITH CHECK (
     user_id = (SELECT auth.uid())
     AND (SELECT private.has_workspace_role(
-      workspace_id, ARRAY['owner','admin','editor','viewer']
+      workspace_id, ARRAY['owner','admin','editor']
     ))
   );
 
