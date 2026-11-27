@@ -49,11 +49,27 @@ jobs:
           print(f"Prepared CLI-generated migration: {candidates[0]}")
           PY
 
+      - name: Hold migration files until the legacy baseline is installed
+        run: |
+          mv supabase/migrations supabase/migrations_pending
+          mkdir -p supabase/migrations
+
       - name: Start the isolated local Supabase stack
         run: supabase start
 
-      - name: Replay the complete migration chain locally
-        run: supabase db reset
+      - name: Install the pre-NEXUS legacy schema fixture
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+          PGPASSWORD=postgres psql \
+            --host 127.0.0.1 --port 54322 --username postgres --dbname postgres \
+            --set ON_ERROR_STOP=1 --file supabase/fixtures/legacy_workspace_baseline.sql
+
+      - name: Replay every migration against the legacy baseline
+        run: |
+          rmdir supabase/migrations
+          mv supabase/migrations_pending supabase/migrations
+          supabase migration up
 
       - name: Lint local database functions and schema
         run: supabase db lint --fail-on error
