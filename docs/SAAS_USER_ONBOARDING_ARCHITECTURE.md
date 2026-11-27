@@ -20,7 +20,8 @@ NEXUS account authentication and YouTube channel authorization are separate iden
 ## 2. Recommended hosted architecture
 
 - Identity: Supabase Auth for email/password + email verification, password reset, and optional Google sign-in.
-- Application data: Supabase Postgres for hosted multi-user workspace, membership, channel connections, and audit records.
+- Application data: one Supabase Postgres project (`ai_studio`, Seoul region) for hosted multi-user workspaces, memberships, channel connections, and audit records. Do not create a separate production/test Supabase project at this stage.
+- Environment separation: keep development/test/production configuration, redirect URLs, secrets, and test identities distinct within the single-project operating model. Use isolated test users and clearly marked test records; never run destructive tests against real user data. If stronger database isolation becomes necessary later, reassess based on scale and risk rather than creating a second project by default.
 - Authorization: Row Level Security on every exposed tenant table. Every tenant-owned row has a non-null `owner_user_id` referencing `auth.users(id)`; policies compare it with `auth.uid()`. Never authorize using user-editable user metadata.
 - YouTube linking: a distinct server-side Google OAuth Web Application client, not the current Desktop client. Require a one-time, expiring, user-bound OAuth state (and PKCE where supported); validate the callback and bind the resulting Google channel identity to the authenticated NEXUS user.
 - Secrets: Google client secret and token-encryption key stay in server-side secret storage. Never expose service-role/secret keys or Google client secrets to the browser.
@@ -70,6 +71,7 @@ Before public onboarding:
 ## 6. Delivery phases and acceptance criteria
 
 ### Phase A — Identity foundation
+- Verify restoration requirements, current plan/charges, and project health for the selected single `ai_studio` project before any billable activation.
 - Configure the selected hosted Supabase project and Auth redirect/site URLs.
 - Implement signup, email verification, login, logout, password reset, session refresh, and account deletion.
 - Add profiles/workspaces/memberships migrations with RLS and automated cross-user denial tests.
@@ -94,8 +96,9 @@ Before public onboarding:
 
 ## 7. Current blockers / decisions
 
-- Existing Supabase projects visible to the connected account are named `ai_studio` and `ai_studio_test`, and both currently report INACTIVE. Neither is assumed to be the NEXUS production project.
-- Do not create, activate, restore, or incur project costs without explicit project selection and cost approval.
+- Selected target: existing `ai_studio` Supabase project (Seoul region) as the single NEXUS service project. The user explicitly chose one service project rather than separate production and test projects.
+- `ai_studio` currently reports INACTIVE. Project restoration/reactivation may incur charges; do not restore or change billing until current restoration requirements and costs are checked and presented for approval.
+- `ai_studio_test` is not part of the current target architecture and should be left untouched; do not delete it.
 - The current Desktop OAuth client remains for local development only. It cannot serve public web callbacks.
 - No public registration or multi-tenant isolation is claimed until Phases A–C are implemented and verified.
 - No merge to `main`, deployment, or public publishing is part of this branch.
