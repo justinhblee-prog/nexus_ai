@@ -11,10 +11,11 @@
 ## 2026-11-27 검증 갱신
 
 - FastAPI 브라우저 인증은 기본 필수이며 비밀값 누락 시 fail-closed합니다. Browser Studio는 세션 상태 확인 → 운영자 로그인 → HttpOnly/SameSite 세션 → 만료 시 재로그인 흐름을 사용합니다.
-- Docker 운영 이미지에서 실제 세로형 H.264/AAC MP4를 생성하고 ffprobe QA까지 수행하는 별도 통합 테스트를 추가했습니다. FFmpeg/MoviePy 리소스와 실패한 임시 산출물도 정리합니다.
-- Playwright Chromium으로 네 가지 디자인 테마의 실제 레이아웃 차이, 색상 스킨 독립성, 샘플 토글, 워크스페이스 이동, 모바일 전환을 검사합니다.
-- Windows 운영자용 scripts/setup-local-nexus.ps1 및 scripts/verify-local-nexus.ps1를 추가했습니다. 이 스크립트들은 원격 CI에서 문법·계약을 검사하며, Windows 호스트에서의 실제 실행은 아직 대기입니다.
-- Vercel Preview는 정적 UI 전용이며 FastAPI/SQLite 운영 백엔드와 연결되지 않습니다. 무료 배포 일일 제한으로 최신 커밋 배포가 차단될 수 있습니다.
+- Docker 운영 이미지에서 실제 Uvicorn API 서버를 띄워 미인증 API/미디어 차단, 비밀번호 오류, 로그인 쿠키 발급, 인증 후 API 접근, 로그아웃 후 차단을 검증했습니다.
+- Docker 운영 이미지에서 실제 세로형 H.264/AAC MP4를 생성하고 ffprobe QA까지 수행했습니다. FFmpeg/MoviePy 리소스 경고 없이 임시 파일을 정리합니다.
+- Playwright Chromium으로 네 가지 디자인 테마의 실제 레이아웃 차이, 색상 스킨 독립성, 샘플 토글, 워크스페이스 이동, 모바일 전환, 운영자 로그인과 세션 만료를 검사했습니다.
+- Windows 운영자용 scripts/setup-local-nexus.ps1 및 scripts/verify-local-nexus.ps1를 추가했고 PowerShell parser CI를 통과했습니다. Windows 호스트에서의 실제 실행은 아직 대기입니다.
+- Vercel Preview는 정적 UI 전용이며 FastAPI/SQLite 운영 백엔드와 연결되지 않습니다. Vercel 일일 배포 제한으로 최신 커밋 배포가 차단될 수 있습니다.
 - Google/YouTube OAuth, Private 업로드, YouTube Analytics 읽기 권한은 실계정 연결 및 Windows 호스트에서 검증해야 합니다. 성과 데이터는 권한 연결 전까지 계속 null/미수집으로 둡니다.
 ## 1. 운영 목표와 자동화 경계
 
