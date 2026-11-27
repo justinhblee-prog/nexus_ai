@@ -41,6 +41,8 @@ _ALLOWED_RPCS = {
     "claim_next_account_deletion_request",
     "heartbeat_account_deletion_request",
     "mark_account_deletion_sessions_revoked",
+    "heartbeat_account_deletion_worker",
+    "is_account_deletion_worker_online",
     "update_account_deletion_request",
     "delete_account_deletion_private_user_rows",
     "count_account_deletion_private_user_rows",
@@ -488,6 +490,14 @@ class SupabaseAdminRestClient:
             "p_lease_seconds": max(30, min(int(lease_seconds), 900)),
         }) or []
         return rows[0] if rows else None
+
+    def heartbeat_account_deletion_worker(self, worker_id):
+        if not isinstance(worker_id, str) or not 1 <= len(worker_id) <= 128:
+            raise ValueError("Account deletion worker ID is invalid")
+        return self.rpc("heartbeat_account_deletion_worker", {"p_worker_id": worker_id})
+
+    def is_account_deletion_worker_online(self):
+        return bool(self.rpc("is_account_deletion_worker_online", {}))
 
     def mark_account_deletion_sessions_revoked(self, user_id):
         value = self._account_user_id(user_id)
