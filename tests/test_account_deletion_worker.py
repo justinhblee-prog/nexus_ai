@@ -82,8 +82,10 @@ class AccountDeletionWorkerTests(unittest.TestCase):
             "provider_account_id": "google-account",
             "status": "connected",
         }]
+        admin.get_account_deletion_oauth_state.return_value = None
+        admin.set_account_deletion_oauth_state.return_value = "preserved"
         admin.has_active_connection_outside_workspaces.return_value = True
-        _cleanup_oauth(admin, [SOLE], oauth_config_factory=Mock(), decrypt_token=Mock())
+        _cleanup_oauth(admin, USER, [SOLE], oauth_config_factory=Mock(), decrypt_token=Mock())
         admin.get_credential.assert_not_called()
         admin.delete_credential.assert_called_once()
 
@@ -93,6 +95,8 @@ class AccountDeletionWorkerTests(unittest.TestCase):
             {"connection_id": "55555555-5555-4555-8555-555555555555", "provider_account_id": "google-account", "status": "connected"},
             {"connection_id": "66666666-6666-4666-8666-666666666666", "provider_account_id": "google-account", "status": "connected"},
         ]
+        admin.get_account_deletion_oauth_state.return_value = None
+        admin.set_account_deletion_oauth_state.side_effect = ["revocation_started", "revoked"]
         admin.has_active_connection_outside_workspaces.return_value = False
         admin.get_credential.side_effect = [
             {"encrypted_refresh_token_hex": "ciphertext", "encryption_key_version": "v1"},
@@ -101,7 +105,7 @@ class AccountDeletionWorkerTests(unittest.TestCase):
         oauth = Mock()
         config_factory = Mock(return_value=oauth)
         decrypt = Mock(return_value="refresh-token")
-        _cleanup_oauth(admin, [SOLE], oauth_config_factory=config_factory, decrypt_token=decrypt)
+        _cleanup_oauth(admin, USER, [SOLE], oauth_config_factory=config_factory, decrypt_token=decrypt)
         oauth.revoke_refresh_token.assert_called_once_with("refresh-token")
         self.assertEqual(admin.delete_credential.call_count, 2)
 
@@ -189,6 +193,8 @@ class AccountDeletionWorkerTests(unittest.TestCase):
             {"connection_id": "55555555-5555-4555-8555-555555555555", "provider_account_id": "google-account", "status": "connected"},
             {"connection_id": "66666666-6666-4666-8666-666666666666", "provider_account_id": "google-account", "status": "connected"},
         ]
+        admin.get_account_deletion_oauth_state.return_value = None
+        admin.set_account_deletion_oauth_state.return_value = "revocation_started"
         admin.has_active_connection_outside_workspaces.return_value = False
         admin.get_credential.side_effect = [
             {"encrypted_refresh_token_hex": "bad-ciphertext", "encryption_key_version": "v1"},
@@ -196,7 +202,7 @@ class AccountDeletionWorkerTests(unittest.TestCase):
         ]
         oauth = Mock()
         decrypt = Mock(side_effect=[TokenVaultError("bad"), "valid-refresh-token"])
-        _cleanup_oauth(admin, [SOLE], oauth_config_factory=Mock(return_value=oauth), decrypt_token=decrypt)
+        _cleanup_oauth(admin, USER, [SOLE], oauth_config_factory=Mock(return_value=oauth), decrypt_token=decrypt)
         oauth.revoke_refresh_token.assert_called_once_with("valid-refresh-token")
 
     def test_active_worker_lease_retries_before_any_destructive_action(self):
