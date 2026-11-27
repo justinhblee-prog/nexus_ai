@@ -321,12 +321,6 @@ def hosted_account_deletion_preflight(request: Request):
             "user_id": f"eq.{user_id}",
             "order": "created_at.asc",
         }) or []
-        member_workspace_ids = [row["workspace_id"] for row in memberships]
-        owned = client.select("workspaces", {
-            "select": "workspace_id,workspace_name,owner_id",
-            "owner_id": f"eq.{user_id}",
-            "order": "created_at.asc",
-        }) or []
         blockers = []
         summaries = []
         shared_workspace_ids = set()
@@ -393,6 +387,8 @@ def hosted_account_deletion_preflight(request: Request):
             })
         return {
             "ownership_clear": not any(item.get("workspace_id") for item in blockers),
+            "storage_clear": shared_storage_count == 0,
+            "preflight_clear": not blockers,
             "workspaces": summaries,
             "owned_workspaces": [item for item in summaries if item["owned_by_current_user"]],
             "storage": {
