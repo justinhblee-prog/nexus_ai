@@ -36,6 +36,8 @@ class AccountLifecycleApiContractTests(unittest.TestCase):
         self.assertIn('"storage_clear": shared_storage_count == 0', self.api)
         self.assertIn('"preflight_clear": not blockers', self.api)
         self.assertIn("Re-upload or safely transfer those files", self.api)
+        self.assertIn("if others or not is_owner:", self.api)
+        self.assertIn('"member_count": len(members) if is_owner else None', self.api)
         self.assertIn('"/api/hosted/workspaces/{workspace_id}/members"', self.api)
         self.assertIn('"/api/hosted/workspaces/{workspace_id}/members/{member_id}/role"', self.api)
         self.assertIn('Field(pattern="^(admin|editor|viewer)$")', self.api)
