@@ -205,7 +205,7 @@ class WorkspaceOwnershipTransferReq(BaseModel):
 
 class HostedTopicQueueCreateReq(BaseModel):
     topic: str = Field(min_length=1, max_length=300)
-    source: str = Field(default="manual", max_length=40)
+    source: str = Field(default="manual", pattern="^(manual|trend_radar)$", max_length=40)
     region: str = Field(default="", max_length=12)
     source_name: str = Field(default="", max_length=120)
     source_url: str | None = Field(default=None, max_length=2048)
