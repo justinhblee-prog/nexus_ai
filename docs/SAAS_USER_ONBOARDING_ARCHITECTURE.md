@@ -1,6 +1,6 @@
 # NEXUS STUDIO PRO — SaaS User Registration & YouTube Account Linking
 
-Status: Phase A identity bootstrap migration implemented; hosted UI/API integration and end-to-end signup verification remain in progress.
+Status: Phase A database identity bootstrap and hosted JWT verification foundation implemented; browser signup UI, tenant-scoped application APIs, and end-to-end signup verification remain in progress.
 Target: `feat/nexus-user-onboarding-web-oauth-20261127`, based on the current full-stack integration branch.
 
 ## Phase A implementation delivered
@@ -11,6 +11,10 @@ Target: `feat/nexus-user-onboarding-web-oauth-20261127`, based on the current fu
 - Added a private, non-exposed Auth trigger that creates a profile and a personal workspace when Supabase Auth inserts a new user.
 - Reuses the existing workspace-owner membership trigger to grant the new user the owner role.
 - Replaced recursive workspace-membership policy lookups with a private owner-check helper that binds authorization to `auth.uid()`.
+- Added server-side Supabase JWT verification using the project JWKS, issuer, audience, expiry, subject UUID, and authenticated-role checks.
+- Added public auth configuration that exposes only the project URL and publishable key, explicitly rejecting service-role keys (including legacy JWT-form keys).
+- Added a hosted-auth safety gate: hosted mode blocks legacy single-operator SQLite API and media routes until tenant-scoped equivalents are implemented; only verified hosted-session and public auth-config routes remain available.
+- Added regression tests for token validation, service-role key rejection, and fail-closed route isolation.
 - No service-role key, Google client secret, or token is stored in browser-visible data.
 - No additional Supabase project, paid add-on, or paid resource is used.
 
@@ -18,7 +22,7 @@ Target: `feat/nexus-user-onboarding-web-oauth-20261127`, based on the current fu
 
 - Configure Supabase Auth site URL and redirect allowlist for the actual hosted domain.
 - Implement the browser signup, email verification, login, logout, password reset, session refresh, and account deletion experience.
-- Add API-side verification of Supabase access tokens and tenant-scoped operations.
+- Add tenant-scoped application endpoints and bind every query/worker/media operation to the verified workspace membership.
 - Verify cross-user access denial with two isolated test identities in the same project.
 
 ## Next phases
