@@ -439,6 +439,24 @@ class SupabaseAdminRestClient:
             prefer="return=representation",
         ) or []
 
+    def list_youtube_connections_for_workspaces(self, workspace_ids):
+        """List workspace-scoped YouTube connection metadata, never token material."""
+        ids = [str(value) for value in workspace_ids]
+        if len(ids) > 100 or any(not re.fullmatch(r"wsp_[0-9a-fA-F-]{36}", value) for value in ids):
+            raise ValueError("Workspace connection inventory request is invalid")
+        if not ids:
+            return []
+        return self._call(
+            "GET",
+            "youtube_connections",
+            params={
+                "select": "connection_id,workspace_id,provider,provider_account_id,status",
+                "workspace_id": "in.(" + ",".join(ids) + ")",
+                "provider": "eq.youtube",
+                "order": "created_at.asc",
+            },
+        ) or []
+
     def has_other_active_connections(self, provider_account_id, connection_id):
         rows = self._call(
             "GET",
