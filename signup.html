@@ -67,6 +67,18 @@
         <div id="workspace" class="workspace">워크스페이스 정보를 확인하고 있습니다.</div>
         <div id="workspace-picker" class="workspace-select hidden"><label for="workspace-select">활성 워크스페이스</label><select id="workspace-select" aria-label="활성 워크스페이스"></select></div>
         <div id="connections" class="connections"></div>
+        <div id="workspace-members-panel" class="workspace hidden" style="margin-top:12px">
+          <strong>워크스페이스 구성원 및 소유권</strong>
+          <p class="muted">계정을 삭제하기 전에 다른 구성원에게 소유권을 이전할 수 있습니다. 공유 작업과 채널은 유지됩니다.</p>
+          <div id="workspace-members" class="connections"></div>
+          <label for="workspace-member-select">구성원 선택</label>
+          <select id="workspace-member-select"></select>
+          <div class="actions">
+            <button class="secondary" type="button" id="member-promote-admin">관리자로 지정</button>
+            <button class="secondary" type="button" id="workspace-transfer-owner">소유권 이전</button>
+          </div>
+          <div id="workspace-members-status" class="muted" role="status"></div>
+        </div>
         <button class="primary" type="button" id="connect-youtube">YouTube 채널 연결</button>
         <div class="workspace" style="margin-top:16px">
           <strong>Shorts 제작</strong>
@@ -196,6 +208,7 @@
               const approvalResult = await approval.json();
               if (!approval.ok) throw new Error(approvalResult.detail || "최종 승인에 실패했습니다.");
               await loadJobs();
+      await loadWorkspaceMembers();
               showMessage("최종 승인되었습니다. 업로드 워커가 활성화된 경우 비공개 업로드가 진행됩니다. 공개 전환은 YouTube Studio에서 직접 해야 합니다.", "success");
             } catch (error) {
               showMessage(error.message || "최종 승인에 실패했습니다.", "error");
@@ -285,6 +298,50 @@
       await loadJobs();
     }
 
+    let currentUserId = "";
+
+    function updateWorkspaceMemberControls() {
+      const select = document.getElementById("workspace-member-select");
+      const selected = select.options[select.selectedIndex];
+      const role = selected ? selected.dataset.role : "";
+      document.getElementById("member-promote-admin").disabled = !selected || role === "admin";
+      document.getElementById("workspace-transfer-owner").disabled = !selected || role !== "admin";
+    }
+
+    async function loadWorkspaceMembers() {
+      const panel = document.getElementById("workspace-members-panel");
+      const list = document.getElementById("workspace-members");
+      const select = document.getElementById("workspace-member-select");
+      if (!activeAccessToken || !activeWorkspaceId || activeWorkspaceRole !== "owner") {
+        panel.classList.add("hidden");
+        list.replaceChildren();
+        select.replaceChildren();
+        return;
+      }
+      const response = await fetch(
+        "/api/hosted/workspaces/" + encodeURIComponent(activeWorkspaceId) + "/members",
+        { headers: { Authorization: "Bearer " + activeAccessToken } }
+      );
+      if (!response.ok) throw new Error("워크스페이스 구성원을 불러오지 못했습니다.");
+      const result = await response.json();
+      list.replaceChildren();
+      select.replaceChildren();
+      for (const member of (result.items || [])) {
+        const row = document.createElement("div");
+        row.className = "connection-row";
+        row.textContent = member.user_id + " · " + member.role;
+        list.appendChild(row);
+        if (member.user_id === currentUserId) continue;
+        const option = document.createElement("option");
+        option.value = member.user_id;
+        option.dataset.role = member.role;
+        option.textContent = member.user_id + " · " + member.role;
+        select.appendChild(option);
+      }
+      panel.classList.remove("hidden");
+      updateWorkspaceMemberControls();
+    }
+
     let accountDeletionEnabled = false;
     let accountDeletionPreflightClear = false;
     let currentUserEmail = "";
@@ -301,6 +358,7 @@
       authForms.classList.add("hidden");
       document.getElementById("workspace").textContent = "계정 삭제 요청의 세션 확인을 다시 시도할 수 있습니다.";
       document.getElementById("workspace-picker").classList.add("hidden");
+      document.getElementById("workspace-members-panel").classList.add("hidden");
       document.getElementById("connections").replaceChildren();
       document.getElementById("jobs").replaceChildren();
       document.getElementById("connect-youtube").hidden = true;
@@ -358,6 +416,7 @@
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError) throw userError;
       currentUserEmail = user.email || "";
+      currentUserId = user.id || "";
       const response = await fetch("/api/hosted/session", {
         headers: { Authorization: "Bearer " + session.access_token }
       });
@@ -637,6 +696,58 @@
       } catch (error) {
         showMessage(error.message || "비밀번호 변경에 실패했습니다.", "error");
       } finally { setBusy(passwordForm, false); }
+    });
+
+    document.getElementById("workspace-member-select").addEventListener("change", updateWorkspaceMemberControls);
+
+    document.getElementById("member-promote-admin").addEventListener("click", async () => {
+      const memberId = document.getElementById("workspace-member-select").value;
+      if (!memberId || !activeWorkspaceId) return;
+      const button = document.getElementById("member-promote-admin");
+      button.disabled = true;
+      try {
+        const response = await fetch(
+          "/api/hosted/workspaces/" + encodeURIComponent(activeWorkspaceId) + "/members/" + encodeURIComponent(memberId) + "/role",
+          {
+            method: "PATCH",
+            headers: { Authorization: "Bearer " + activeAccessToken, "Content-Type": "application/json" },
+            body: JSON.stringify({ role: "admin" })
+          }
+        );
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "관리자 지정에 실패했습니다.");
+        await loadWorkspaceMembers();
+        showMessage("구성원을 워크스페이스 관리자로 지정했습니다.", "success");
+      } catch (error) {
+        showMessage(error.message || "관리자 지정에 실패했습니다.", "error");
+      } finally {
+        updateWorkspaceMemberControls();
+      }
+    });
+
+    document.getElementById("workspace-transfer-owner").addEventListener("click", async () => {
+      const memberId = document.getElementById("workspace-member-select").value;
+      if (!memberId || !activeWorkspaceId) return;
+      if (!window.confirm("선택한 관리자에게 워크스페이스 소유권을 이전하시겠습니까? 이전 후 현재 계정은 관리자가 됩니다.")) return;
+      const button = document.getElementById("workspace-transfer-owner");
+      button.disabled = true;
+      try {
+        const response = await fetch(
+          "/api/hosted/workspaces/" + encodeURIComponent(activeWorkspaceId) + "/transfer-ownership",
+          {
+            method: "POST",
+            headers: { Authorization: "Bearer " + activeAccessToken, "Content-Type": "application/json" },
+            body: JSON.stringify({ new_owner_id: memberId })
+          }
+        );
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "소유권 이전에 실패했습니다.");
+        await loadSession();
+        showMessage("소유권을 이전했습니다. 기존 워크스페이스 데이터와 구성원은 유지됩니다.", "success");
+      } catch (error) {
+        showMessage(error.message || "소유권 이전에 실패했습니다.", "error");
+        updateWorkspaceMemberControls();
+      }
     });
 
     document.getElementById("deletion-preflight").addEventListener("click", async () => {
