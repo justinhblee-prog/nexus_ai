@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS public.shorts_topic_queue (
   topic text NOT NULL
     CHECK (char_length(btrim(topic)) BETWEEN 1 AND 300),
   normalized_topic text GENERATED ALWAYS AS (
-    lower(regexp_replace(btrim(topic), '\\s+', ' ', 'g'))
+    lower(regexp_replace(btrim(topic), '\s+', ' ', 'g'))
   ) STORED,
   source text NOT NULL DEFAULT 'manual'
     CHECK (source IN ('manual', 'trend_radar')),
