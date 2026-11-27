@@ -39,6 +39,7 @@ _ALLOWED_RPCS = {
     "mark_account_deletion_tombstone",
     "enqueue_account_deletion",
     "claim_next_account_deletion_request",
+    "mark_account_deletion_sessions_revoked",
     "update_account_deletion_request",
     "delete_account_deletion_private_user_rows",
     "count_account_deletion_private_user_rows",
@@ -466,6 +467,10 @@ class SupabaseAdminRestClient:
             "p_lease_seconds": max(30, min(int(lease_seconds), 900)),
         }) or []
         return rows[0] if rows else None
+
+    def mark_account_deletion_sessions_revoked(self, user_id):
+        value = self._account_user_id(user_id)
+        return self.rpc("mark_account_deletion_sessions_revoked", {"p_user_id": value})
 
     def update_account_deletion_request(self, user_id, worker_id, status, phase, error_code=None, retry_seconds=60):
         value = str(user_id)
