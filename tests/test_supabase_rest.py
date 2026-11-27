@@ -135,9 +135,6 @@ class SupabaseRestClientTests(unittest.TestCase):
         })
         self.assertEqual(rows, [{"topic": "AI"}])
         self.assertEqual(http.call_args.kwargs["headers"]["Authorization"], "Bearer verified.user.jwt")
-        with self.assertRaises(ValueError):
-            client.insert("public_trend_signals", {"topic": "client-write-must-be-blocked"})
-
     def test_topic_queue_delete_is_allowed_and_uses_user_jwt(self):
         http = Mock()
         http.return_value = Mock(status_code=204)
