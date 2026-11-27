@@ -1,7 +1,7 @@
 import base64
 import json
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from hosted_auth import (
     HostedAuthConfigurationError,
@@ -102,7 +102,7 @@ class HostedAuthTokenTests(unittest.TestCase):
         jwt_module.decode.return_value = claims
         response = Mock(status_code=200)
         response.json.return_value = {"id": user_id, "email": "member@example.test"}
-        with unittest.mock.patch("requests.get", return_value=response) as auth_get:
+        with patch("requests.get", return_value=response) as auth_get:
             result = verify_access_token("legacy.hs256.token", ENV, jwt_module=jwt_module)
         self.assertEqual(result, {"user_id": user_id, "email": "member@example.test", "role": "authenticated"})
         self.assertEqual(auth_get.call_args.args[0], "https://example-project.supabase.co/auth/v1/user")
