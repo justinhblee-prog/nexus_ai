@@ -72,15 +72,15 @@ class HostedAuthTokenTests(unittest.TestCase):
         self.assertEqual(kwargs["issuer"], "https://example-project.supabase.co/auth/v1")
         self.assertIn("sub", kwargs["options"]["require"])
 
-    def test_verified_auth_time_is_returned_for_recent_reauthentication_checks(self):
+    def test_verified_amr_timestamp_is_returned_for_recent_password_reauthentication(self):
         user_id = "11111111-1111-4111-8111-111111111111"
         claims = {
             "sub": user_id, "email": "member@example.test", "role": "authenticated",
             "iss": "https://example-project.supabase.co/auth/v1", "aud": "authenticated",
-            "exp": 2_000_000_000, "iat": 1_900_000_000, "auth_time": 1_999_999_900,
+            "exp": 2_000_000_000, "iat": 1_900_000_000, "amr": [{"method": "password", "timestamp": 1_999_999_900}],
         }
         result, _ = self._verify(claims)
-        self.assertEqual(result["auth_time"], 1_999_999_900)
+        self.assertEqual(result["amr"], [{"method": "password", "timestamp": 1_999_999_900}])
 
     def test_invalid_subject_or_role_is_rejected(self):
         base = {
