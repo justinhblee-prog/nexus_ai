@@ -84,6 +84,44 @@ class SupabaseRestClientTests(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 502)
         self.assertNotIn("private connection details", raised.exception.public_message)
 
+    def test_count_uses_head_exact_count_with_verified_user_jwt_and_filters(self):
+        http = Mock()
+        response = Mock(status_code=200)
+        response.headers = {"Content-Range": "0-0/1234"}
+        http.return_value = response
+        client = SupabaseRestClient("verified.user.jwt", env=ENV, http_request=http)
+        count = client.count("shorts_jobs", {
+            "workspace_id": "eq.wsp_1",
+            "stage": "eq.published",
+        })
+        self.assertEqual(count, 1234)
+        args, kwargs = http.call_args
+        self.assertEqual(args[0], "HEAD")
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer verified.user.jwt")
+        self.assertEqual(kwargs["headers"]["Prefer"], "count=exact")
+        self.assertEqual(kwargs["headers"]["Range"], "0-0")
+        self.assertEqual(kwargs["params"]["workspace_id"], "eq.wsp_1")
+        self.assertEqual(kwargs["params"]["stage"], "eq.published")
+
+    def test_count_handles_empty_and_rejects_missing_exact_content_range(self):
+        http = Mock()
+        empty = Mock(status_code=200)
+        empty.headers = {"Content-Range": "*/0"}
+        http.return_value = empty
+        client = SupabaseRestClient("verified.user.jwt", env=ENV, http_request=http)
+        self.assertEqual(client.count("shorts_jobs", {"workspace_id": "eq.wsp_1"}), 0)
+        missing = Mock(status_code=200)
+        missing.headers = {}
+        http.return_value = missing
+        with self.assertRaises(SupabaseRestError) as raised:
+            client.count("shorts_jobs", {"workspace_id": "eq.wsp_1"})
+        self.assertEqual(raised.exception.status_code, 502)
+
+    def test_count_rejects_unsupported_tables(self):
+        client = SupabaseRestClient("verified.user.jwt", env=ENV, http_request=Mock())
+        with self.assertRaises(ValueError):
+            client.count("private.youtube_oauth_credentials", {"select": "*"})
+
 
 if __name__ == "__main__":
     unittest.main()
