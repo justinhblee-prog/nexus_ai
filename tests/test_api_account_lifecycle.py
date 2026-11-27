@@ -50,7 +50,7 @@ class AccountLifecycleApiContractTests(unittest.TestCase):
         self.assertIn("seen_provider_accounts = set()", self.api)
         self.assertIn('"active_worker_lease_count": len(active_leases)', self.api)
         self.assertIn('"shared_workspace_object_blockers": shared_storage_count', self.api)
-        self.assertIn('"storage_clear": shared_storage_count == 0', self.api)
+        self.assertIn('"storage_clear": shared_storage_count == 0 and unclassified_storage_count == 0', self.api)
         self.assertIn('"preflight_clear": not blockers', self.api)
         self.assertIn("Re-upload or safely transfer those files", self.api)
         self.assertIn("if others or not is_owner:", self.api)
