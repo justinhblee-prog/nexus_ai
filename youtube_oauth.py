@@ -137,6 +137,108 @@ class GoogleOAuthConfig:
             raise GoogleOAuthError("No YouTube channel is available for this Google account")
         return channels
 
+    def refresh_access_token(self, refresh_token: str, http_post: Callable = requests.post) -> str:
+        try:
+            response = http_post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "client_id": self.client_id,
+                    "client_secret": self.client_secret,
+                    "refresh_token": refresh_token,
+                    "grant_type": "refresh_token",
+                },
+                timeout=10,
+            )
+        except requests.RequestException as exc:
+            raise GoogleOAuthError("Google token refresh service is temporarily unavailable") from exc
+        if response.status_code != 200:
+            raise GoogleOAuthError("Google rejected the stored refresh token")
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise GoogleOAuthError("Google returned an invalid refreshed token response") from exc
+        access_token = payload.get("access_token")
+        if not access_token:
+            raise GoogleOAuthError("Google did not return a refreshed access token")
+        return access_token
+
+    def upload_private_video(
+        self,
+        access_token: str,
+        content: bytes,
+        title: str,
+        description: str,
+        expected_channel_id: str,
+        http_post: Callable = requests.post,
+        http_put: Callable = requests.put,
+    ) -> dict:
+        # Fail closed when channel selection is ambiguous: never upload to an unknown Brand Account.
+        channels = self.fetch_channels(access_token)
+        if len(channels) != 1 or channels[0]["channel_id"] != expected_channel_id:
+            raise GoogleOAuthError("Google account must expose exactly the connected target YouTube channel")
+        metadata = {
+            "snippet": {
+                "title": (title or "NEXUS Shorts")[:100],
+                "description": ((description or "")[:4500] + "\\n\\n#Shorts")[:5000],
+                "categoryId": "22",
+                "tags": ["Shorts", "NEXUSStudioPro"],
+            },
+            "status": {
+                "privacyStatus": "private",
+                "selfDeclaredMadeForKids": False,
+            },
+        }
+        init_url = "https://www.googleapis.com/upload/youtube/v3/videos"
+        try:
+            init_response = http_post(
+                init_url,
+                params={"uploadType": "resumable", "part": "snippet,status"},
+                json=metadata,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json; charset=UTF-8",
+                    "X-Upload-Content-Length": str(len(content)),
+                    "X-Upload-Content-Type": "video/mp4",
+                },
+                timeout=15,
+            )
+        except requests.RequestException as exc:
+            raise GoogleOAuthError("YouTube upload session could not be created") from exc
+        if init_response.status_code not in (200, 201):
+            raise GoogleOAuthError("YouTube rejected the private upload request")
+        upload_url = init_response.headers.get("Location")
+        if not upload_url or not upload_url.startswith("https://"):
+            raise GoogleOAuthError("YouTube did not return a valid resumable upload URL")
+        try:
+            upload_response = http_put(
+                upload_url,
+                data=content,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "video/mp4",
+                    "Content-Length": str(len(content)),
+                },
+                timeout=120,
+            )
+        except requests.RequestException as exc:
+            raise GoogleOAuthError("YouTube media transfer failed") from exc
+        if upload_response.status_code not in (200, 201):
+            raise GoogleOAuthError("YouTube did not complete the private upload")
+        try:
+            uploaded = upload_response.json()
+        except ValueError as exc:
+            raise GoogleOAuthError("YouTube returned an invalid upload response") from exc
+        video_id = uploaded.get("id")
+        channel_id = (uploaded.get("snippet") or {}).get("channelId")
+        privacy_status = (uploaded.get("status") or {}).get("privacyStatus")
+        if not video_id or channel_id != expected_channel_id or privacy_status != "private":
+            raise GoogleOAuthError("YouTube upload channel or private visibility verification failed")
+        return {
+            "video_id": video_id,
+            "channel_id": channel_id,
+            "privacy_status": privacy_status,
+        }
+
     def revoke_refresh_token(self, refresh_token: str, http_post: Callable = requests.post):
         try:
             response = http_post(
