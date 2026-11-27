@@ -36,6 +36,7 @@ _ALLOWED_RPCS = {
     "finish_shorts_upload",
     "list_account_deletion_storage_objects",
     "list_account_deletion_active_leases",
+    "mark_account_deletion_tombstone",
 }
 
 
@@ -324,6 +325,12 @@ class SupabaseAdminRestClient:
             raise SupabaseAdminError("Supabase media cleanup failed", response.status_code if 400 <= response.status_code < 500 else 502)
         return True
 
+
+    def mark_account_deletion_tombstone(self, user_id):
+        """Persist an identity tombstone before revoking sessions and deleting Auth."""
+        return self.rpc("mark_account_deletion_tombstone", {
+            "p_user_id": str(user_id),
+        })
 
     def list_account_deletion_storage_objects(self, user_id, limit=1000, offset=0):
         """List Storage objects owned by one verified account via a service-only RPC."""
