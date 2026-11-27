@@ -167,6 +167,7 @@ def process_one_account_deletion(
     lease_seconds=900,
     retry_seconds=120,
 ):
+    admin.heartbeat_account_deletion_worker(worker_id)
     request = admin.claim_next_account_deletion_request(worker_id, lease_seconds)
     if not request:
         return False
@@ -178,6 +179,9 @@ def process_one_account_deletion(
     def heartbeat_loop():
         while not stop_heartbeat.wait(60):
             try:
+                if not admin.heartbeat_account_deletion_worker(worker_id):
+                    lease_lost.set()
+                    return
                 if not admin.heartbeat_account_deletion_request(user_id, worker_id, lease_seconds):
                     lease_lost.set()
                     return
@@ -319,6 +323,7 @@ def run_worker():
     logger.info("NEXUS account deletion worker started.")
     while True:
         try:
+            admin.heartbeat_account_deletion_worker(worker_id)
             claimed = process_one_account_deletion(admin, worker_id)
             if not claimed:
                 time.sleep(poll_seconds)
