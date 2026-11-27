@@ -29,7 +29,7 @@ class AccountLifecycleApiContractTests(unittest.TestCase):
         self.assertIn('"account_deletion_enabled": account_deletion_is_enabled()', self.api)
         self.assertIn('"/api/hosted/account/deletion/request"', self.api)
         self.assertIn('Field(pattern="^DELETE MY ACCOUNT$")', self.api)
-        self.assertIn("auth_time > now + 30", self.api)
+        self.assertIn("has_recent_password_reauthentication(user)", self.api)
         self.assertIn("admin.enqueue_account_deletion(user_id", self.api)
         self.assertIn("admin.revoke_user_sessions(request.state.hosted_access_token)", self.api)
         self.assertIn("admin.mark_account_deletion_sessions_revoked(user_id)", self.api)
