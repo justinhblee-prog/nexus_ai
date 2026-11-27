@@ -168,11 +168,27 @@ ALTER TABLE private.youtube_oauth_states ENABLE ROW LEVEL SECURITY;
 GRANT SELECT ON public.youtube_connections, public.shorts_channels, public.shorts_jobs,
   public.shorts_job_events, public.shorts_analytics_snapshots, public.shorts_assets
   TO authenticated;
-GRANT INSERT, UPDATE, DELETE ON public.youtube_connections TO authenticated;
-GRANT INSERT, UPDATE, DELETE ON public.shorts_channels TO authenticated;
-GRANT INSERT, UPDATE, DELETE ON public.shorts_jobs TO authenticated;
-GRANT INSERT ON public.shorts_job_events TO authenticated;
-GRANT INSERT, UPDATE, DELETE ON public.shorts_assets TO authenticated;
+GRANT INSERT (workspace_id, provider, provider_account_id, display_name, scopes, connected_by)
+  ON public.youtube_connections TO authenticated;
+GRANT UPDATE (status, scopes, disconnected_at, updated_at, display_name)
+  ON public.youtube_connections TO authenticated;
+GRANT DELETE ON public.youtube_connections TO authenticated;
+GRANT INSERT (workspace_id, connection_id, platform, provider_channel_id, display_name, persona, created_by)
+  ON public.shorts_channels TO authenticated;
+GRANT UPDATE (display_name, persona, is_active, updated_at)
+  ON public.shorts_channels TO authenticated;
+GRANT DELETE ON public.shorts_channels TO authenticated;
+GRANT INSERT (workspace_id, channel_id, created_by, topic, title, script)
+  ON public.shorts_jobs TO authenticated;
+GRANT UPDATE (topic, title, script, updated_at, approval_status, approved_by, approved_at)
+  ON public.shorts_jobs TO authenticated;
+GRANT DELETE ON public.shorts_jobs TO authenticated;
+GRANT INSERT (workspace_id, job_id, actor_id, event_type, details)
+  ON public.shorts_job_events TO authenticated;
+GRANT INSERT (workspace_id, created_by, asset_kind, storage_key, media_type, size_bytes, checksum_sha256)
+  ON public.shorts_assets TO authenticated;
+GRANT UPDATE (deleted_at) ON public.shorts_assets TO authenticated;
+GRANT DELETE ON public.shorts_assets TO authenticated;
 REVOKE ALL ON TABLE private.youtube_oauth_credentials, private.youtube_oauth_states FROM PUBLIC, anon, authenticated;
 
 CREATE POLICY youtube_connections_member_read
@@ -187,10 +203,7 @@ CREATE POLICY youtube_connections_admin_insert
 CREATE POLICY youtube_connections_admin_update
   ON public.youtube_connections FOR UPDATE TO authenticated
   USING ((SELECT private.has_workspace_role(workspace_id, ARRAY['owner','admin'])))
-  WITH CHECK (
-    connected_by = (SELECT auth.uid())
-    AND (SELECT private.has_workspace_role(workspace_id, ARRAY['owner','admin']))
-  );
+  WITH CHECK ((SELECT private.has_workspace_role(workspace_id, ARRAY['owner','admin'])));
 CREATE POLICY youtube_connections_admin_delete
   ON public.youtube_connections FOR DELETE TO authenticated
   USING ((SELECT private.has_workspace_role(workspace_id, ARRAY['owner','admin'])));
@@ -207,10 +220,7 @@ CREATE POLICY shorts_channels_editor_insert
 CREATE POLICY shorts_channels_editor_update
   ON public.shorts_channels FOR UPDATE TO authenticated
   USING ((SELECT private.has_workspace_role(workspace_id, ARRAY['owner','admin','editor'])))
-  WITH CHECK (
-    created_by = (SELECT auth.uid())
-    AND (SELECT private.has_workspace_role(workspace_id, ARRAY['owner','admin','editor']))
-  );
+  WITH CHECK ((SELECT private.has_workspace_role(workspace_id, ARRAY['owner','admin','editor'])));
 CREATE POLICY shorts_channels_admin_delete
   ON public.shorts_channels FOR DELETE TO authenticated
   USING ((SELECT private.has_workspace_role(workspace_id, ARRAY['owner','admin'])));
@@ -227,10 +237,7 @@ CREATE POLICY shorts_jobs_editor_insert
 CREATE POLICY shorts_jobs_editor_update
   ON public.shorts_jobs FOR UPDATE TO authenticated
   USING ((SELECT private.has_workspace_role(workspace_id, ARRAY['owner','admin','editor'])))
-  WITH CHECK (
-    created_by = (SELECT auth.uid())
-    AND (SELECT private.has_workspace_role(workspace_id, ARRAY['owner','admin','editor']))
-  );
+  WITH CHECK ((SELECT private.has_workspace_role(workspace_id, ARRAY['owner','admin','editor'])));
 CREATE POLICY shorts_jobs_admin_delete
   ON public.shorts_jobs FOR DELETE TO authenticated
   USING ((SELECT private.has_workspace_role(workspace_id, ARRAY['owner','admin'])));
@@ -261,10 +268,7 @@ CREATE POLICY shorts_assets_editor_insert
 CREATE POLICY shorts_assets_editor_update
   ON public.shorts_assets FOR UPDATE TO authenticated
   USING ((SELECT private.has_workspace_role(workspace_id, ARRAY['owner','admin','editor'])))
-  WITH CHECK (
-    created_by = (SELECT auth.uid())
-    AND (SELECT private.has_workspace_role(workspace_id, ARRAY['owner','admin','editor']))
-  );
+  WITH CHECK ((SELECT private.has_workspace_role(workspace_id, ARRAY['owner','admin','editor'])));
 CREATE POLICY shorts_assets_admin_delete
   ON public.shorts_assets FOR DELETE TO authenticated
   USING ((SELECT private.has_workspace_role(workspace_id, ARRAY['owner','admin'])));
