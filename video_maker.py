@@ -153,7 +153,28 @@ def render_pro_short(channel_name, persona, topic, openai_key="", script_overrid
         completed = True
         return mp4_path, title, full_script
     finally:
-        # Close readers before deleting their backing files, including on render failures.
+        # Close FFmpeg audio pipes explicitly before deleting their backing files.
+        for audio in audio_clips:
+            reader = getattr(audio, "reader", None)
+            process = getattr(reader, "proc", None)
+            try:
+                audio.close()
+            except Exception:
+                pass
+            if process is not None:
+                for stream in (getattr(process, "stdout", None), getattr(process, "stderr", None)):
+                    try:
+                        if stream is not None and not stream.closed:
+                            stream.close()
+                    except Exception:
+                        pass
+                try:
+                    process.wait(timeout=5)
+                except Exception:
+                    try:
+                        process.kill()
+                    except Exception:
+                        pass
         if final_vid is not None:
             try:
                 final_vid.close()
@@ -162,11 +183,6 @@ def render_pro_short(channel_name, persona, topic, openai_key="", script_overrid
         for clip in clips:
             try:
                 clip.close()
-            except Exception:
-                pass
-        for audio in audio_clips:
-            try:
-                audio.close()
             except Exception:
                 pass
         for temp_file in temp_files:
