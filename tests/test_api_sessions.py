@@ -593,8 +593,8 @@ class SignedSessionTests(unittest.TestCase):
             fetch_account=Mock(return_value={"account_id": "google-account-123"}),
             fetch_channels=Mock(return_value=[{"channel_id": "UC123", "title": "NEXUS"}]),
         )
-        with patch.object(self.api, "SupabaseAdminRestClient") as admin_type, \\
-             patch.object(self.api.GoogleOAuthConfig, "from_env", return_value=config), \\
+        with patch.object(self.api, "SupabaseAdminRestClient") as admin_type, \
+             patch.object(self.api.GoogleOAuthConfig, "from_env", return_value=config), \
              patch.object(self.api, "encrypt_refresh_token", return_value={"ciphertext_hex": "aabb", "key_version": "v1"}):
             admin_type.return_value.consume_oauth_state.return_value = admin_state
             admin_type.return_value.list_account_user_memberships.side_effect = [
