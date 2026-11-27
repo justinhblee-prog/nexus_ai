@@ -153,3 +153,8 @@
 - 이전 문단의 `3643e9c2...` / run `46016494231`은 과거 검증 기록이며 현재 최신 검증 기준이 아니다.
 - 운영 전환을 막는 외부 게이트는 그대로다: 최신 Preview 런타임 배포(무료 일일 quota 해제 필요), Supabase 후속 migration 별도 승인·적용, 안전한 OAuth 서버 환경변수 등록 및 실 Google 동의/refresh/revoke, 실제 2계정 tenant E2E, 실제 Private 업로드 E2E. 현재 대화 세션에서는 사용자의 로컬 Windows 런타임 및 Google 계정에 접근할 수 없으므로 이를 완료로 표시하지 않는다.
 - 이 기록은 상태 문서만 갱신하며 운영 DB, Vercel 배포, 워커 활성화, YouTube 업로드에는 영향을 주지 않는다.
+
+### Preview 재개 확인 — 2026-11-28
+- Vercel Free quota 제한 이후 새 Preview 배포가 재개됨. Deployment `dpl_4peW8RQNxPiwbwVkPwbWSHbawyp6`는 `READY`, target `Preview`, branch `feat/nexus-user-onboarding-web-oauth-20261127`, exact commit `0dda21d543f8ca08ca0d98f2ecfac39c159fa425`로 확인됨.
+- 이는 빌드/배포 상태가 READY라는 뜻이며, 실제 signup/login, Supabase API, OAuth, tenant isolation의 runtime E2E 성공을 뜻하지 않는다. 브라우저 상호작용 smoke는 GitHub Actions에서 별도로 통과해야 하며, 외부 OAuth/실계정 검증은 별도 gate로 유지한다.
+- 이전의 "새 Preview 배포가 quota로 차단" 문구는 과거 상태다. 최신 READY 배포 기록이 이를 대체한다.
