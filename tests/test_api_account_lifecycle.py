@@ -26,6 +26,9 @@ class AccountLifecycleApiContractTests(unittest.TestCase):
         self.assertIn('"Transfer workspace ownership to an existing admin before account deletion."', self.api)
         self.assertIn('"account_deletion_enabled": False', self.api)
         self.assertIn('"/api/hosted/workspaces/{workspace_id}/members"', self.api)
+        self.assertIn('"/api/hosted/workspaces/{workspace_id}/members/{member_id}/role"', self.api)
+        self.assertIn('Field(pattern="^(admin|editor|viewer)$")', self.api)
+        self.assertIn("The current owner role cannot be changed here", self.api)
 
     def test_rpc_client_is_allowlisted_and_uses_user_token(self):
         self.assertIn('_ALLOWED_RPCS = {"transfer_workspace_ownership"}', self.rest)
