@@ -323,7 +323,6 @@ def run_worker():
     logger.info("NEXUS account deletion worker started.")
     while True:
         try:
-            admin.heartbeat_account_deletion_worker(worker_id)
             claimed = process_one_account_deletion(admin, worker_id)
             if not claimed:
                 time.sleep(poll_seconds)
