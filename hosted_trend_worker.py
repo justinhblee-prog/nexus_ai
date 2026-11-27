@@ -73,6 +73,15 @@ def persist_period(admin, period_type: str, db_path: str | None = None) -> int:
             source_summary = json.loads(scan_row["source_summary_json"] or "{}")
         except (TypeError, ValueError):
             source_summary = {}
+        if scan_row["status"] in ("success", "partial") and scan_row["started_at"]:
+            successful_sources = sorted(
+                name for name, details in source_summary.items()
+                if isinstance(details, dict) and details.get("status") == "success"
+            )
+            for source_name in successful_sources:
+                admin.delete_stale_public_trend_signals(
+                    period_type, source_name, scan_row["started_at"]
+                )
         admin.upsert_public_trend_scan({
             "period_type": period_type,
             "status": scan_row["status"],
