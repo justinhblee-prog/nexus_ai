@@ -15,9 +15,10 @@ def read_shared_trends(client, limit: int = 30) -> dict:
     for row in rows:
         item = dict(row)
         topic = str(item.get("topic") or "").strip()
-        if not topic or topic.casefold() in seen:
+        normalized = " ".join(topic.casefold().split())
+        if not topic or normalized in seen:
             continue
-        seen.add(topic.casefold())
+        seen.add(normalized)
         source_url = str(item.get("source_url") or "")
         item["source_url"] = source_url if source_url.startswith("https://") else None
         items.append(item)
