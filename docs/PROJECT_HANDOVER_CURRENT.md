@@ -19,35 +19,19 @@ PR: [#1 — Draft](https://github.com/justinhblee-prog/nexus_ai/pull/1)
 
 | 화면 | 주소 | 인증 |
 |---|---|---|
-| Browser Studio / FastAPI | http://127.0.0.1:28503 | HMAC 서명 세션 쿠키 |
-| Streamlit Studio | http://127.0.0.1:28502 | Streamlit 서버 세션 |
+| Browser Studio / FastAPI | http://127.0.0.1:28503 | 로그인 없음(기본값) |
+| Streamlit Studio | http://127.0.0.1:28502 | 로그인 없음(기본값) |
 
-두 화면은 같은 운영자 비밀번호를 사용하지만 로그인 세션은 서로 독립적입니다.
+두 화면 모두 접속 즉시 스튜디오를 표시합니다. Compose 포트는 127.0.0.1에만 바인딩됩니다.
 
-## 3. 비밀정보 설정
+## 3. 로컬 인증 정책
 
-저장소 루트의 `.env`만 사용합니다. `.env`는 Git ignore 대상이며 GitHub, 이슈, PR, 채팅에 값을 붙여넣지 않습니다.
-
-필수 변수:
-- `NEXUS_API_PASSWORD`: 12자 이상, 두 UI 공통 운영자 비밀번호
-- `NEXUS_SESSION_SECRET`: 32자 이상, FastAPI 서명용 별도 랜덤 키
-- `NEXUS_COOKIE_SECURE=false`: localhost HTTP 개발 환경. HTTPS 프록시를 사용할 때만 true로 전환
-- `NEXUS_STREAMLIT_HOST_PORT=28502`, `NEXUS_API_HOST_PORT=28503`: 호스트 포트가 사용 중일 때만 사용 가능한 포트로 변경
-
-PowerShell에서 비밀값을 화면에 출력하지 않고 생성하는 예:
-
-```powershell
-$ApiPassword = python -c "import secrets; print(secrets.token_urlsafe(24))"
-$SessionSecret = python -c "import secrets; print(secrets.token_urlsafe(48))"
-@(
-  "NEXUS_API_PASSWORD=$ApiPassword"
-  "NEXUS_SESSION_SECRET=$SessionSecret"
-  "NEXUS_COOKIE_SECURE=false"
-) | Set-Content -Path ".env" -Encoding utf8NoBOM
-```
-
-기존 `.env`가 존재하면 덮어쓰기 전에 반드시 보존 여부를 확인합니다. 비밀번호나 세션 키가 이미 설정돼 있다면 새로 만들 필요가 없습니다.
-
+- 기본값은 무로그인 운영입니다. NEXUS_AUTH_ENABLED=false(또는 미설정)이면 Browser Studio와 Streamlit이 바로 열립니다.
+- 기본 사용에는 운영자 비밀번호나 세션 서명 키가 필요하지 않습니다.
+- 기존 .env에 남아 있는 NEXUS_API_PASSWORD, NEXUS_SESSION_SECRET, NEXUS_COOKIE_SECURE 값은 호환성과 복구를 위해 보존해도 되며, 기본 모드에서는 사용하지 않습니다.
+- 선택적으로 인증을 다시 켜려면 .env에 NEXUS_AUTH_ENABLED=true, NEXUS_API_PASSWORD(12자 이상), NEXUS_SESSION_SECRET(32자 이상)을 설정합니다.
+- NEXUS_COOKIE_SECURE=false는 localhost HTTP 개발 환경용이며 HTTPS 프록시에서만 true로 전환합니다.
+- .env는 Git ignore 대상입니다. 값을 GitHub, 이슈, PR, 채팅에 붙여넣지 않습니다.
 ## 4. 안전한 시작·중지·상태 확인
 
 먼저 올바른 Git 작업 폴더인지 확인합니다. 현재 복구 작업 폴더는 다음과 같습니다.
@@ -82,20 +66,17 @@ docker compose stop
 
 ## 5. 인증 동작
 
-### FastAPI Browser Studio
-- `GET /api/session/status`
-- `POST /api/session/login`
-- `POST /api/session/logout`
-- 로그인 성공 시 12시간 HMAC 서명, HttpOnly, SameSite=Strict 쿠키 발급
-- API 및 `/output/*` 미디어는 유효한 세션 쿠키가 없으면 거부
-- 필수 환경변수 누락 시 fail-closed
+### 기본 운영 모드
+- NEXUS_AUTH_ENABLED 기본값은 false입니다.
+- FastAPI API와 /output/* 미디어는 로그인 쿠키 없이 접근할 수 있습니다.
+- /api/session/status는 기본 모드에서 {"configured":true,"authenticated":true,"auth_enabled":false}를 반환합니다.
+- Browser Studio는 로그인 오버레이 없이 바로 데이터를 불러오며 로그아웃 UI도 표시하지 않습니다.
+- Streamlit도 로그인 화면과 로그아웃 UI 없이 바로 실행됩니다.
 
-### Streamlit Studio
-- FastAPI와 동일한 `NEXUS_API_PASSWORD` 사용
-- `hmac.compare_digest`로 비교
-- 인증 전에는 DB·디렉터리 초기화 등 앱 동작을 시작하지 않음
-- Streamlit 세션 상태로 로그인 유지, 별도 로그아웃 지원
-
+### 선택적 인증 모드
+- NEXUS_AUTH_ENABLED=true일 때만 기존 FastAPI HMAC 세션과 Streamlit 비밀번호 게이트가 동작합니다.
+- 이 모드에서는 NEXUS_API_PASSWORD(12자 이상)와 별도 NEXUS_SESSION_SECRET(32자 이상)이 필요하며, 설정이 유효하지 않으면 fail-closed입니다.
+- 기존 로컬 Origin 검사와 Docker loopback 바인딩은 인증 모드와 무관하게 유지됩니다.
 ## 6. 제작·검수·업로드 흐름
 
 1. 트렌드 레이더가 KR/US/JP/GB의 Google News RSS, BBC 및 Hacker News 소스를 조회합니다.
@@ -146,8 +127,9 @@ GitHub Actions [run #217](https://github.com/justinhblee-prog/nexus_ai/actions/r
 
 ## 10. GitHub 작업 정책
 
-- 개발은 `fix/shorts-runtime-security-bootstrap` 브랜치에서 수행합니다.
-- PR #1은 Draft/Open 상태로 유지합니다.
+- 개발은 기능별 별도 브랜치에서 수행하고 해당 PR은 Draft/Open 상태로 유지합니다.
+- PR #1은 기존 Draft/Open 상태를 유지합니다.
+- 무로그인 기본 정책 변경은 별도 Draft PR에서 검토합니다.
 - `main` 직접 수정, 병합, 운영 배포, 강제 푸시, 이력 재작성은 하지 않습니다.
 - 로컬 기존 DB·영상·토큰·환경설정은 저장소 복구를 이유로 삭제하거나 초기화하지 않습니다.
 
