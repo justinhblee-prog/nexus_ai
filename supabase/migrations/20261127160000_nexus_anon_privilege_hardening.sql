@@ -11,7 +11,13 @@ REVOKE ALL ON TABLE
   public.shorts_jobs,
   public.shorts_job_events,
   public.shorts_analytics_snapshots,
-  public.shorts_assets
+  public.shorts_assets,
+  public.assets,
+  public.character_assets,
+  public.character_bundle_imports,
+  public.characters,
+  public.gallery_images,
+  public.generation_jobs
 FROM anon;
 
 -- Keep authenticated/service_role defaults unchanged; remove only anon access
