@@ -83,4 +83,5 @@ CREATE POLICY public_trend_scans_authenticated_read
 - Its SQLite working database uses the named `nexus-trend-data` volume; the Vercel request path never initializes or reads local SQLite.
 - The hosted API reads only the two shared tables through the caller's verified JWT. Membership is checked before feed access.
 - Signals are source-local ranks only. No cross-source popularity score or fabricated view/growth estimate is introduced.
+- After a successful source scan, the worker prunes older rows for that source only after upserting the new rows. Sources that failed are not pruned, so their last known signals remain available while their failure is visible in scan metadata.
 - No live database changes, worker activation, or deployment are included.
