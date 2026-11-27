@@ -637,45 +637,60 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
     async function bulkDeleteJobs() {
       const ids = Array.from(document.querySelectorAll(".job-chk:checked")).map(c => Number(c.value));
       if (!ids.length) return;
-      const response = await fetch("/api/jobs/bulk-delete", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ job_ids: ids })
-      });
-      const result = await response.json();
-      alert(result.msg || result.detail || "삭제 요청을 처리하지 못했습니다.");
-      if (response.ok) { await loadOverview(); }
+      try {
+        const response = await fetch("/api/jobs/bulk-delete", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          credentials: "same-origin", body: JSON.stringify({ job_ids: ids })
+        });
+        const result = await response.json();
+        if (!response.ok || result.ok === false) throw new Error(result.detail || result.msg || "삭제 요청을 처리하지 못했습니다.");
+        alert(result.msg || "선택한 작업을 삭제했습니다.");
+        await loadOverview();
+      } catch (error) { alert(error.message || "삭제 요청 중 오류가 발생했습니다."); }
     }
     async function saveJobEdit() {
       if (!activeJobId) return;
-      const response = await fetch("/api/jobs/" + activeJobId, {
-        method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: document.getElementById("editor-title").value,
-          script: document.getElementById("editor-script").value
-        })
-      });
-      const result = await response.json();
-      alert(result.msg || result.detail || "재제작 요청을 처리하지 못했습니다.");
-      if (response.ok) { await loadOverview(); }
+      try {
+        const response = await fetch("/api/jobs/" + activeJobId, {
+          method: "PUT", headers: { "Content-Type": "application/json" },
+          credentials: "same-origin", body: JSON.stringify({
+            title: document.getElementById("editor-title").value,
+            script: document.getElementById("editor-script").value
+          })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "재제작 요청을 처리하지 못했습니다.");
+        alert(result.msg || "수정 대본으로 재제작을 등록했습니다.");
+        await loadOverview();
+      } catch (error) { alert(error.message || "재제작 요청 중 오류가 발생했습니다."); }
     }
     async function rejectJob() {
       if (!activeJobId) return;
       const note = document.getElementById("reject-note").value.trim();
       if (!confirm("선택한 영상을 반려하고 수정 요청으로 이동하시겠습니까?")) return;
-      const r = await fetch("/api/reject/" + activeJobId, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ note })
-      });
-      const result = await r.json();
-      alert(result.msg || result.detail || "반려 요청을 처리하지 못했습니다.");
-      if (r.ok) { await loadOverview(); }
+      try {
+        const response = await fetch("/api/reject/" + activeJobId, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          credentials: "same-origin", body: JSON.stringify({ note })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "반려 요청을 처리하지 못했습니다.");
+        alert(result.msg || "반려 및 수정 요청이 기록되었습니다.");
+        await loadOverview();
+      } catch (error) { alert(error.message || "반려 요청 중 오류가 발생했습니다."); }
     }
     async function approveUpload() {
       if (!activeJobId) return;
-      const response = await fetch("/api/approve/" + activeJobId, { method: "POST" });
-      const result = await response.json();
-      alert(result.msg || result.detail || "업로드 결과를 확인하지 못했습니다.");
-      await loadOverview();
+      if (!confirm("선택한 영상을 YouTube에 비공개로 업로드하도록 승인하시겠습니까?")) return;
+      try {
+        const response = await fetch("/api/approve/" + activeJobId, {
+          method: "POST", credentials: "same-origin"
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "업로드 승인을 처리하지 못했습니다.");
+        alert(result.msg || "업로드 요청을 처리했습니다. 비공개 상태를 확인합니다.");
+        await loadOverview();
+      } catch (error) { alert(error.message || "업로드 승인 중 오류가 발생했습니다."); }
     }
     async function createSingleVideo() {
       const topic = document.getElementById("single-topic").value.trim(); if (!topic) return;
@@ -718,11 +733,26 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
         document.getElementById("radar-scan-status").textContent = error.message;
       } finally { setScanningState(false); }
     }
-    async function changeInterval(m) { await fetch("/api/radar/interval/" + m, { method: "POST" }); }
+    async function changeInterval(m) {
+      try {
+        const response = await fetch("/api/radar/interval/" + m, { method: "POST", credentials: "same-origin" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "자동 수집 주기를 변경하지 못했습니다.");
+        const status = document.getElementById("radar-scan-status");
+        if (status) status.textContent = result.msg || "자동 수집 주기를 변경했습니다.";
+      } catch (error) {
+        const status = document.getElementById("radar-scan-status");
+        if (status) status.textContent = error.message || "자동 수집 주기 변경 중 오류가 발생했습니다.";
+      }
+    }
     async function triggerTop3Auto() {
-      const response = await fetch("/api/radar/auto-produce-now", { method: "POST" });
-      const result = await response.json();
-      alert(result.msg || result.detail || "자동 제작 요청을 처리하지 못했습니다.");
+      try {
+        const response = await fetch("/api/radar/auto-produce-now", { method: "POST", credentials: "same-origin" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "자동 제작 요청을 등록하지 못했습니다.");
+        alert(result.msg || "지역별 상위 후보 제작 요청을 등록했습니다.");
+        await Promise.all([loadOverview(), loadOpsMetrics()]);
+      } catch (error) { alert(error.message || "자동 제작 요청 중 오류가 발생했습니다."); }
     }
     initNexusShell();
     checkSession();
