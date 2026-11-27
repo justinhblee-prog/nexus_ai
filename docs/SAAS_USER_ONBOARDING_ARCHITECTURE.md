@@ -1,6 +1,6 @@
 # NEXUS STUDIO PRO — SaaS User Registration & YouTube Account Linking
 
-Status: Phase A database identity bootstrap and hosted JWT verification foundation implemented; browser signup UI, tenant-scoped application APIs, and end-to-end signup verification remain in progress.
+Status: Phase A database identity bootstrap, hosted JWT verification, and responsive signup/login UI implemented; hosted Auth redirect configuration, tenant-scoped application APIs, and end-to-end signup verification remain in progress.
 Target: `feat/nexus-user-onboarding-web-oauth-20261127`, based on the current full-stack integration branch.
 
 ## Phase A implementation delivered
@@ -26,6 +26,7 @@ Target: `feat/nexus-user-onboarding-web-oauth-20261127`, based on the current fu
 - Configure the actual Supabase Auth Site URL and redirect allowlist for the hosted domain; verify signup/email confirmation/login/recovery against a real test mailbox.
 - Implement secure account deletion and credential revocation.
 - Add tenant-scoped application endpoints and bind every query/worker/media operation to the verified workspace membership.
+- Connect hosted signup/session to the production workspace experience only after tenant-safe APIs are ready.
 - Verify cross-user access denial with two isolated test identities in the same project.
 
 ## Next phases
