@@ -62,6 +62,14 @@ class AccountLifecycleApiContractTests(unittest.TestCase):
         self.assertIn('Field(pattern="^(admin|editor|viewer)$")', self.api)
         self.assertIn("The current owner role cannot be changed here", self.api)
 
+    def test_tombstoned_account_can_retry_only_deletion_request_after_session_revoke_failure(self):
+        self.assertIn('if not (path == "/api/hosted/account/deletion/request" and request.method == "POST"):', self.api)
+        self.assertIn('return JSONResponse(status_code=401, content={"detail": "This account is no longer active"})', self.api)
+        self.assertIn('if not queued.get("sessions_revoked"):', self.api)
+        self.assertIn("admin.revoke_user_sessions(request.state.hosted_access_token)", self.api)
+        self.assertIn("admin.mark_account_deletion_sessions_revoked(user_id)", self.api)
+        self.assertIn('if not preflight.get("preflight_clear"):', self.api)
+
     def test_rpc_client_is_allowlisted_and_uses_user_token(self):
         self.assertIn('_ALLOWED_RPCS = {"transfer_workspace_ownership", "is_account_deletion_tombstoned"}', self.rest)
         self.assertIn('if name not in _ALLOWED_RPCS:', self.rest)
