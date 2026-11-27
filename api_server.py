@@ -12,7 +12,9 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("nexus.api")
 
 app = FastAPI(title="NEXUS STUDIO PRO API")
-# Browser sessions are signed server-side and stored in HttpOnly cookies.
+# Local authentication is opt-in. The default local-only deployment opens directly.
+AUTH_ENABLED = os.getenv('NEXUS_AUTH_ENABLED', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
+# Browser sessions are signed server-side and stored in HttpOnly cookies when enabled.
 API_PASSWORD = os.getenv('NEXUS_API_PASSWORD', '')
 SESSION_SECRET = os.getenv('NEXUS_SESSION_SECRET', '')
 SESSION_COOKIE_NAME = 'nexus_session'
@@ -67,9 +69,9 @@ async def enforce_local_origin_and_session(request, call_next):
     path = request.url.path
     public_paths = {"/api/session/status", "/api/session/login", "/api/session/logout"}
     protected = (path.startswith("/api/") and path not in public_paths) or path.startswith("/output/")
-    if protected:
+    if protected and AUTH_ENABLED:
         if not auth_is_configured():
-            return JSONResponse(status_code=503, content={"detail": "Set NEXUS_API_PASSWORD and NEXUS_SESSION_SECRET to enable API authentication."})
+            return JSONResponse(status_code=503, content={"detail": "Authentication is enabled but NEXUS_API_PASSWORD or NEXUS_SESSION_SECRET is missing or too short."})
         if not verify_session_cookie(request.cookies.get(SESSION_COOKIE_NAME)):
             return JSONResponse(status_code=401, content={"detail": "Authentication required"})
     return await call_next(request)
@@ -565,10 +567,14 @@ def serve_home():
 
 @app.get("/api/session/status")
 def session_status(request: Request):
-    return {"configured": auth_is_configured(), "authenticated": verify_session_cookie(request.cookies.get(SESSION_COOKIE_NAME))}
+    if not AUTH_ENABLED:
+        return {"configured": True, "authenticated": True, "auth_enabled": False}
+    return {"configured": auth_is_configured(), "authenticated": verify_session_cookie(request.cookies.get(SESSION_COOKIE_NAME)), "auth_enabled": True}
 
 @app.post("/api/session/login")
 def session_login(req: LoginReq):
+    if not AUTH_ENABLED:
+        return {"ok": True, "auth_enabled": False}
     if not auth_is_configured():
         raise HTTPException(status_code=503, detail="서버 설정에 NEXUS_API_PASSWORD(12자 이상)와 NEXUS_SESSION_SECRET(32자 이상)을 지정해야 합니다.")
     if not hmac.compare_digest(req.password, API_PASSWORD):

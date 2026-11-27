@@ -36,11 +36,6 @@
     .spin { display: inline-block; animation: spin360 0.8s linear infinite; }
     .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
     .modal-bg.open { display: flex; }
-    .auth-overlay { position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(2,6,18,.96); }
-    .auth-overlay[hidden] { display:none; }
-    .auth-card { width:min(420px,100%); background:#0B101D; border:1px solid #24334D; border-radius:16px; padding:26px; box-shadow:0 24px 80px rgba(0,0,0,.5); }
-    .auth-card input { width:100%; margin:14px 0 10px; }
-    .auth-error { min-height:20px; color:#FDA4AF; font-size:12px; }
     .ops-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(155px,1fr)); gap:10px; }
     .ops-metric { background:#060A14; border:1px solid #1E293B; border-radius:12px; padding:14px; }
     .ops-metric .label { color:#94A3B8; font-size:11px; font-weight:700; }
@@ -62,7 +57,6 @@ select,input,textarea{background:var(--surface);color:var(--text);border-color:v
 .btn-red{background:var(--soft);color:var(--text);border-color:var(--line)}
 .card,.inset,.r-card,.job-item,.ops-metric,.event-row{background:var(--surface);color:var(--text);border-color:var(--line);box-shadow:var(--shadow)}
 .inset{background:var(--panel)}.bar-bg{background:var(--line)}.bar-fill{background:var(--accent)}
-.auth-overlay{background:rgba(255,255,255,.97)}.auth-card{background:#fff;color:#111;border-color:#ddd}
 .nexus-shell{display:grid;grid-template-columns:238px minmax(0,1fr);min-height:calc(100vh - 64px)}
 .nexus-sidebar{position:sticky;top:64px;height:calc(100vh - 64px);border-right:1px solid var(--line);background:var(--surface);padding:20px 13px;display:flex;flex-direction:column;gap:20px}
 .side-brand{font-size:11px;letter-spacing:1.5px;font-weight:900;color:var(--muted);padding:0 12px}
@@ -105,17 +99,7 @@ select,input,textarea{background:var(--surface);color:var(--text);border-color:v
   </style>
 </head>
 <body>
-  <div id="auth-overlay" class="auth-overlay">
-    <form class="auth-card" onsubmit="event.preventDefault(); loginStudio();">
-      <div style="font-size:11px;font-weight:800;color:#38BDF8;letter-spacing:1px;">NEXUS STUDIO PRO · SECURE SESSION</div>
-      <h2 style="font-size:21px;margin-top:10px;">관리자 로그인</h2>
-      <p style="font-size:12px;color:#94A3B8;margin-top:8px;">로컬 운영 비밀번호를 입력해 스튜디오 세션을 시작하세요.</p>
-      <input id="auth-password" type="password" autocomplete="current-password" placeholder="운영 비밀번호" required />
-      <button id="auth-submit" type="submit" class="btn-blue" style="width:100%;">안전하게 로그인</button>
-      <div id="auth-error" class="auth-error"></div>
-    </form>
-  </div>
-  <header>
+<header>
     <div style="display:flex;align-items:center;gap:12px;">
       <div class="logo">N</div>
       <div>
@@ -124,7 +108,6 @@ select,input,textarea{background:var(--surface);color:var(--text);border-color:v
       </div>
     </div>
     <div class="controls">
-      <button onclick="logoutStudio()" class="btn-dark">로그아웃</button>
       <select id="scan-interval" onchange="changeInterval(this.value)"><option value="1">1분마다</option><option value="5" selected>5분마다</option><option value="15">15분마다</option></select>
       <button onclick="forceScan()" id="btn-scan" class="btn-blue"><span id="scan-arrow">↻</span> <span id="scan-label">즉시 재스캔</span></button>
     </div>
@@ -226,56 +209,6 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
     let currentPeriod = "daily", currentRankFilter = "TOP10", allRadarItems = [], allJobs = [], allChannels = [], activeJobId = null, selectedModalItem = null;
 
     let studioStarted = false, opsRefreshTimer = null;
-    async function checkSession() {
-      const overlay = document.getElementById("auth-overlay");
-      const error = document.getElementById("auth-error");
-      try {
-        const response = await fetch("/api/session/status", { credentials: "same-origin" });
-        const state = await response.json();
-        if (!state.configured) {
-          error.textContent = "서버 .env에 NEXUS_API_PASSWORD와 NEXUS_SESSION_SECRET을 설정해야 합니다.";
-          document.getElementById("auth-submit").disabled = true;
-          return;
-        }
-        if (state.authenticated) {
-          overlay.hidden = true;
-          startStudio();
-        } else {
-          overlay.hidden = false;
-          document.getElementById("auth-password").focus();
-        }
-      } catch (_) {
-        error.textContent = "인증 서버에 연결할 수 없습니다. API 컨테이너 상태를 확인하세요.";
-      }
-    }
-    async function loginStudio() {
-      const password = document.getElementById("auth-password").value;
-      const error = document.getElementById("auth-error");
-      const button = document.getElementById("auth-submit");
-      button.disabled = true;
-      error.textContent = "";
-      try {
-        const response = await fetch("/api/session/login", {
-          method: "POST", credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ password })
-        });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.detail || "로그인에 실패했습니다.");
-        document.getElementById("auth-password").value = "";
-        document.getElementById("auth-overlay").hidden = true;
-        startStudio();
-      } catch (err) {
-        error.textContent = err.message || "로그인에 실패했습니다.";
-      } finally { button.disabled = false; }
-    }
-    async function logoutStudio() {
-      await fetch("/api/session/logout", { method: "POST", credentials: "same-origin" });
-      studioStarted = false;
-      if (opsRefreshTimer !== null) { window.clearInterval(opsRefreshTimer); opsRefreshTimer = null; }
-      document.getElementById("auth-overlay").hidden = false;
-      document.getElementById("auth-password").focus();
-    }
     function startStudio() {
       if (studioStarted) return;
       studioStarted = true;
@@ -467,7 +400,7 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
     async function forceScan() { setScanningState(true); try { await fetch("/api/radar/scan/" + currentPeriod, { method: "POST" }); await loadRadar(currentPeriod); } finally { setScanningState(false); } }
     async function changeInterval(m) { await fetch("/api/radar/interval/" + m, { method: "POST" }); }
     async function triggerTop3Auto() { const r = await fetch("/api/radar/auto-produce-now", { method: "POST" }); alert((await r.json()).msg); }
-    checkSession();
+    startStudio();
   </script>
 </body>
 </html>

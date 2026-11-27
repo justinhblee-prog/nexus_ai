@@ -3,6 +3,7 @@ services:
     build: .
     container_name: nexus_ai_shorts_center
     environment:
+      NEXUS_AUTH_ENABLED: ${NEXUS_AUTH_ENABLED:-false}
       NEXUS_API_PASSWORD: ${NEXUS_API_PASSWORD:-}
       NEXUS_SESSION_SECRET: ${NEXUS_SESSION_SECRET:-}
       NEXUS_COOKIE_SECURE: ${NEXUS_COOKIE_SECURE:-false}
