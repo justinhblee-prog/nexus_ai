@@ -141,7 +141,7 @@
         </div>
         <div class="workspace" id="saved-topic-queue" style="margin-top:16px">
           <strong>내 제작 주제 큐</strong>
-          <p class="muted">로그인 사용자와 워크스페이스별로 이 브라우저에 저장됩니다. 서버·다른 기기와는 동기화되지 않습니다.</p>
+          <p class="muted" id="saved-topic-queue-status">서버 저장형 큐를 확인하고 있습니다.</p>
           <div id="saved-topic-items" class="connections" aria-live="polite"></div>
         </div>
         <div class="workspace" style="margin-top:16px">
@@ -184,6 +184,8 @@
     let activeWorkspaceId = null;
     let activeWorkspaceRole = null;
     let activeAccessToken = null;
+    let savedTopicQueueItems = [];
+    let savedTopicQueueMode = "local";
 
     function showMessage(text, kind = "info") {
       message.textContent = text;
@@ -449,16 +451,55 @@
       }
     }
 
-    function renderSavedTopicQueue() {
+    async function renderSavedTopicQueue() {
       const node = document.getElementById("saved-topic-items");
+      const status = document.getElementById("saved-topic-queue-status");
       if (!node) return;
       node.replaceChildren();
-      const items = readSavedTopicQueue();
-      if (!items.length) {
+      const workspaceId = activeWorkspaceId;
+      const token = activeAccessToken;
+      let serverItems = [];
+      let serverAvailable = false;
+      if (workspaceId && token) {
+        try {
+          const response = await fetch(
+            "/api/hosted/workspaces/" + encodeURIComponent(workspaceId) + "/topic-queue",
+            { headers: { Authorization: "Bearer " + token }, cache: "no-store" }
+          );
+          if (workspaceId !== activeWorkspaceId || token !== activeAccessToken) return;
+          if (!response.ok) {
+            const result = await response.json().catch(() => ({}));
+            if (response.status !== 503) throw new Error(result.detail || "서버 주제 큐를 불러오지 못했습니다.");
+            status.textContent = "서버 저장소 마이그레이션 대기 · 현재 브라우저 임시 저장을 사용합니다.";
+          } else {
+            const result = await response.json();
+            serverItems = result.items || [];
+            serverAvailable = true;
+            status.textContent = "서버 저장 · 이 계정의 워크스페이스 주제 큐";
+          }
+        } catch (error) {
+          status.textContent = "서버 연결 실패 · 브라우저 임시 저장을 표시합니다.";
+        }
+      } else {
+        status.textContent = "로그인 후 서버 저장형 주제 큐를 사용할 수 있습니다.";
+      }
+      savedTopicQueueMode = serverAvailable ? "server" : "local";
+      const localItems = readSavedTopicQueue();
+      const seen = new Set(serverItems.map(item =>
+        String(item.topic || "").replace(/\\s+/g, " ").toLocaleLowerCase()
+      ));
+      const mergedItems = serverItems.concat(localItems.filter(item => {
+        const key = item.topic.replace(/\\s+/g, " ").toLocaleLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }));
+      savedTopicQueueItems = mergedItems.slice(0, 50);
+      if (!savedTopicQueueItems.length) {
         node.textContent = "저장된 주제가 없습니다. 트렌드 레이더에서 주제를 큐에 추가하세요.";
         return;
       }
-      for (const item of items) {
+      for (const item of savedTopicQueueItems) {
         const row = document.createElement("div");
         row.className = "connection-row";
         const detail = document.createElement("span");
@@ -477,28 +518,76 @@
         remove.type = "button";
         remove.className = "secondary";
         remove.textContent = "삭제";
-        remove.addEventListener("click", () => {
-          const next = readSavedTopicQueue().filter(entry => entry.id !== item.id);
-          if (writeSavedTopicQueue(next)) renderSavedTopicQueue();
+        remove.addEventListener("click", async () => {
+          remove.disabled = true;
+          try {
+            if (item.topic_id && activeWorkspaceId && activeAccessToken) {
+              const response = await fetch(
+                "/api/hosted/workspaces/" + encodeURIComponent(activeWorkspaceId) +
+                  "/topic-queue/" + encodeURIComponent(item.topic_id),
+                { method: "DELETE", headers: { Authorization: "Bearer " + activeAccessToken } }
+              );
+              const result = await response.json().catch(() => ({}));
+              if (!response.ok) throw new Error(result.detail || "주제를 삭제하지 못했습니다.");
+            } else {
+              const next = readSavedTopicQueue().filter(entry => entry.id !== item.id);
+              if (!writeSavedTopicQueue(next)) throw new Error("브라우저 임시 저장 항목을 삭제하지 못했습니다.");
+            }
+            await renderSavedTopicQueue();
+          } catch (error) {
+            showMessage(error.message || "주제를 삭제하지 못했습니다.", "error");
+            remove.disabled = false;
+          }
         });
         row.appendChild(remove);
         node.appendChild(row);
       }
     }
 
-    function saveTrendTopic(item) {
+    async function saveTrendTopic(item) {
       const topic = String(item.topic || "").trim();
       if (!topic || !savedTopicQueueKey()) return;
-      const items = readSavedTopicQueue();
-      const normalized = topic.replace(/\s+/g, " ").toLocaleLowerCase();
-      if (items.some(entry => entry.topic.replace(/\s+/g, " ").toLocaleLowerCase() === normalized)) {
+      const normalized = topic.replace(/\\s+/g, " ").toLocaleLowerCase();
+      if (savedTopicQueueItems.some(entry =>
+        entry.topic.replace(/\\s+/g, " ").toLocaleLowerCase() === normalized
+      )) {
         showMessage("이미 제작 주제 큐에 저장된 주제입니다.", "info");
         return;
       }
-      if (items.length >= 50) {
+      if (savedTopicQueueItems.length >= 50) {
         showMessage("제작 주제 큐는 최대 50개까지 저장할 수 있습니다.", "error");
         return;
       }
+      if (savedTopicQueueMode === "server" && activeWorkspaceId && activeAccessToken) {
+        try {
+          const response = await fetch(
+            "/api/hosted/workspaces/" + encodeURIComponent(activeWorkspaceId) + "/topic-queue",
+            {
+              method: "POST",
+              headers: {
+                Authorization: "Bearer " + activeAccessToken,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                topic,
+                source: "trend_radar",
+                region: String(item.region || ""),
+                source_name: String(item.source_name || ""),
+                source_url: item.source_url || null
+              })
+            }
+          );
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result.detail || "서버 주제 큐에 저장하지 못했습니다.");
+          await renderSavedTopicQueue();
+          showMessage("주제를 서버 제작 큐에 저장했습니다.", "success");
+          return;
+        } catch (error) {
+          showMessage(error.message || "서버 주제 큐에 저장하지 못했습니다.", "error");
+          return;
+        }
+      }
+      const items = readSavedTopicQueue();
       items.unshift({
         id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()),
         topic,
@@ -507,8 +596,8 @@
         saved_at: new Date().toISOString()
       });
       if (writeSavedTopicQueue(items)) {
-        renderSavedTopicQueue();
-        showMessage("주제를 내 제작 큐에 저장했습니다.", "success");
+        await renderSavedTopicQueue();
+        showMessage("주제를 브라우저 임시 큐에 저장했습니다.", "success");
       }
     }
 
@@ -608,7 +697,7 @@
       await loadJobs();
       await loadWorkspaceMembers();
       await loadWorkspaceOverview();
-      renderSavedTopicQueue();
+      await renderSavedTopicQueue();
       await loadWorkspaceTrends();
     }
 
