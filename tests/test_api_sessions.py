@@ -562,7 +562,7 @@ class SignedSessionTests(unittest.TestCase):
             app_url="https://app.example.test",
             exchange_code=Mock(),
         )
-        with patch.object(self.api, "SupabaseAdminRestClient") as admin_type, \\
+        with patch.object(self.api, "SupabaseAdminRestClient") as admin_type, \
              patch.object(self.api.GoogleOAuthConfig, "from_env", return_value=config):
             admin_type.return_value.consume_oauth_state.return_value = admin_state
             admin_type.return_value.list_account_user_memberships.return_value = [{
