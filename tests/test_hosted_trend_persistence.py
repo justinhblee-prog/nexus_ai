@@ -89,11 +89,11 @@ class SharedTrendPersistenceTests(unittest.TestCase):
                  patch.object(worker.trend_radar, "DB_PATH", "default.db"), \
                  patch.object(worker, "persist_period", return_value=4) as persist:
                 result = worker.run_once(admin=admin, scanner=scanner)
-            self.assertEqual(worker.trend_radar.DB_PATH, path)
-            self.assertEqual(result, {"daily": 4, "weekly": 4})
-            self.assertEqual([call.args[0] for call in scanner.call_args_list], ["daily", "weekly"])
-            self.assertEqual(persist.call_args_list[0].args, (admin, "daily", path))
-            self.assertTrue(Path(path).parent.is_dir())
+                self.assertEqual(worker.trend_radar.DB_PATH, path)
+                self.assertEqual(result, {"daily": 4, "weekly": 4})
+                self.assertEqual([call.args[0] for call in scanner.call_args_list], ["daily", "weekly"])
+                self.assertEqual(persist.call_args_list[0].args, (admin, "daily", path))
+                self.assertTrue(Path(path).parent.is_dir())
 
     def test_persist_period_rejects_unknown_period(self):
         with self.assertRaises(ValueError):
