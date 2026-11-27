@@ -15,6 +15,7 @@ class SignedSessionTests(unittest.TestCase):
         cls.env_patch = patch.dict(os.environ, {
             "NEXUS_API_PASSWORD": "unit-test-password-12",
             "NEXUS_SESSION_SECRET": "s" * 48,
+            "NEXUS_AUTH_ENABLED": "true",
         })
         cls.env_patch.start()
         stubs = {
@@ -59,6 +60,15 @@ class SignedSessionTests(unittest.TestCase):
             'client': ('127.0.0.1', 12345),
         }
         return Request(scope)
+
+    def test_api_and_output_are_open_when_authentication_is_disabled(self):
+        async def next_response(_request):
+            return Response(status_code=204)
+        with patch.object(self.api, "AUTH_ENABLED", False):
+            allowed_api = asyncio.run(self.api.enforce_local_origin_and_session(self._request('/api/overview'), next_response))
+            allowed_output = asyncio.run(self.api.enforce_local_origin_and_session(self._request('/output/preview.mp4'), next_response))
+        self.assertEqual(allowed_api.status_code, 204)
+        self.assertEqual(allowed_output.status_code, 204)
 
     def test_api_and_output_require_a_valid_session(self):
         async def next_response(_request):
