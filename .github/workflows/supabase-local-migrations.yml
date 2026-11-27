@@ -38,7 +38,7 @@ jobs:
           mkdir -p supabase/migrations
 
       - name: Start the isolated local Supabase stack
-        run: supabase start --exclude studio,mailpit,logflare,realtime,edge-runtime,postgrest
+        run: supabase start --exclude studio,mailpit,logflare,realtime,edge-runtime,postgrest,vector,imgproxy
 
       - name: Install the pre-NEXUS legacy schema fixture
         run: |
