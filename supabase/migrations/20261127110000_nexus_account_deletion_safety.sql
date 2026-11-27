@@ -205,3 +205,35 @@ $function$;
 
 REVOKE ALL ON FUNCTION public.list_account_deletion_storage_objects(uuid,integer,integer) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.list_account_deletion_storage_objects(uuid,integer,integer) TO service_role;
+
+-- Identify active hosted render/upload leases for workspaces that are safe to
+-- delete. Account cleanup must wait rather than race a worker or private upload.
+CREATE OR REPLACE FUNCTION public.list_account_deletion_active_leases(
+  p_workspace_ids text[]
+)
+RETURNS TABLE(workspace_id text, job_id uuid, lease_kind text, lease_until timestamptz)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $function$
+BEGIN
+  IF COALESCE((SELECT auth.jwt() ->> 'role'), '') <> 'service_role' THEN
+    RAISE EXCEPTION 'service_role required' USING ERRCODE = '42501';
+  END IF;
+  IF p_workspace_ids IS NULL OR cardinality(p_workspace_ids) > 100 THEN
+    RAISE EXCEPTION 'Workspace lease inventory request is invalid' USING ERRCODE = '22023';
+  END IF;
+  RETURN QUERY
+  SELECT l.workspace_id, l.job_id, 'render'::text, l.lease_until
+  FROM private.shorts_worker_leases AS l
+  WHERE l.workspace_id = ANY(p_workspace_ids) AND l.lease_until > now()
+  UNION ALL
+  SELECT l.workspace_id, l.job_id, 'upload'::text, l.lease_until
+  FROM private.shorts_upload_leases AS l
+  WHERE l.workspace_id = ANY(p_workspace_ids) AND l.lease_until > now()
+  ORDER BY 4;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.list_account_deletion_active_leases(text[]) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.list_account_deletion_active_leases(text[]) TO service_role;
