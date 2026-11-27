@@ -521,6 +521,9 @@
         if (remainingLocalItems.length !== localItems.length) {
           writeSavedTopicQueue(remainingLocalItems);
         }
+        if (remainingLocalItems.length) {
+          status.textContent = "서버 저장 · 일부 항목은 브라우저 임시 저장에 남아 있습니다.";
+        }
         localItems = remainingLocalItems;
       }
       const seen = new Set(serverItems.map(item =>
