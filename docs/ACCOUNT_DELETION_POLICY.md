@@ -4,7 +4,7 @@
 
 Account deletion is a required SaaS feature. The Draft PR now contains a gated request endpoint, durable queue, a resumable worker, Storage/OAuth cleanup, Auth deletion, and post-cleanup verification. The API and worker are disabled by default. No production migration has been applied and no user data has been deleted.
 
-The API accepts a deletion request only when:
+The API accepts a deletion request only when the dedicated worker has written a heartbeat within the last 90 seconds, in addition to the following conditions:
 - The caller's verified JWT contains a signed `amr` password-authentication timestamp no older than 10 minutes; token refresh alone does not satisfy this check.
 - The caller submits the exact confirmation phrase `DELETE MY ACCOUNT`.
 - The read-only preflight has no ownership, active-worker, shared-Storage, or unclassified-Storage blockers.
@@ -52,7 +52,7 @@ The queue stores only a minimal preflight snapshot and sanitized error codes. It
 - Never expose service-role credentials or OAuth tokens to the browser.
 - Never treat an Auth Admin HTTP success as proof that Storage and provider credentials were cleaned.
 - Never mark a request complete before post-Auth verification.
-- The worker is opt-in and disabled by default. Do not enable it until the reviewed migration is applied and free-tier service configuration is verified.
+- The worker is opt-in and disabled by default. Its heartbeat is required before the API exposes the final deletion confirmation, preventing irreversible requests from being accepted while the cleanup service is offline. Do not enable it until the reviewed migration is applied and free-tier service configuration is verified.
 - No paid APIs or infrastructure are required by this workflow.
 
 ## Storage and Auth adapter safeguards
