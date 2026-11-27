@@ -6,15 +6,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
-import video_maker, trend_radar, youtube_analytics, yt_uploader
-from audit_log import safe_record_event as record_event, list_events, get_ops_metrics
-from video_qa import validate_video
-from script_templates import split_manual_script
-from review_workflow import claim_upload, upload_result_stage
+from types import SimpleNamespace
 from hosted_auth import (
     HostedAuthConfigurationError, HostedAuthError, extract_bearer_token,
     is_hosted_auth_enabled, public_auth_config, verify_access_token,
 )
+# Vercel's hosted ASGI runtime does not render local media or run the local
+# analytics/radar workers. Avoid importing MoviePy, Google client libraries,
+# and local schedulers on every serverless cold start.
+if is_hosted_auth_enabled():
+    trend_radar = SimpleNamespace(
+        DB_PATH=os.getenv("NEXUS_TREND_RADAR_DB_PATH", "data/studio_data.db")
+    )
+else:
+    import video_maker, trend_radar, youtube_analytics, yt_uploader
+from audit_log import safe_record_event as record_event, list_events, get_ops_metrics
+from video_qa import validate_video
+from script_templates import split_manual_script
+from review_workflow import claim_upload, upload_result_stage
 from supabase_rest import SupabaseRestClient, SupabaseRestError
 from supabase_admin import SupabaseAdminRestClient, SupabaseAdminError
 from youtube_oauth import GoogleOAuthConfig, GoogleOAuthError, create_oauth_state, create_pkce_pair
