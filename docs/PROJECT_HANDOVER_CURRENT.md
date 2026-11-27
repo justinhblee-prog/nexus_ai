@@ -1,8 +1,8 @@
 # NEXUS STUDIO PRO — 현재 운영·개발 인수인계서
 기준일: 2026-11-26  
 저장소: `justinhblee-prog/nexus_ai`  
-개발 브랜치: `fix/shorts-runtime-security-bootstrap`  
-PR: [#1 — Draft](https://github.com/justinhblee-prog/nexus_ai/pull/1)
+개발 브랜치: `fix/nexus-passwordless-local-default`  
+PR: [#7 — Draft](https://github.com/justinhblee-prog/nexus_ai/pull/7) (기반 런타임 PR [#1](https://github.com/justinhblee-prog/nexus_ai/pull/1))
 
 > 이 문서는 현재 브랜치의 코드와 Docker 설정을 기준으로 작성한 운영 문서입니다. 루트의 기존 `HANDOVER.md`는 이전 구현 시점의 문서이므로, 포트·워처·렌더링·업로드 관련 지침이 현재 코드와 다를 수 있습니다. 현재 운영에는 이 문서를 우선 적용하십시오.
 
@@ -116,7 +116,7 @@ docker compose stop
 GitHub Actions [run #217](https://github.com/justinhblee-prog/nexus_ai/actions/runs/45835214093)에서 Docker Compose 설정 검증, Python compile, 브라우저 JavaScript 구문 검사, 40개 단위 테스트를 통과했습니다. 이 검증은 Windows 로컬 실행을 대신하지 않습니다.
 
 아직 Windows 호스트에서 직접 확인해야 하는 항목:
-- 기존 Docker 컨테이너와 현재 브랜치 코드의 안전한 연결 및 실제 로그인
+- 기존 Docker 컨테이너와 현재 브랜치 코드의 안전한 연결 및 무로그인 브라우저 접속
 - 실제 MP4 생성과 ffprobe QA 통과
 - 실제 뉴스 피드 접근 성공률
 - 채널별 OAuth 및 실제 YouTube Private 업로드/응답 확인
