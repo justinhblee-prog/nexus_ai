@@ -41,6 +41,9 @@ class GoogleOAuthConfig:
             raise GoogleOAuthError("Google Web OAuth client configuration is missing")
         if not redirect_uri.startswith("https://") or not app_url.startswith("https://"):
             raise GoogleOAuthError("Google OAuth callback and hosted app URLs must use HTTPS")
+        parsed_redirect = urlparse(redirect_uri)
+        if parsed_redirect.path != "/api/hosted/youtube/callback" or parsed_redirect.query or parsed_redirect.fragment:
+            raise GoogleOAuthError("Google OAuth redirect URI must be the exact NEXUS callback endpoint")
         parsed_app = urlparse(app_url)
         if parsed_app.path or parsed_app.query or parsed_app.fragment:
             raise GoogleOAuthError("NEXUS_HOSTED_APP_URL must be an origin without a path")
