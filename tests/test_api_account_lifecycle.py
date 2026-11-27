@@ -26,6 +26,8 @@ class AccountLifecycleApiContractTests(unittest.TestCase):
         self.assertIn('"Transfer workspace ownership to an existing admin before account deletion."', self.api)
         self.assertIn('"account_deletion_enabled": False', self.api)
         self.assertIn("list_account_deletion_storage_objects(user_id", self.api)
+        self.assertIn("list_account_deletion_active_leases(deletion_workspace_ids)", self.api)
+        self.assertIn('"active_worker_lease_count": len(active_leases)', self.api)
         self.assertIn('"shared_workspace_object_blockers": shared_storage_count', self.api)
         self.assertIn('"storage_clear": shared_storage_count == 0', self.api)
         self.assertIn('"preflight_clear": not blockers', self.api)
