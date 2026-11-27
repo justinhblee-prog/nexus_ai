@@ -67,7 +67,7 @@ class HostedAuthTokenTests(unittest.TestCase):
         result, jwt_module = self._verify(claims)
         self.assertEqual(result, {"user_id": user_id, "email": "member@example.test", "role": "authenticated"})
         kwargs = jwt_module.decode.call_args.kwargs
-        self.assertEqual(kwargs["algorithms"], ["ES256", "RS256", "EdDSA"])
+        self.assertEqual(kwargs["algorithms"], ["ES256", "RS256"])
         self.assertEqual(kwargs["audience"], "authenticated")
         self.assertEqual(kwargs["issuer"], "https://example-project.supabase.co/auth/v1")
         self.assertIn("sub", kwargs["options"]["require"])
