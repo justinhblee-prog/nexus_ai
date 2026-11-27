@@ -10,7 +10,7 @@
 - 작업 브랜치: `feat/nexus-user-onboarding-web-oauth-20261127`
 - 최신 CI 검증 branch head: `3643e9c29100fdd88d6a5cb69aa01c65976ee0a2` (OAuth callback membership revalidation 포함)
 - Pull Request: [#11 — User onboarding and hosted OAuth](https://github.com/justinhblee-prog/nexus_ai/pull/11)
-- 최신 GitHub Actions: [run 46015313085](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46015313085) — exact head `5f54bf0d092a05086a455758ec10e0bd9f687023`에서 **309 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, Playwright browser smoke 모두 통과.
+- 최신 GitHub Actions: [run 46016494231](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46016494231) — exact head `3643e9c29100fdd88d6a5cb69aa01c65976ee0a2`에서 **311 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, Playwright browser smoke 모두 통과.
 - PR은 Draft/Open이며 merge하지 않음. main push, production deployment, public YouTube upload 금지.
 - Supabase 서비스 프로젝트 `ai_studio` (`lmdhgqfqvfyymfrovaty`)는 ACTIVE_HEALTHY, PostgreSQL 17.11, Seoul ap-northeast-2, Free plan.
 - 현재 운영 DB migration history는 총 14개(NEXUS foundation/auth/workspace/OAuth/render/upload 기반). 계정 삭제/권한 강화 후속 6개는 미적용.
@@ -31,8 +31,8 @@
 
 - 프로젝트: `neural-network` / Free plan.
 - Preview 환경변수 레코드 2개 확인: `NEXUS_SUPABASE_URL`, `NEXUS_SUPABASE_PUBLISHABLE_KEY`. 둘 다 Preview 전용이며 이 브랜치에 한정됨. 민감 값은 조회/출력하지 않았으므로 값의 정확성은 미검증.
-- 현재 READY Preview: [deployment](https://neural-network-pjrzoy51l-justinhblee-9540.vercel.app/) — commit `0942d8dbc8ed6cc6e55d544584a7599b4b5c842a`. 최신 코드 head `4e3edea4...`보다 오래된 빌드.
-- 최신 head의 Preview를 생성하려 했으나 Vercel API가 `api-deployments-free-per-day` 제한으로 HTTP 402를 반환했고 retryAfter는 24시간. 요금제 업그레이드 없이 대기. production target은 지정하지 않았으며 production 배포는 하지 않음.
+- 현재 READY Preview: [deployment](https://neural-network-pjrzoy51l-justinhblee-9540.vercel.app/) — commit `0942d8dbc8ed6cc6e55d544584a7599b4b5c842a`. 최신 검증 코드 head `3643e9c2...`보다 오래된 빌드.
+- 최신 코드 head `3643e9c2...`의 Preview를 생성하려 했으나 Vercel API가 `api-deployments-free-per-day` 제한으로 HTTP 402를 반환했고 retryAfter는 24시간. 요금제 업그레이드 없이 대기. production target은 지정하지 않았으며 production 배포는 하지 않음.
 - Preview runtime에 필요한 나머지 보안 설정은 아직 확인/등록되지 않음: `NEXUS_SUPABASE_SERVICE_ROLE_KEY`, `NEXUS_TOKEN_ENCRYPTION_KEY` 또는 `NEXUS_TOKEN_ENCRYPTION_KEYS_JSON`, `NEXUS_GOOGLE_OAUTH_CLIENT_ID`, `NEXUS_GOOGLE_OAUTH_CLIENT_SECRET`, `NEXUS_GOOGLE_OAUTH_REDIRECT_URI`, `NEXUS_HOSTED_APP_URL`. `NEXUS_SUPABASE_JWT_ISSUER` 및 `NEXUS_SUPABASE_JWKS_URL`은 프로젝트 URL 기본값을 사용할 수 있음. 어떤 비밀값도 채팅에 요청하거나 출력하지 않음.
 
 ### Supabase read-only advisor 결과 (2026-11-27 재점검)
