@@ -60,6 +60,20 @@ class ApiReviewGuardTests(unittest.TestCase):
         finally:
             db.close()
 
+    def test_radar_interval_validates_bounds_and_reports_minutes(self):
+        previous = self.api.RADAR_INTERVAL_SEC
+        try:
+            result = self.api.set_radar_interval(15)
+            self.assertTrue(result["ok"])
+            self.assertIn("15분으로", result["msg"])
+            self.assertEqual(self.api.RADAR_INTERVAL_SEC, 900)
+            for invalid in (0, 1441):
+                with self.assertRaises(HTTPException) as caught:
+                    self.api.set_radar_interval(invalid)
+                self.assertEqual(caught.exception.status_code, 400)
+        finally:
+            self.api.RADAR_INTERVAL_SEC = previous
+
     def test_edit_queues_regeneration_for_reviewable_or_rejected_jobs(self):
         revised_script = "첫째 문장입니다. 둘째 문장입니다. 셋째 문장입니다. 넷째 문장입니다."
         req = self.api.UpdateJobReq(title="Updated title", script=revised_script)
