@@ -2,6 +2,8 @@ import unittest
 from unittest.mock import Mock
 
 from hosted_upload_worker import DEFAULT_MAX_ATTEMPTS, process_one_upload
+from youtube_oauth import GoogleOAuthReauthRequired
+from unittest.mock import patch
 
 
 JOB = {
@@ -88,6 +90,26 @@ class HostedUploadWorkerTests(unittest.TestCase):
         self.assertTrue(result)
         admin.finish_shorts_upload.assert_called_once()
         self.assertFalse(admin.finish_shorts_upload.call_args.args[2])
+
+
+    def test_revoked_refresh_token_marks_connection_for_reauthorization(self):
+        admin = Mock()
+        admin.claim_next_approved_shorts_job.return_value = JOB
+        admin.get_credential.return_value = {
+            "encrypted_refresh_token_hex": "aabb",
+            "encryption_key_version": "v1",
+        }
+        config = Mock()
+        config.refresh_access_token.side_effect = GoogleOAuthReauthRequired("revoked")
+        with patch("hosted_upload_worker.GoogleOAuthConfig.from_env", return_value=config), \
+             patch("hosted_upload_worker.decrypt_refresh_token", return_value="refresh-token"):
+            processed = process_one_upload(admin, "upload-worker")
+        self.assertTrue(processed)
+        admin.update_connection.assert_called_once_with(
+            JOB["connection_id"], JOB["workspace_id"], {"status": "reauth_required"}
+        )
+        admin.delete_credential.assert_called_once_with(JOB["connection_id"])
+        admin.finish_shorts_upload.assert_called_once()
 
 
 if __name__ == "__main__":
