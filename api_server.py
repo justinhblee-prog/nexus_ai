@@ -1,10 +1,10 @@
 import os, time, sqlite3, threading, logging, hmac, hashlib, secrets, re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from uuid import UUID
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 import video_maker, trend_radar, youtube_analytics, yt_uploader
 from audit_log import safe_record_event as record_event, list_events, get_ops_metrics
@@ -16,6 +16,9 @@ from hosted_auth import (
     is_hosted_auth_enabled, public_auth_config, verify_access_token,
 )
 from supabase_rest import SupabaseRestClient, SupabaseRestError
+from supabase_admin import SupabaseAdminRestClient, SupabaseAdminError
+from youtube_oauth import GoogleOAuthConfig, GoogleOAuthError, create_oauth_state, create_pkce_pair
+from token_vault import encrypt_refresh_token, decrypt_refresh_token, TokenVaultError
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("nexus.api")
@@ -89,6 +92,8 @@ async def enforce_local_origin_and_session(request, call_next):
     path = request.url.path
     if is_hosted_auth_enabled():
         if path in {"/api/hosted/auth-config", "/api/session/status"} and request.method == "GET":
+            return await call_next(request)
+        if path == "/api/hosted/youtube/callback" and request.method == "GET":
             return await call_next(request)
         if path.startswith("/api/hosted/"):
             try:
@@ -265,6 +270,158 @@ def hosted_create_job(workspace_id: str, req: HostedJobCreateReq, request: Reque
         return {"job": rows[0]}
     except SupabaseRestError as exc:
         _hosted_rest_error(exc)
+
+
+@app.get("/api/hosted/workspaces/{workspace_id}/youtube/connections")
+def hosted_youtube_connections(workspace_id: str, request: Request):
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    try:
+        items = client.select("youtube_connections", {
+            "select": "connection_id,provider,provider_account_id,display_name,status,scopes,created_at,updated_at,disconnected_at",
+            "workspace_id": f"eq.{workspace_id}",
+            "order": "created_at.desc",
+        })
+        return {"items": items or []}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+@app.post("/api/hosted/workspaces/{workspace_id}/youtube/connect")
+def hosted_youtube_connect(workspace_id: str, request: Request):
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    user = request.state.hosted_user
+    try:
+        memberships = client.select("workspace_members", {
+            "select": "role",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{user['user_id']}",
+        }) or []
+        if not any(item.get("role") in {"owner", "admin"} for item in memberships):
+            raise HTTPException(status_code=403, detail="Workspace owner or admin permission required")
+        config = GoogleOAuthConfig.from_env()
+        state, state_hash = create_oauth_state()
+        verifier, challenge = create_pkce_pair()
+        return_uri = f"{config.app_url}/signup"
+        expires_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+        admin = SupabaseAdminRestClient()
+        admin.store_oauth_state(
+            state_hash, user["user_id"], workspace_id, config.redirect_uri,
+            return_uri, verifier, expires_at,
+        )
+        return {"authorization_url": config.authorization_url(state, challenge)}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+    except (GoogleOAuthError, SupabaseAdminError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get("/api/hosted/youtube/callback")
+def hosted_youtube_callback(code: str | None = None, state: str | None = None, error: str | None = None):
+    if not state:
+        raise HTTPException(status_code=400, detail="OAuth state is required")
+    state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()
+    try:
+        admin = SupabaseAdminRestClient()
+        state_data = admin.consume_oauth_state(state_hash)
+        if not state_data:
+            raise HTTPException(status_code=400, detail="OAuth state is invalid, expired, or already consumed")
+        config = GoogleOAuthConfig.from_env()
+        expected_return_uri = f"{config.app_url}/signup"
+        if state_data.get("redirect_uri") != config.redirect_uri or state_data.get("return_uri") != expected_return_uri:
+            raise HTTPException(status_code=400, detail="OAuth redirect configuration mismatch")
+        if error:
+            return RedirectResponse(f"{expected_return_uri}?youtube=denied", status_code=303)
+        if not code:
+            raise HTTPException(status_code=400, detail="OAuth authorization code is missing")
+
+        token_data = config.exchange_code(code, state_data["code_verifier"])
+        refresh_token = token_data.get("refresh_token")
+        if not refresh_token:
+            return RedirectResponse(f"{expected_return_uri}?youtube=reauth_required", status_code=303)
+        channel = config.fetch_channel(token_data["access_token"])
+        encrypted = encrypt_refresh_token(refresh_token)
+        scopes = (token_data.get("scope") or "").split()
+        expires_in = max(60, int(token_data.get("expires_in") or 3600))
+        token_expires_at = (datetime.now(timezone.utc) + timedelta(seconds=expires_in)).isoformat()
+        connections = admin.upsert_connection({
+            "workspace_id": state_data["workspace_id"],
+            "provider": "youtube",
+            "provider_account_id": channel["channel_id"],
+            "display_name": channel["title"],
+            "status": "connected",
+            "scopes": scopes,
+            "connected_by": state_data["user_id"],
+            "disconnected_at": None,
+        })
+        if not connections:
+            raise SupabaseAdminError("YouTube connection metadata could not be saved")
+        connection_id = connections[0]["connection_id"]
+        try:
+            admin.upsert_credential(
+                connection_id, state_data["workspace_id"], encrypted["ciphertext_hex"],
+                encrypted["key_version"], scopes, token_expires_at,
+            )
+        except SupabaseAdminError:
+            admin.update_connection(connection_id, state_data["workspace_id"], {
+                "status": "reauth_required",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+            raise
+        return RedirectResponse(f"{expected_return_uri}?youtube=connected", status_code=303)
+    except HTTPException:
+        raise
+    except (GoogleOAuthError, SupabaseAdminError, TokenVaultError, ValueError) as exc:
+        logger.warning("YouTube OAuth callback failed (%s)", type(exc).__name__)
+        try:
+            config = GoogleOAuthConfig.from_env()
+            return RedirectResponse(f"{config.app_url}/signup?youtube=error", status_code=303)
+        except GoogleOAuthError:
+            raise HTTPException(status_code=503, detail="YouTube OAuth is not configured") from exc
+
+
+@app.post("/api/hosted/workspaces/{workspace_id}/youtube/{connection_id}/disconnect")
+def hosted_youtube_disconnect(workspace_id: str, connection_id: UUID, request: Request):
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    user = request.state.hosted_user
+    try:
+        memberships = client.select("workspace_members", {
+            "select": "role",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{user['user_id']}",
+        }) or []
+        if not any(item.get("role") in {"owner", "admin"} for item in memberships):
+            raise HTTPException(status_code=403, detail="Workspace owner or admin permission required")
+        connections = client.select("youtube_connections", {
+            "select": "connection_id,status",
+            "workspace_id": f"eq.{workspace_id}",
+            "connection_id": f"eq.{connection_id}",
+        }) or []
+        if not connections:
+            raise HTTPException(status_code=404, detail="YouTube connection not found")
+        admin = SupabaseAdminRestClient()
+        credential = admin.get_credential(str(connection_id))
+        if credential:
+            refresh_token = decrypt_refresh_token(
+                credential["encrypted_refresh_token_hex"],
+                credential["encryption_key_version"],
+            )
+            GoogleOAuthConfig.from_env().revoke_refresh_token(refresh_token)
+        updated = admin.update_connection(str(connection_id), workspace_id, {
+            "status": "disconnected",
+            "disconnected_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+        if not updated:
+            raise SupabaseAdminError("YouTube connection could not be updated")
+        admin.delete_credential(str(connection_id))
+        return {"status": "disconnected", "connection_id": str(connection_id)}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+    except (GoogleOAuthError, SupabaseAdminError, TokenVaultError) as exc:
+        raise HTTPException(status_code=502, detail="YouTube disconnection could not be completed safely") from exc
 
 
 @app.post("/api/hosted/jobs/{job_id}/approve")
