@@ -8,9 +8,10 @@
 **IN PROGRESS · PR #11 Draft/Open · 운영 전환 차단**
 
 - 작업 브랜치: `feat/nexus-user-onboarding-web-oauth-20261127`
-- 최신 CI 검증 branch head: `3643e9c29100fdd88d6a5cb69aa01c65976ee0a2` (OAuth callback membership revalidation 포함)
+- 현재 PR branch head: `7369889a95c3f695663d635da01cdc1a3cead7ac` (Topic Queue RLS viewer read/editor write 권한 수정 포함)
+- 마지막 성공 CI: run `46021232590`, head `1c06415b01e3fadcc52c6a9ee57e09ef636319dd`, 315 tests PASS. 중간 수정 커밋 `aa89daffe6745d09feaa6e31ff3eab2b7faf565b` CI는 정책 회귀 테스트 실패로 확인되어, 정책을 재수정한 현재 head의 새 검증은 아직 확인 전.
 - Pull Request: [#11 — User onboarding and hosted OAuth](https://github.com/justinhblee-prog/nexus_ai/pull/11)
-- 최신 GitHub Actions: [run 46016494231](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46016494231) — exact head `3643e9c29100fdd88d6a5cb69aa01c65976ee0a2`에서 **311 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, Playwright browser smoke 모두 통과.
+- 마지막 성공 GitHub Actions: [run 46021232590](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46021232590) — exact head `1c06415b01e3fadcc52c6a9ee57e09ef636319dd`에서 **315 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, Playwright browser smoke 모두 통과. 이후 Topic Queue 권한 정책 변경은 현재 head에서 새 CI 통과를 확인해야 함.
 - PR은 Draft/Open이며 merge하지 않음. main push, production deployment, public YouTube upload 금지.
 - Supabase 서비스 프로젝트 `ai_studio` (`lmdhgqfqvfyymfrovaty`)는 ACTIVE_HEALTHY, PostgreSQL 17.11, Seoul ap-northeast-2, Free plan.
 - 현재 운영 DB migration history는 총 14개(NEXUS foundation/auth/workspace/OAuth/render/upload 기반). 계정 삭제/권한 강화 후속 6개는 미적용.
@@ -30,10 +31,10 @@
 ### Vercel Preview 현황
 
 - 프로젝트: `neural-network` / Free plan.
-- Preview 환경변수 레코드 2개 확인: `NEXUS_SUPABASE_URL`, `NEXUS_SUPABASE_PUBLISHABLE_KEY`. 둘 다 Preview 전용이며 이 브랜치에 한정됨. 민감 값은 조회/출력하지 않았으므로 값의 정확성은 미검증.
-- 현재 READY Preview: [deployment](https://neural-network-pjrzoy51l-justinhblee-9540.vercel.app/) — commit `0942d8dbc8ed6cc6e55d544584a7599b4b5c842a`. 최신 검증 코드 head `3643e9c2...`보다 오래된 빌드.
-- 최신 코드 head `3643e9c2...`의 Preview를 생성하려 했으나 Vercel API가 `api-deployments-free-per-day` 제한으로 HTTP 402를 반환했고 retryAfter는 24시간. 요금제 업그레이드 없이 대기. production target은 지정하지 않았으며 production 배포는 하지 않음.
-- Preview runtime에 필요한 나머지 보안 설정은 아직 확인/등록되지 않음: `NEXUS_SUPABASE_SERVICE_ROLE_KEY`, `NEXUS_TOKEN_ENCRYPTION_KEY` 또는 `NEXUS_TOKEN_ENCRYPTION_KEYS_JSON`, `NEXUS_GOOGLE_OAUTH_CLIENT_ID`, `NEXUS_GOOGLE_OAUTH_CLIENT_SECRET`, `NEXUS_GOOGLE_OAUTH_REDIRECT_URI`, `NEXUS_HOSTED_APP_URL`. `NEXUS_SUPABASE_JWT_ISSUER` 및 `NEXUS_SUPABASE_JWKS_URL`은 프로젝트 URL 기본값을 사용할 수 있음. 어떤 비밀값도 채팅에 요청하거나 출력하지 않음.
+- Preview 환경변수 목록에는 `NEXUS_SUPABASE_URL`, `NEXUS_SUPABASE_PUBLISHABLE_KEY` 두 레코드만 확인됨(이 브랜치 Preview 전용). 민감 값은 복호화/출력하지 않아 유효성은 미검증. Hosted server-side secret 변수 레코드는 확인되지 않음.
+- 현재 READY Preview: deployment `dpl_4peW8RQNxPiwbwVkPwbWSHbawyp6`, commit `0dda21d543f8ca08ca0d98f2ecfac39c159fa425`. 최신 PR branch head `7369889...`와는 migration/test/docs 수정 커밋 차이가 있어, 해당 최신 소스의 Preview 배포 상태는 별도 확인 대상. 기존 READY는 Hosted OAuth E2E 성공을 의미하지 않음.
+- Google Cloud 기존 OAuth 설정은 `NEXUS STUDIO PRO` External consent screen, test user, YouTube Data API/Analytics API, OAuth client `NEXUS STUDIO PRO Local`(Desktop application)으로 확인됨. 이 Desktop client는 로컬 `tokens/client_secret.json` 기반 localhost 인증용이며, Hosted HTTPS callback용 Web application client와 다름. 따라서 기존 Google 설정을 다시 만들 필요는 없지만, Hosted callback을 위해 별도의 Web application OAuth client와 redirect URI가 필요함.
+- Vercel 프로젝트의 현재 Preview 변수 목록에는 다음 Hosted server-side 설정이 없음: `NEXUS_SUPABASE_SERVICE_ROLE_KEY`, `NEXUS_TOKEN_ENCRYPTION_KEY` 또는 `NEXUS_TOKEN_ENCRYPTION_KEYS_JSON`, `NEXUS_GOOGLE_OAUTH_CLIENT_ID`, `NEXUS_GOOGLE_OAUTH_CLIENT_SECRET`, `NEXUS_GOOGLE_OAUTH_REDIRECT_URI`, `NEXUS_HOSTED_APP_URL`. 어떤 비밀값도 채팅에 요청하거나 출력하지 않음. `NEXUS_SUPABASE_JWT_ISSUER` 및 `NEXUS_SUPABASE_JWKS_URL`은 프로젝트 URL 기본값을 사용할 수 있음.
 
 ### Supabase read-only advisor 결과 (2026-11-27 재점검)
 
@@ -44,7 +45,7 @@
 
 ### 남은 릴리스 게이트 — 모두 해소 전까지 운영 전환 금지
 
-1. **Topic queue migration**: `20261127143658_nexus_user_workspace_topic_queue.sql` is present on PR #11 with the designed SQL. The first local CLI attempt created an empty file under `$HOME\supabase\migrations`, not in the project checkout; do not treat that as the project migration. Sync the PR branch into the intended local checkout, then run `supabase db lint --local`, security advisors, and two-user RLS isolation tests. The active Supabase database remains unchanged.
+1. **Topic queue migration**: `20261127143658_nexus_user_workspace_topic_queue.sql` is present on PR #11 and remains unapplied to the live DB. RLS read is available to owner/admin/editor/viewer; insert/delete are restricted to owner/admin/editor, matching the workspace domain role model. Migration lint, local database application, and two-user RLS isolation tests remain pending. The active Supabase database remains unchanged.
 2. **Account deletion / security migrations**: 아래 6개 파일을 review 후 별도 승인된 migration window에서 적용하고 live schema/advisor 재검증해야 함:
    - `20261127110000_nexus_account_deletion_safety.sql`
    - `20261127123000_nexus_account_deletion_oauth_retry_state.sql`
