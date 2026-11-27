@@ -61,6 +61,21 @@ class DurableTopicQueueTests(unittest.TestCase):
         with patch.dict(os.environ, {"NEXUS_QUEUE_WORKERS": "invalid"}, clear=True):
             self.assertEqual(self.api.configured_queue_worker_count(), 1)
 
+    def test_startup_starts_one_legacy_bridge_and_configured_render_workers(self):
+        radar_db = types.SimpleNamespace(close=lambda: None)
+        with patch.dict(os.environ, {"NEXUS_QUEUE_WORKERS": "2"}, clear=True), \
+             patch.object(self.api, "init_app_db"), \
+             patch.object(self.api.trend_radar, "init_radar_db", return_value=radar_db, create=True), \
+             patch.object(self.api.threading, "Thread") as thread_factory:
+            self.api.startup_event()
+        names = [call.kwargs.get("name") for call in thread_factory.call_args_list]
+        self.assertEqual(names.count("nexus-legacy-topics-bridge"), 1)
+        self.assertEqual(names.count("nexus-queue-worker-1"), 1)
+        self.assertEqual(names.count("nexus-queue-worker-2"), 1)
+        self.assertEqual(names.count("nexus-radar-scheduler"), 1)
+        self.assertEqual(thread_factory.call_count, 4)
+        self.assertTrue(all(call.return_value.start.called for call in thread_factory.call_args_list))
+
     def test_plain_topic_expands_to_channel_scoped_jobs(self):
         added = self.api.enqueue_topic("A test topic", source="test")
         self.assertEqual(added, 10)
