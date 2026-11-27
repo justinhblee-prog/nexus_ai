@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import socket
+import threading
 import time
 from collections import defaultdict
 
@@ -81,6 +82,11 @@ def _inventory_storage(admin, user_id, deleting, shared):
         for key in (row.get("storage_key"), row.get("thumbnail_key"))
         if key
     }
+    buckets_by_name = defaultdict(set)
+    for item in objects:
+        buckets_by_name[item.get("name") or ""].add(item.get("bucket_id"))
+    if any(len(values) > 1 for values in buckets_by_name.values()):
+        raise AccountDeletionBlocked("storage_inventory", "ambiguous_storage_object_bucket")
     for item in objects:
         name = item.get("name") or ""
         prefix = name.split("/", 1)[0]
@@ -142,19 +148,42 @@ def process_one_account_deletion(
         return False
     user_id = str(request["user_id"])
     phase = "workspace_inventory"
+    stop_heartbeat = threading.Event()
+    lease_lost = threading.Event()
+
+    def heartbeat_loop():
+        while not stop_heartbeat.wait(60):
+            try:
+                if not admin.heartbeat_account_deletion_request(user_id, worker_id, lease_seconds):
+                    lease_lost.set()
+                    return
+            except Exception:
+                lease_lost.set()
+                return
+
+    heartbeat = threading.Thread(target=heartbeat_loop, daemon=True)
+    heartbeat.start()
+
+    def ensure_lease():
+        if lease_lost.is_set():
+            raise AccountDeletionRetry("worker_lease", "worker_lease_lost")
+
     try:
         if not request.get("sessions_revoked"):
             raise AccountDeletionRetry("session_revocation", "sessions_not_revoked")
 
         deleting, shared = _workspace_plan(admin, user_id)
+        ensure_lease()
         phase = "worker_lease_check"
         leases = admin.list_account_deletion_active_leases(deleting)
         if leases:
             raise AccountDeletionRetry("worker_lease_check", "active_worker_leases")
 
+        ensure_lease()
         phase = "storage_inventory"
         objects = _inventory_storage(admin, user_id, deleting, shared)
 
+        ensure_lease()
         phase = "oauth_cleanup"
         _cleanup_oauth(
             admin,
@@ -163,17 +192,22 @@ def process_one_account_deletion(
             decrypt_token,
         )
 
+        ensure_lease()
         phase = "storage_cleanup"
         for item in objects:
+            ensure_lease()
             admin.delete_storage_object_in_bucket(item["bucket_id"], item["name"])
 
+        ensure_lease()
         phase = "workspace_cleanup"
         admin.delete_account_workspace_generation_jobs(deleting)
         admin.anonymize_account_authorship(user_id, deleting)
         admin.delete_account_personal_rows(user_id)
         for workspace_id in deleting:
+            ensure_lease()
             admin.delete_account_workspace(workspace_id)
         for workspace_id in shared:
+            ensure_lease()
             admin.delete_account_workspace_membership(user_id, workspace_id)
 
         phase = "identity_cleanup"
@@ -189,6 +223,7 @@ def process_one_account_deletion(
         if remaining_storage:
             raise AccountDeletionRetry("storage_verification", "storage_objects_remain")
 
+        ensure_lease()
         phase = "auth_deletion"
         admin.delete_auth_user(user_id)
 
@@ -238,6 +273,9 @@ def process_one_account_deletion(
             logger.exception("Could not persist unexpected account deletion retry")
         logger.warning("Account deletion recovered from unexpected error (%s)", type(exc).__name__)
         return True
+    finally:
+        stop_heartbeat.set()
+        heartbeat.join(timeout=2)
 
 
 def run_worker():
