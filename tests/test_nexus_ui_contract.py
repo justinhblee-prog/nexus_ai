@@ -12,9 +12,12 @@ class NexusUiContractTests(unittest.TestCase):
             raise AssertionError("Browser studio script is missing")
         cls.script = scripts[-1]
 
-    def test_workspace_shell_is_initialized_once_before_session_check(self):
+    def test_workspace_shell_starts_without_administrator_login(self):
         self.assertEqual(self.script.count("initNexusShell();"), 1)
-        self.assertLess(self.script.index("initNexusShell();"), self.script.rindex("checkSession();"))
+        self.assertLess(self.script.index("initNexusShell();"), self.script.rindex("startStudio();"))
+        self.assertNotIn("관리자 로그인", self.html)
+        self.assertNotIn("loginStudio", self.script)
+        self.assertNotIn("checkSession", self.script)
 
     def test_seven_workspaces_are_declared(self):
         for workspace in (
