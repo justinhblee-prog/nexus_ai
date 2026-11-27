@@ -24,7 +24,7 @@ The eventual server-only deletion workflow must be idempotent and resumable:
 1. Require a fresh reauthentication step and an explicit account-deletion confirmation.
 2. Block deletion while the user owns any workspace with other members. Return the workspace IDs and require ownership transfer first.
 3. Mark the account as deletion-pending and prevent new workspace writes/jobs for that user.
-4. Stop or cancel the user's pending work and wait for active render/upload leases to finish or expire safely.
+4. Stop new work for workspaces that will be deleted and wait until both render and private-upload leases have expired. The deletion preflight now inventories active hosted worker leases through a service-only RPC and reports the latest lease expiry; it never deletes a workspace while a lease is active.
 5. For connections inside sole-member workspaces that will be deleted, revoke the Google/provider grant before deleting the encrypted refresh-token record. Preserve connections and credentials in shared workspaces after ownership transfer; they are workspace resources, not personal tokens. Record revocation outcomes without storing token material.
 6. Enumerate Storage objects owned by the user across all NEXUS buckets through the service-only inventory RPC. If a user-owned object is inside a shared workspace, block deletion until the file is safely re-uploaded or ownership is otherwise transferred; never remove a shared team's only copy. For deletable objects, call the Storage API for each exact bucket/path. Do not delete Storage metadata rows directly.
 7. Delete the user's sole-member workspaces and their workspace-scoped records. Preserve all shared workspaces and their content.
@@ -47,6 +47,7 @@ If any external cleanup fails, retain a retryable deletion-pending record and do
 ## Storage and Auth adapter safeguards
 
 - Storage inventory is restricted to a service-role-only RPC and paginated in batches of at most 1,000 rows.
+- Active render/upload lease inventory is restricted to a separate service-role-only RPC; it covers the hosted Shorts render and upload lease tables.
 - Storage object deletion uses the Storage API with an exact bucket and object path. The adapter rejects unknown buckets, absolute paths, empty path segments, dot segments, and backslashes.
 - The Auth Admin deletion helper is server-only and is not exposed as an HTTP route.
 - Global session revocation uses the verified user's bearer token, not the service-role token as the user identity.
