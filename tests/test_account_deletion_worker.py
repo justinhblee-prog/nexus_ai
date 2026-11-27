@@ -194,7 +194,7 @@ class AccountDeletionWorkerTests(unittest.TestCase):
             {"connection_id": "66666666-6666-4666-8666-666666666666", "provider_account_id": "google-account", "status": "connected"},
         ]
         admin.get_account_deletion_oauth_state.return_value = None
-        admin.set_account_deletion_oauth_state.return_value = "revocation_started"
+        admin.set_account_deletion_oauth_state.side_effect = ["revocation_started", "revoked"]
         admin.has_active_connection_outside_workspaces.return_value = False
         admin.get_credential.side_effect = [
             {"encrypted_refresh_token_hex": "bad-ciphertext", "encryption_key_version": "v1"},
