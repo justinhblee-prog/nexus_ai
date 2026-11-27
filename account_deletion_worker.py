@@ -129,14 +129,34 @@ def _cleanup_oauth(admin, deleting, oauth_config_factory, decrypt_token):
                 oauth_config = oauth_config_factory()
             # One valid refresh token revokes this Google grant. Every credential
             # in the deleted workspaces is then removed, including duplicates.
-            credential = credentials[0][1]
-            refresh_token = decrypt_token(
-                credential["encrypted_refresh_token_hex"],
-                credential["encryption_key_version"],
-            )
+            refresh_token = None
+            for _connection, credential in credentials:
+                try:
+                    refresh_token = decrypt_token(
+                        credential["encrypted_refresh_token_hex"],
+                        credential["encryption_key_version"],
+                    )
+                    break
+                except TokenVaultError:
+                    continue
+            if not refresh_token:
+                raise AccountDeletionBlocked("oauth_cleanup", "oauth_refresh_token_unavailable")
             oauth_config.revoke_refresh_token(refresh_token)
         for connection in group:
             admin.delete_credential(str(connection["connection_id"]))
+
+
+def _remaining_storage_objects(admin, user_id, workspace_ids):
+    objects = []
+    offset = 0
+    while True:
+        page = admin.list_account_deletion_storage_objects(
+            user_id, limit=1000, offset=offset, workspace_ids=workspace_ids
+        )
+        objects.extend(page)
+        if len(page) < 1000:
+            return objects
+        offset += len(page)
 
 
 def process_one_account_deletion(
@@ -223,7 +243,7 @@ def process_one_account_deletion(
         if any(int(value or 0) for value in private_counts.values()):
             raise AccountDeletionRetry("identity_verification", "private_user_references_remain")
 
-        remaining_storage = admin.list_account_deletion_storage_objects(user_id, limit=1000, offset=0)
+        remaining_storage = _remaining_storage_objects(admin, user_id, deleting)
         if remaining_storage:
             raise AccountDeletionRetry("storage_verification", "storage_objects_remain")
 
@@ -234,7 +254,7 @@ def process_one_account_deletion(
         phase = "final_verification"
         final_counts = admin.account_user_reference_counts(user_id)
         final_private_counts = admin.count_account_private_user_rows(user_id)
-        final_storage = admin.list_account_deletion_storage_objects(user_id, limit=1000, offset=0)
+        final_storage = _remaining_storage_objects(admin, user_id, deleting)
         if any(int(value or 0) for value in final_counts.values()):
             raise AccountDeletionRetry("final_verification", "user_references_remain")
         if any(int(value or 0) for value in final_private_counts.values()) or final_storage:
