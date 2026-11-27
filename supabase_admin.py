@@ -49,6 +49,8 @@ _ALLOWED_RPCS = {
     "count_account_deletion_private_user_rows",
     "get_account_deletion_oauth_state",
     "set_account_deletion_oauth_state",
+    "get_youtube_disconnect_state",
+    "set_youtube_disconnect_state",
 }
 
 
@@ -484,6 +486,21 @@ class SupabaseAdminRestClient:
             "p_preflight_snapshot": preflight_snapshot,
         }) or []
         return rows[0] if rows else None
+
+    def get_youtube_disconnect_state(self, connection_id):
+        value = self._account_uuid(connection_id, "YouTube connection ID")
+        rows = self.rpc("get_youtube_disconnect_state", {"p_connection_id": value}) or []
+        return rows[0].get("state") if rows else None
+
+    def set_youtube_disconnect_state(self, connection_id, state):
+        value = self._account_uuid(connection_id, "YouTube connection ID")
+        if state not in {"revocation_started", "revoked", "preserved", "not_required"}:
+            raise ValueError("YouTube disconnect state is invalid")
+        rows = self.rpc("set_youtube_disconnect_state", {
+            "p_connection_id": value,
+            "p_state": state,
+        }) or []
+        return rows[0].get("state") if rows else None
 
     def get_account_deletion_request(self, user_id):
         """Read only an already-existing durable deletion request for safe retry."""
