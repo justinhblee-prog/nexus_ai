@@ -376,7 +376,19 @@ def hosted_account_deletion_preflight(request: Request):
         summaries = []
         shared_workspace_ids = set()
         if len(workspace_ids) > 100:
-            blockers.append({"reason": "This account has more than 100 workspace memberships; support-assisted cleanup is required."})
+            return {
+                "ownership_clear": False,
+                "storage_clear": False,
+                "preflight_clear": False,
+                "workspaces": [],
+                "owned_workspaces": [],
+                "active_worker_lease_count": 0,
+                "youtube_oauth": {},
+                "storage": {},
+                "blockers": [{"reason": "This account has more than 100 workspace memberships; support-assisted cleanup is required."}],
+                "account_deletion_enabled": account_deletion_is_enabled(),
+                "account_deletion_reason": "Workspace inventory exceeds the safe automated deletion limit.",
+            }
         for wid in workspace_ids:
             membership = membership_by_workspace.get(wid, {"role": "owner"})
             workspace_rows = client.select("workspaces", {
