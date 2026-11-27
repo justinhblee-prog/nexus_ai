@@ -64,6 +64,7 @@ class HostedWorkspaceMetricsContractTests(unittest.TestCase):
         self.assertIn("readSavedTopicQueue()", html)
         self.assertIn("savedTopicQueueMode = serverAvailable ? \"server\" : \"local\"", html)
         self.assertIn("remainingLocalItems", html)
+        self.assertIn("일부 항목은 브라우저 임시 저장에 남아 있습니다.", html)
         self.assertIn("migrationResponse.status !== 409", html)
         self.assertIn("workspaceId !== activeWorkspaceId || token !== activeAccessToken", html)
 
