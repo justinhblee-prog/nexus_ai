@@ -182,5 +182,96 @@ class SignedSessionTests(unittest.TestCase):
         self.assertTrue(response.media_type.startswith("text/html"))
 
 
+    def test_hosted_workspace_routes_use_verified_user_jwt_and_workspace_filters(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111", "role": "authenticated"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.return_value = [{"workspace_id": "wsp_11111111-1111-4111-8111-111111111111"}]
+            result = self.api.hosted_workspaces(request)
+            self.assertEqual(result["items"][0]["workspace_id"], "wsp_11111111-1111-4111-8111-111111111111")
+            self.assertEqual(client_type.call_args.args[0], "verified.user.jwt")
+            client_type.return_value.select.return_value = [{"job_id": "job-1"}]
+            jobs = self.api.hosted_workspace_jobs("wsp_11111111-1111-4111-8111-111111111111", request)
+            self.assertEqual(jobs["items"][0]["job_id"], "job-1")
+            self.assertEqual(
+                client_type.return_value.select.call_args.kwargs["params"]["workspace_id"],
+                "eq.wsp_11111111-1111-4111-8111-111111111111",
+            )
+
+    def test_hosted_job_creation_uses_verified_identity_and_server_defaults(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111", "role": "authenticated"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        payload = self.api.HostedJobCreateReq(
+            channel_id="22222222-2222-4222-8222-222222222222",
+            topic="New topic",
+            title="Draft title",
+            script="Draft script",
+        )
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.insert.return_value = [{"job_id": "job-1", "privacy_status": "private"}]
+            result = self.api.hosted_create_job(
+                "wsp_11111111-1111-4111-8111-111111111111", payload, request
+            )
+        inserted = client_type.return_value.insert.call_args.args[1]
+        self.assertEqual(inserted["created_by"], "11111111-1111-4111-8111-111111111111")
+        self.assertNotIn("owner_id", inserted)
+        self.assertNotIn("approval_status", inserted)
+        self.assertNotIn("privacy_status", inserted)
+        self.assertNotIn("stage", inserted)
+        self.assertEqual(result["job"]["privacy_status"], "private")
+
+    def test_hosted_job_approval_is_attributed_to_verified_user(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111", "role": "authenticated"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.update.return_value = [{"job_id": "job-1", "approval_status": "approved"}]
+            result = self.api.hosted_approve_job(
+                self.api.UUID("22222222-2222-4222-8222-222222222222"), request
+            )
+        params, payload = client_type.return_value.update.call_args.args[1:]
+        self.assertEqual(params["job_id"], "eq.22222222-2222-4222-8222-222222222222")
+        self.assertEqual(payload["approved_by"], "11111111-1111-4111-8111-111111111111")
+        self.assertEqual(payload["approval_status"], "approved")
+        self.assertEqual(result["job"]["approval_status"], "approved")
+
+    def test_hosted_workspace_ids_are_validated_before_data_access(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with self.assertRaises(self.api.HTTPException) as raised:
+            self.api.hosted_workspace_jobs("not-a-workspace", request)
+        self.assertEqual(raised.exception.status_code, 404)
+
+    def test_hosted_mutations_allow_same_origin_but_reject_foreign_origins(self):
+        async def next_response(_request):
+            return Response(status_code=204)
+        with patch.dict(os.environ, {"NEXUS_HOSTED_AUTH_ENABLED": "true"}):
+            with patch.object(self.api, "verify_access_token", return_value={
+                "user_id": "11111111-1111-4111-8111-111111111111",
+                "role": "authenticated",
+            }):
+                same_origin = asyncio.run(self.api.enforce_local_origin_and_session(
+                    self._request(
+                        "/api/hosted/workspaces", method="POST",
+                        origin="http://testserver", authorization="Bearer valid.jwt.token",
+                    ), next_response
+                ))
+                foreign = asyncio.run(self.api.enforce_local_origin_and_session(
+                    self._request(
+                        "/api/hosted/workspaces", method="POST",
+                        origin="https://attacker.example", authorization="Bearer valid.jwt.token",
+                    ), next_response
+                ))
+        self.assertEqual(same_origin.status_code, 204)
+        self.assertEqual(foreign.status_code, 403)
+
+
 if __name__ == "__main__":
     unittest.main()
