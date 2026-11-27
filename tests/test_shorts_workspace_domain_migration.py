@@ -39,6 +39,8 @@ class ShortsWorkspaceDomainMigrationTests(unittest.TestCase):
         self.assertIn("private.guard_shorts_job_approval()", self.sql)
         self.assertIn("array['owner','admin']", self.sql)
         self.assertIn("approval must be attributed to the authenticated reviewer", self.sql)
+        self.assertIn("stage not in ('approved', 'uploading', 'published') or approval_status = 'approved'", self.sql)
+        self.assertIn("stage <> 'published' or (provider_video_id is not null and uploaded_at is not null)", self.sql)
 
     def test_client_grants_prevent_tenant_and_pipeline_control_field_reassignment(self):
         self.assertIn("grant update (display_name, persona, is_active, updated_at)", self.sql)
