@@ -239,6 +239,79 @@ def hosted_transfer_workspace_ownership(
         _hosted_rest_error(exc)
 
 
+@app.get("/api/hosted/workspaces/{workspace_id}/members")
+def hosted_workspace_members(workspace_id: str, request: Request):
+    """List workspace members only for the verified workspace owner."""
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    user_id = request.state.hosted_user["user_id"]
+    try:
+        own_membership = client.select("workspace_members", {
+            "select": "role",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{user_id}",
+            "limit": "1",
+        }) or []
+        if not own_membership or own_membership[0].get("role") != "owner":
+            raise HTTPException(status_code=403, detail="Workspace owner permission required")
+        items = client.select("workspace_members", {
+            "select": "user_id,role,created_at",
+            "workspace_id": f"eq.{workspace_id}",
+            "order": "created_at.asc",
+        }) or []
+        return {"items": items}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+@app.get("/api/hosted/account/deletion/preflight")
+def hosted_account_deletion_preflight(request: Request):
+    """Report ownership blockers without starting any destructive operation."""
+    client = _hosted_rest_client(request)
+    user_id = request.state.hosted_user["user_id"]
+    try:
+        owned = client.select("workspaces", {
+            "select": "workspace_id,workspace_name",
+            "owner_id": f"eq.{user_id}",
+            "order": "created_at.asc",
+        }) or []
+        blockers = []
+        summaries = []
+        for workspace in owned:
+            members = client.select("workspace_members", {
+                "select": "user_id,role",
+                "workspace_id": f"eq.{workspace['workspace_id']}",
+            }) or []
+            others = [member for member in members if member.get("user_id") != user_id]
+            admins = [member for member in others if member.get("role") == "admin"]
+            summary = {
+                "workspace_id": workspace["workspace_id"],
+                "workspace_name": workspace.get("workspace_name") or "My Workspace",
+                "member_count": len(members),
+                "transfer_ready": bool(admins),
+            }
+            summaries.append(summary)
+            if others and not admins:
+                blockers.append({
+                    "workspace_id": workspace["workspace_id"],
+                    "reason": "Promote another workspace member to admin before transferring ownership.",
+                })
+            elif others:
+                blockers.append({
+                    "workspace_id": workspace["workspace_id"],
+                    "reason": "Transfer workspace ownership to an existing admin before account deletion.",
+                })
+        return {
+            "ownership_clear": not blockers,
+            "owned_workspaces": summaries,
+            "blockers": blockers,
+            "account_deletion_enabled": False,
+            "account_deletion_reason": "Full provider, Storage, worker, session, and Auth cleanup is not yet implemented.",
+        }
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
 @app.get("/api/hosted/workspaces/{workspace_id}/channels")
 def hosted_workspace_channels(workspace_id: str, request: Request):
     _validate_workspace_id(workspace_id)
