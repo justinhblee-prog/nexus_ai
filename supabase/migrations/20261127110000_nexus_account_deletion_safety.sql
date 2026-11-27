@@ -143,6 +143,27 @@ $function$;
 REVOKE ALL ON FUNCTION public.transfer_workspace_ownership(text, uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.transfer_workspace_ownership(text, uuid) TO authenticated;
 
+-- Keep workspace membership administration behind the owner API/RPC surface.
+-- Direct authenticated table writes must not bypass explicit ownership transfer.
+REVOKE ALL ON TABLE public.workspaces FROM anon, authenticated;
+GRANT SELECT ON TABLE public.workspaces TO authenticated;
+
+REVOKE ALL ON TABLE public.workspace_members FROM anon, authenticated;
+GRANT SELECT, UPDATE (role) ON TABLE public.workspace_members TO authenticated;
+
+DROP POLICY IF EXISTS workspace_members_owner_update ON public.workspace_members;
+CREATE POLICY workspace_members_owner_update
+  ON public.workspace_members FOR UPDATE TO authenticated
+  USING (
+    (SELECT private.is_workspace_owner(workspace_id))
+    AND user_id <> (SELECT auth.uid())
+  )
+  WITH CHECK (
+    (SELECT private.is_workspace_owner(workspace_id))
+    AND user_id <> (SELECT auth.uid())
+    AND role IN ('admin', 'editor', 'viewer')
+  );
+
 -- The FK action for approved_by runs without an end-user JWT. Permit only
 -- this exact anonymization transition; ordinary authenticated approval changes
 -- continue through the existing owner/admin and reviewer-attribution guard.
