@@ -800,7 +800,7 @@ def serve_home():
 def session_status(request: Request):
     required = auth_is_required()
     authenticated = (not required) or verify_session_cookie(request.cookies.get(SESSION_COOKIE_NAME))
-    return {"configured": auth_is_configured(), "authenticated": authenticated, "required": required, "auth_enabled": required}
+    return {"configured": auth_is_configured(), "authenticated": authenticated, "required": required}
 
 def session_cookie_is_secure(request: Request) -> bool:
     """Use Secure cookies automatically on HTTPS while preserving local HTTP development."""
