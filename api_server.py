@@ -321,11 +321,21 @@ def hosted_account_deletion_preflight(request: Request):
             "user_id": f"eq.{user_id}",
             "order": "created_at.asc",
         }) or []
+        owned_workspaces = client.select("workspaces", {
+            "select": "workspace_id,workspace_name,owner_id",
+            "owner_id": f"eq.{user_id}",
+            "order": "created_at.asc",
+        }) or []
+        membership_by_workspace = {row["workspace_id"]: row for row in memberships}
+        workspace_ids = list(dict.fromkeys(
+            [row["workspace_id"] for row in memberships]
+            + [row["workspace_id"] for row in owned_workspaces]
+        ))
         blockers = []
         summaries = []
         shared_workspace_ids = set()
-        for membership in memberships:
-            wid = membership["workspace_id"]
+        for wid in workspace_ids:
+            membership = membership_by_workspace.get(wid, {"role": "owner"})
             workspace_rows = client.select("workspaces", {
                 "select": "workspace_id,workspace_name,owner_id",
                 "workspace_id": f"eq.{wid}",
