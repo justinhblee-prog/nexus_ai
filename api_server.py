@@ -355,15 +355,17 @@ def hosted_account_deletion_preflight(request: Request):
             }) or []
             others = [member for member in members if member.get("user_id") != user_id]
             is_owner = workspace.get("owner_id") == user_id
-            if others:
+            if others or not is_owner:
+                # Non-owners can only see their own membership row under RLS;
+                # treat those workspaces as shared rather than guessing member count.
                 shared_workspace_ids.add(wid)
             summary = {
                 "workspace_id": wid,
                 "workspace_name": workspace.get("workspace_name") or "My Workspace",
-                "member_count": len(members),
+                "member_count": len(members) if is_owner else None,
                 "role": membership.get("role"),
                 "owned_by_current_user": is_owner,
-                "transfer_ready": any(member.get("role") == "admin" for member in others),
+                "transfer_ready": is_owner and any(member.get("role") == "admin" for member in others),
             }
             summaries.append(summary)
             if is_owner and others:
