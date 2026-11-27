@@ -139,7 +139,11 @@ def verify_access_token(
                 or not (audience in aud if isinstance(aud, list) else aud == audience)
             ):
                 raise HostedAuthError("Supabase access token claims do not match the verified user")
-            return {"user_id": user_id, "email": user.get("email"), "role": "authenticated"}
+            verified_user = {"user_id": user_id, "email": user.get("email"), "role": "authenticated"}
+            auth_time = unverified_claims.get("auth_time")
+            if isinstance(auth_time, (int, float)) and not isinstance(auth_time, bool):
+                verified_user["auth_time"] = int(auth_time)
+            return verified_user
         except HostedAuthError:
             raise
         except HostedAuthConfigurationError:
@@ -171,5 +175,10 @@ def verify_access_token(
     if claims.get("iss", "").rstrip("/") != issuer:
         raise HostedAuthError("Supabase access token issuer mismatch")
 
-    # Return only the minimum verified identity fields needed by application code.
-    return {"user_id": user_id, "email": claims.get("email"), "role": "authenticated"}
+    # Return only verified identity fields needed by application code. The
+    # auth_time claim is used solely to enforce fresh reauthentication for deletion.
+    verified_user = {"user_id": user_id, "email": claims.get("email"), "role": "authenticated"}
+    auth_time = claims.get("auth_time")
+    if isinstance(auth_time, (int, float)) and not isinstance(auth_time, bool):
+        verified_user["auth_time"] = int(auth_time)
+    return verified_user
