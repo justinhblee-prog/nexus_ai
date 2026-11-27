@@ -49,13 +49,17 @@ class ShortsWorkspaceDomainMigrationTests(unittest.TestCase):
         self.assertNotIn("grant insert, update, delete on public.shorts_jobs", self.sql)
 
     def test_every_workspace_data_policy_is_authenticated_and_membership_scoped(self):
-        tables = (
-            "youtube_connections", "shorts_channels", "shorts_jobs",
-            "shorts_job_events", "shorts_analytics_snapshots", "shorts_assets",
-        )
-        for table in tables:
+        tables = {
+            "youtube_connections": "youtube_connections_member_read",
+            "shorts_channels": "shorts_channels_member_read",
+            "shorts_jobs": "shorts_jobs_member_read",
+            "shorts_job_events": "shorts_job_events_member_read",
+            "shorts_analytics_snapshots": "shorts_analytics_member_read",
+            "shorts_assets": "shorts_assets_member_read",
+        }
+        for table, policy_name in tables.items():
             self.assertIn(f"alter table public.{table} enable row level security", self.sql)
-            policy_start = self.sql.index(f"create policy {table}_member_read")
+            policy_start = self.sql.index(f"create policy {policy_name}")
             policy = self.sql[policy_start:self.sql.index(";", policy_start)]
             self.assertIn("for select to authenticated", policy)
             self.assertIn("private.has_workspace_role", policy)
