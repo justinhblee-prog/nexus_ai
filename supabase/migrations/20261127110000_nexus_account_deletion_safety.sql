@@ -47,6 +47,18 @@ ALTER TABLE public.shorts_jobs
   ADD CONSTRAINT shorts_jobs_approved_by_fkey
   FOREIGN KEY (approved_by) REFERENCES auth.users(id) ON DELETE SET NULL;
 
+-- Keep the approval timestamp and approved state when the reviewer account is
+-- removed; the attribution FK becomes NULL, while the approval guard still
+-- enforces the reviewer identity at the moment approval is granted.
+ALTER TABLE public.shorts_jobs
+  DROP CONSTRAINT IF EXISTS shorts_jobs_check;
+ALTER TABLE public.shorts_jobs
+  ADD CONSTRAINT shorts_jobs_check CHECK (
+    (approval_status = 'approved' AND approved_at IS NOT NULL)
+    OR
+    (approval_status <> 'approved' AND approved_by IS NULL AND approved_at IS NULL)
+  );
+
 CREATE OR REPLACE FUNCTION public.transfer_workspace_ownership(
   p_workspace_id text,
   p_new_owner_id uuid
