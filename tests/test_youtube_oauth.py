@@ -156,5 +156,15 @@ class GoogleOAuthTests(unittest.TestCase):
                 )
 
 
+    def test_invalid_grant_is_classified_as_reauthorization_required(self):
+        config = GoogleOAuthConfig.from_env(ENV)
+        http = Mock()
+        response = Mock(status_code=400)
+        response.json.return_value = {"error": "invalid_grant"}
+        http.return_value = response
+        with self.assertRaises(GoogleOAuthReauthRequired):
+            config.refresh_access_token("revoked-refresh-token", http_post=http)
+
+
 if __name__ == "__main__":
     unittest.main()
