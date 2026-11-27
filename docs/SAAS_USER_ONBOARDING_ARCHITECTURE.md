@@ -1,6 +1,6 @@
 # NEXUS STUDIO PRO — SaaS User Registration & YouTube Account Linking
 
-Status: Phase A identity and signup/login UI, Phase B workspace-scoped Shorts schema/APIs, and Phase C Google Web OAuth server flow foundations are implemented. Live Google consent, tenant-bound worker execution, and end-to-end SaaS verification remain in progress.
+Status: Phase A identity and signup/login UI, Phase B workspace-scoped Shorts schema/APIs, Phase C Google Web OAuth foundations, and Phase D opt-in tenant-aware rendering/review pipeline are implemented. Live Google consent, live worker activation, post-approval YouTube upload, and end-to-end SaaS verification remain in progress.
 Target: `feat/nexus-user-onboarding-web-oauth-20261127`, based on the current full-stack integration branch.
 
 ## Phase A implementation delivered
@@ -29,6 +29,10 @@ Target: `feat/nexus-user-onboarding-web-oauth-20261127`, based on the current fu
 - Added Google Web OAuth helpers for PKCE, offline consent, exact callback URI, Google account identity lookup, all-channel discovery from YouTube API, and provider token revocation.
 - Stored one encrypted refresh token per Google account/workspace connection and linked every discovered channel to that connection. Disconnect revokes the Google grant only when no other active workspace connection uses the same Google account.
 - Added API routes for owner/admin YouTube connect initiation, public one-time callback, channel listing, and disconnect/revoke. The callback binds Google identity to the workspace from the consumed server-side state and encrypts refresh tokens before persistence.
+- Added a private worker lease table with `SKIP LOCKED` job claims, heartbeat renewal, attempt limits, and fencing tokens. Worker RPCs are service-role-only.
+- Added a private `nexus-shorts` Storage bucket (100 MB per object) with workspace-folder RLS policies. Rendered assets are private and previews use 5-minute signed URLs after user-JWT/RLS checks.
+- Added an opt-in Docker `hosted-render-worker` profile. It uses the existing Shorts renderer with an empty OpenAI key (free fallback only), runs ffprobe QA, stores tenant-prefixed MP4s, and stops at `review_pending` for human approval.
+- Added hosted account UI controls for channel connect/disconnect, Shorts job creation, rendered preview, and owner/admin final approval. Approval transitions the job to `approved`; public upload is not performed.
 - Added role-aware RLS for owner/admin/editor/viewer access, restricted column-level mutation grants, and a trigger that permits approval-status changes only by workspace owners/admins.
 - Enforced private-only upload privacy and disallowed approved/uploading/published job stages until approval is recorded; published jobs also require provider video ID and upload timestamp.
 - Added a private workspace-role helper that derives identity from `auth.uid()`, not browser-supplied user IDs.
