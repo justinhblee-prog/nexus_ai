@@ -124,7 +124,8 @@ try {
   await authPage.locator("#nexus-login-password").fill("local-test-password");
   await authPage.locator("#nexus-login-submit").click();
   await authPage.waitForFunction(() => document.getElementById("nexus-login-overlay").hidden);
-  await authPage.waitForResponse(response => response.url().includes("/api/overview") && response.ok());
+  await authPage.waitForFunction(() => document.getElementById("job-list").children.length > 0, null, { timeout: 5000 });
+  if (!apiCalls.includes("/api/overview")) throw new Error("Successful login did not start the overview API request");
   const sessionCookies = await authPage.context().cookies("http://127.0.0.1:4173");
   const sessionCookie = sessionCookies.find(cookie => cookie.name === "nexus_session");
   if (!sessionCookie || !sessionCookie.httpOnly || sessionCookie.sameSite !== "Strict") {
