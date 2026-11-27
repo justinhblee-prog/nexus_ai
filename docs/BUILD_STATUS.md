@@ -159,3 +159,15 @@
 - Vercel Free quota 제한 이후 새 Preview 배포가 재개됨. Deployment `dpl_4peW8RQNxPiwbwVkPwbWSHbawyp6`는 `READY`, target `Preview`, branch `feat/nexus-user-onboarding-web-oauth-20261127`, exact commit `0dda21d543f8ca08ca0d98f2ecfac39c159fa425`로 확인됨.
 - 이는 빌드/배포 상태가 READY라는 뜻이며, 실제 signup/login, Supabase API, OAuth, tenant isolation의 runtime E2E 성공을 뜻하지 않는다. 브라우저 상호작용 smoke는 GitHub Actions에서 별도로 통과해야 하며, 외부 OAuth/실계정 검증은 별도 gate로 유지한다.
 - 이전의 "새 Preview 배포가 quota로 차단" 문구는 과거 상태다. 최신 READY 배포 기록이 이를 대체한다.
+
+
+### Shared public trend persistence implementation — 2026-11-28
+
+- Hosted trend API no longer reads a bundled SQLite snapshot or returns unavailable solely because Vercel has no local database. It reads the shared `public_trend_signals` and `public_trend_scans` tables through the caller's verified JWT after confirming workspace membership.
+- Added `hosted_trend_worker.py`: an opt-in collector that scans the existing public RSS/Hacker News sources, persists source-attributed daily/weekly signals and scan-health metadata using the server-only Supabase admin client, and never invents cross-source ranking or view estimates.
+- Added the `hosted-trend-worker` Compose service under the existing `hosted` profile. It is disabled by default (`NEXUS_TREND_WORKER_ENABLED=false`), uses a named local data volume, and requires the shared-trend migration plus server-only Supabase key before activation.
+- Added a server-side admin upsert path, an allowlisted authenticated read path, HTTPS-only source URL filtering, migration-contract tests, worker persistence tests, and CI compilation coverage.
+- The SQL is documented in `docs/SHARED_PUBLIC_TREND_STORE_MIGRATION.md`. No timestamped migration file was fabricated: generate it with `supabase migration new nexus_shared_public_trend_store` in the intended local checkout, copy the documented SQL, then lint against the local Supabase stack.
+- **Not activated:** no live Supabase schema/data writes, no collector start, no worker enablement, no Vercel deployment, and no paid services. Local Supabase CLI lint and real hosted read/write integration remain pending.
+- The previous statement that hosted trend persistence had no implementation is superseded for application code; its migration/activation/runtime validation gates remain open.
+- Current PR #11 remains Draft/Open/unmerged. Latest commit and Actions validation are tracked on the PR; do not infer success until the current-head workflow completes.
