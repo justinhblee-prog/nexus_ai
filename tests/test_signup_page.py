@@ -42,7 +42,7 @@ class HostedSignupPageContractTests(unittest.TestCase):
         self.assertIn('id="refresh-trends"', self.html)
         self.assertIn('detail.textContent = region + item.topic', self.html)
         self.assertIn('rel = "noopener noreferrer"', self.html)
-        self.assertIn('textContent = "주제 사용"', self.html)
+        self.assertIn('useTopic.textContent = "큐에 저장"', self.html)
         self.assertIn('await loadWorkspaceTrends()', self.html)
 
     def test_saved_topic_queue_is_scoped_to_user_and_workspace_with_deduplication(self):
