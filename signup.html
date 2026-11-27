@@ -19,6 +19,42 @@
     .session{display:none;margin-top:18px;padding:16px;border:1px solid #245d4b;background:#0a201a;border-radius:12px}.session strong{color:#8df0c7}.studio-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:14px 0}.studio-metric{min-width:0;padding:12px;border:1px solid var(--line);border-radius:12px;background:#080e19}.studio-metric span{display:block;color:var(--muted);font-size:11px}.studio-metric strong{display:block;color:var(--text);font-size:22px;margin-top:4px}@media(max-width:520px){.studio-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}.workspace{margin-top:12px;padding-top:12px;border-top:1px solid #245d4b;color:#d6e9e1;font-size:13px}.workspace-select{margin-top:10px}.workspace-select select{width:100%;background:#060a14;border:1px solid #29364c;border-radius:10px;padding:11px;color:white;font:inherit}.muted{font-size:12px;color:var(--muted);margin-top:18px}.hidden{display:none!important}
     @media(max-width:760px){body{padding:12px}.shell{grid-template-columns:1fr;gap:12px}.intro{padding:22px}.intro h1{margin:30px 0 14px}.features{grid-template-columns:1fr 1fr;margin-top:20px}.panel{padding:22px}}
     @media(max-width:420px){.features{grid-template-columns:1fr}}
+
+    :root{--accent:#4d8dff;--surface:#0b101d;--inset:#060a14;--line:#202a3d;--muted:#91a0b8;--text:#f4f7fb}
+    body{background:radial-gradient(ellipse at 20% 0%,#102044 0,transparent 42%),var(--bg);color:var(--text)}
+    .intro,.panel{background:var(--surface);border-color:var(--line);color:var(--text)}
+    .studio-metric{background:var(--inset);border-color:var(--line)}
+    .studio-metric strong{color:var(--text)}
+    .workspace{border-color:var(--line);color:var(--text)}
+    .primary{background:var(--accent);color:#07111f}
+    .appearance-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(110px,.35fr);gap:8px 12px;align-items:end;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--inset)}
+    .appearance-controls label{margin:0}
+    .appearance-controls select,.appearance-controls input{width:100%;min-height:40px;background:var(--inset);border:1px solid var(--line);border-radius:9px;color:var(--text);padding:8px;font:inherit}
+    .appearance-controls input[type=color]{padding:3px;cursor:pointer}
+    .session{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .session>strong,.session>#session-email,.session>.appearance-controls,.session>#workspace,.session>.studio-metrics,
+    .session>#workspace-picker,.session>#connections,.session>#workspace-members-panel,.session>#connect-youtube,
+    .session>.workspace,.session>#account-deletion-panel,.session>#signout{grid-column:1/-1}
+    body[data-authenticated="true"]{display:block;padding:24px}
+    body[data-authenticated="true"] .shell{width:min(100%,1320px);grid-template-columns:1fr}
+    body[data-authenticated="true"] .intro{display:none}
+    body[data-authenticated="true"] .panel>.eyebrow,
+    body[data-authenticated="true"] .panel>h2,
+    body[data-authenticated="true"] .panel>p{display:none}
+    :root[data-layout="intelligence"] .studio-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}
+    :root[data-layout="creator"] .studio-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+    :root[data-layout="creator"] #jobs .connection-row{padding:14px;border-radius:12px;background:var(--inset)}
+    :root[data-layout="global"] .studio-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}
+    :root[data-layout="global"] #connections,. :root[data-layout="global"] #jobs{border-color:var(--accent)}
+    :root[data-layout="operations"] .studio-metric{border-radius:5px;border-top:3px solid var(--accent)}
+    :root[data-layout="operations"] .workspace{border-radius:5px;border-left:3px solid var(--accent)}
+    :root[data-theme="ocean"]{--bg:#071426;--surface:#0d2038;--inset:#102944;--line:#25415e;--text:#edf5ff;--muted:#9bb2cc}
+    :root[data-theme="forest"]{--bg:#071b16;--surface:#0d281f;--inset:#12362a;--line:#285341;--text:#e8fff4;--muted:#9ac8b2}
+    :root[data-theme="coral"]{--bg:#211e1e;--surface:#2c2828;--inset:#373131;--line:#514544;--text:#fff5f1;--muted:#c4b0aa}
+    :root[data-theme="violet"]{--bg:#111326;--surface:#191c35;--inset:#222746;--line:#393f69;--text:#f0f1ff;--muted:#a9afd2}
+    :root[data-theme="ocean"] .primary,:root[data-theme="forest"] .primary,:root[data-theme="coral"] .primary,:root[data-theme="violet"] .primary{background:var(--accent);color:var(--bg)}
+    @media(max-width:760px){body[data-authenticated="true"]{padding:12px}.session{grid-template-columns:1fr}.appearance-controls{grid-template-columns:1fr 110px}.studio-metrics{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+
   </style>
 </head>
 <body>
@@ -64,6 +100,17 @@
       <div id="session" class="session">
         <strong>로그인 확인 완료</strong>
         <div id="session-email"></div>
+        <div class="appearance-controls" aria-label="스튜디오 화면 디자인 설정">
+          <label for="studio-layout">화면 디자인</label>
+          <label for="studio-accent">강조 색상</label>
+          <select id="studio-layout">
+            <option value="intelligence">A · Intelligence Dashboard</option>
+            <option value="creator">B · Modern Creator Workspace</option>
+            <option value="global">C · Global Analytics Dashboard</option>
+            <option value="operations">D · Operations Intelligence</option>
+          </select>
+          <input id="studio-accent" type="color" value="#4d8dff" aria-label="강조 색상">
+        </div>
         <div id="workspace" class="workspace">워크스페이스 정보를 확인하고 있습니다.</div>
         <div class="studio-metrics" aria-label="워크스페이스 실시간 현황">
           <div class="studio-metric"><span>연결 채널</span><strong id="metric-channels">—</strong></div>
@@ -131,6 +178,30 @@
       message.textContent = text;
       message.dataset.kind = kind;
     }
+    function applyStudioAppearance(layout, accent, persist = true) {
+      const layouts = ["intelligence", "creator", "global", "operations"];
+      const safeLayout = layouts.includes(layout) ? layout : "intelligence";
+      const safeAccent = /^#[0-9a-f]{6}$/i.test(accent || "") ? accent : "#4d8dff";
+      document.documentElement.dataset.layout = safeLayout;
+      document.documentElement.style.setProperty("--accent", safeAccent);
+      document.getElementById("studio-layout").value = safeLayout;
+      document.getElementById("studio-accent").value = safeAccent;
+      if (persist) {
+        try {
+          localStorage.setItem("nexus-studio-layout", safeLayout);
+          localStorage.setItem("nexus-studio-accent", safeAccent);
+        } catch (_) {}
+      }
+    }
+    const savedLayout = (() => { try { return localStorage.getItem("nexus-studio-layout"); } catch (_) { return null; } })();
+    const savedAccent = (() => { try { return localStorage.getItem("nexus-studio-accent"); } catch (_) { return null; } })();
+    applyStudioAppearance(savedLayout || "intelligence", savedAccent || "#4d8dff", false);
+    document.getElementById("studio-layout").addEventListener("change", event => {
+      applyStudioAppearance(event.currentTarget.value, document.getElementById("studio-accent").value);
+    });
+    document.getElementById("studio-accent").addEventListener("input", event => {
+      applyStudioAppearance(document.getElementById("studio-layout").value, event.currentTarget.value);
+    });
     function setBusy(form, busy) {
       form.querySelectorAll("button").forEach(button => { button.disabled = busy; });
     }
@@ -143,6 +214,7 @@
       accountDeletionEnabled = false;
       accountDeletionPreflightClear = false;
       sessionPanel.style.display = "none";
+      document.body.dataset.authenticated = "false";
       document.getElementById("workspace-members-panel").classList.add("hidden");
       authForms.classList.remove("hidden");
       document.getElementById("connections").replaceChildren();
@@ -406,7 +478,8 @@
     }
 
     function showDeletionRetryOnly(messageText) {
-      sessionPanel.style.display = "block";
+      sessionPanel.style.display = "grid";
+      document.body.dataset.authenticated = "true";
       authForms.classList.add("hidden");
       document.getElementById("workspace").textContent = "계정 삭제 요청의 세션 확인을 다시 시도할 수 있습니다.";
       document.getElementById("workspace-picker").classList.add("hidden");
