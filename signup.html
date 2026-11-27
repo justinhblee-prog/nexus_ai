@@ -129,7 +129,12 @@
         const row = document.createElement("div");
         row.className = "connection-row";
         const detail = document.createElement("span");
-        detail.textContent = (item.title || item.topic) + " · " + item.stage + " · " + item.approval_status;
+        const stageLabel = item.stage === "published" ? "YouTube 비공개 업로드 완료"
+          : item.stage === "uploading" ? "YouTube 비공개 업로드 중"
+          : item.stage === "approved" ? "최종 승인 · 비공개 업로드 대기"
+          : item.stage === "review_pending" ? "최종 검토 대기"
+          : item.stage;
+        detail.textContent = (item.title || item.topic) + " · " + stageLabel;
         row.appendChild(detail);
         if (item.has_preview) {
           const preview = document.createElement("button");
@@ -166,7 +171,7 @@
               const approvalResult = await approval.json();
               if (!approval.ok) throw new Error(approvalResult.detail || "최종 승인에 실패했습니다.");
               await loadJobs();
-              showMessage("최종 승인되었습니다. 공개 업로드는 별도 안전 검증 후 진행됩니다.", "success");
+              showMessage("최종 승인되었습니다. 업로드 워커가 활성화된 경우 비공개 업로드가 진행됩니다. 공개 전환은 YouTube Studio에서 직접 해야 합니다.", "success");
             } catch (error) {
               showMessage(error.message || "최종 승인에 실패했습니다.", "error");
               approve.disabled = false;
