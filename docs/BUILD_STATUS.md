@@ -144,3 +144,12 @@
 - Public Google OAuth callback consumes the one-time state and then rechecks that the initiating user is still owner/admin of the same workspace before exchanging the authorization code.
 - It checks the membership again immediately before privileged connection/credential persistence, so a role downgrade during the Google round trip cannot retain previously granted admin authority.
 - Regression tests cover both a role already downgraded at callback entry and a role downgraded during code exchange. Latest CI run 46016494231 passes 311 tests and browser smoke.
+
+### 최신 검증 정합성 갱신 — 2026-11-28
+- 기준 브랜치 HEAD: `3fcda1e3219bd10f24dcbb1cdd1d26c741630e82`.
+- GitHub Actions [run 46019730037](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46019730037) — 위 HEAD와 정확히 일치하며 전체 workflow가 성공.
+- 확인된 단계: Docker Compose 설정 검증, Python 모듈 컴파일, 브라우저 JavaScript 구문 검사, Python 회귀 테스트, Playwright 브라우저 상호작용 검증이 모두 성공.
+- PR #11은 Draft/Open/unmerged 상태를 유지한다.
+- 이전 문단의 `3643e9c2...` / run `46016494231`은 과거 검증 기록이며 현재 최신 검증 기준이 아니다.
+- 운영 전환을 막는 외부 게이트는 그대로다: 최신 Preview 런타임 배포(무료 일일 quota 해제 필요), Supabase 후속 migration 별도 승인·적용, 안전한 OAuth 서버 환경변수 등록 및 실 Google 동의/refresh/revoke, 실제 2계정 tenant E2E, 실제 Private 업로드 E2E. 현재 대화 세션에서는 사용자의 로컬 Windows 런타임 및 Google 계정에 접근할 수 없으므로 이를 완료로 표시하지 않는다.
+- 이 기록은 상태 문서만 갱신하며 운영 DB, Vercel 배포, 워커 활성화, YouTube 업로드에는 영향을 주지 않는다.
