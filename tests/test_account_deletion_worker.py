@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import Mock
 
+from token_vault import TokenVaultError
+
 from account_deletion_worker import (
     AccountDeletionBlocked,
     _cleanup_oauth,
@@ -101,6 +103,22 @@ class AccountDeletionWorkerTests(unittest.TestCase):
         oauth.revoke_refresh_token.assert_called_once_with("refresh-token")
         self.assertEqual(admin.delete_credential.call_count, 2)
 
+    def test_oauth_cleanup_tries_another_credential_when_one_ciphertext_is_invalid(self):
+        admin = Mock()
+        admin.list_youtube_connections_for_workspaces.return_value = [
+            {"connection_id": "55555555-5555-4555-8555-555555555555", "provider_account_id": "google-account", "status": "connected"},
+            {"connection_id": "66666666-6666-4666-8666-666666666666", "provider_account_id": "google-account", "status": "connected"},
+        ]
+        admin.has_active_connection_outside_workspaces.return_value = False
+        admin.get_credential.side_effect = [
+            {"encrypted_refresh_token_hex": "bad-ciphertext", "encryption_key_version": "v1"},
+            {"encrypted_refresh_token_hex": "good-ciphertext", "encryption_key_version": "v1"},
+        ]
+        oauth = Mock()
+        decrypt = Mock(side_effect=[TokenVaultError("bad"), "valid-refresh-token"])
+        _cleanup_oauth(admin, [SOLE], oauth_config_factory=Mock(return_value=oauth), decrypt_token=decrypt)
+        oauth.revoke_refresh_token.assert_called_once_with("valid-refresh-token")
+
     def test_active_worker_lease_retries_before_any_destructive_action(self):
         admin = Mock()
         admin.claim_next_account_deletion_request.return_value = {
@@ -139,6 +157,10 @@ class AccountDeletionWorkerTests(unittest.TestCase):
         admin.delete_account_workspace.assert_called_once_with(SOLE)
         admin.delete_auth_user.assert_called_once_with(USER)
         self.assertEqual(admin.update_account_deletion_request.call_args.args[2:4], ("completed", "complete"))
+        self.assertEqual(
+            admin.list_account_deletion_storage_objects.call_args.kwargs["workspace_ids"],
+            [SOLE],
+        )
 
 
 if __name__ == "__main__":
