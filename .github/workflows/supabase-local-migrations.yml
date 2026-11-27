@@ -32,27 +32,6 @@ jobs:
       - name: Initialize local Supabase config
         run: supabase init
 
-      - name: Generate the shared-trend migration with the CLI
-        shell: bash
-        run: |
-          supabase migration new nexus_shared_public_trend_store
-          python - <<'PY'
-          from pathlib import Path
-          import re
-
-          doc = Path("docs/SHARED_PUBLIC_TREND_STORE_MIGRATION.md").read_text(encoding="utf-8")
-          match = re.search(r"## SQL\s+```sql\n(.*?)\n```", doc, flags=re.DOTALL)
-          if not match:
-              raise SystemExit("Could not locate the shared trend SQL block in the handoff document")
-
-          candidates = sorted(Path("supabase/migrations").glob("*_nexus_shared_public_trend_store.sql"))
-          if len(candidates) != 1:
-              raise SystemExit(f"Expected exactly one CLI-generated migration, found {len(candidates)}")
-
-          candidates[0].write_text(match.group(1).rstrip() + "\n", encoding="utf-8")
-          print(f"Prepared CLI-generated migration: {candidates[0]}")
-          PY
-
       - name: Hold migration files until the legacy baseline is installed
         run: |
           mv supabase/migrations supabase/migrations_pending
