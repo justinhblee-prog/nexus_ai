@@ -21,7 +21,7 @@ class SupabaseRestError(RuntimeError):
         self.public_message = message
 
 
-_ALLOWED_RPCS = {"transfer_workspace_ownership"}
+_ALLOWED_RPCS = {"transfer_workspace_ownership", "is_account_deletion_tombstoned"}
 
 
 _ALLOWED_TABLES = {
