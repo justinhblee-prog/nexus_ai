@@ -1,19 +1,19 @@
 # NEXUS server-persisted topic queue — migration handoff
 
-Status: **application/API/UI implemented; database migration not yet generated or applied**.
+Status: **application/API/UI implemented; timestamped migration artifact is present on this PR branch; local validation and live application are pending**.
 
 The server queue is deliberately separate from `shorts_jobs`. It is a personal saved-topic list scoped to both the authenticated user and the selected workspace. It is never consumed by a render or upload worker.
 
 ## Required migration creation
 
-When the repository's local Supabase CLI is available, create the migration using the CLI (do not rename or hand-create the timestamped migration file):
+The migration filename `20261127143658_nexus_user_workspace_topic_queue.sql` was assigned by the Supabase CLI during the local attempt. That attempt created an empty file under the user home directory rather than the project checkout. The populated SQL artifact is now present on this PR branch at the CLI-assigned timestamp. Do not create a second timestamped migration or rename this file. Before any live application, sync this branch into the intended local checkout and run local validation:
 
 ```powershell
 supabase --version
-supabase migration new nexus_user_workspace_topic_queue
+`supabase --version` followed by `supabase db lint --local` (do not run `migration new` again)
 ```
 
-Paste the SQL below into the exact file created by that command. Run local validation and security advisors before considering any live application. This PR does not apply the migration to the active Supabase project.
+Confirm the populated file matches the SQL below, run local database validation and security advisors, and verify RLS behavior with two users before considering activation. This PR does not apply the migration to the active Supabase project.
 
 ## SQL
 
