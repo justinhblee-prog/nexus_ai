@@ -87,10 +87,10 @@ def persist_period(admin, period_type: str, db_path: str | None = None) -> int:
 
 
 def run_once(admin=None, scanner=None, db_path: str | None = None) -> dict:
-    os.environ.setdefault("NEXUS_TREND_RADAR_DB_PATH", db_path or "data/studio_data.db")
-    if db_path:
-        trend_radar.DB_PATH = db_path
-    os.makedirs(os.path.dirname(os.path.abspath(trend_radar.DB_PATH)), exist_ok=True)
+    configured_path = db_path or os.getenv("NEXUS_TREND_RADAR_DB_PATH") or trend_radar.DB_PATH
+    trend_radar.DB_PATH = configured_path
+    os.environ["NEXUS_TREND_RADAR_DB_PATH"] = configured_path
+    os.makedirs(os.path.dirname(os.path.abspath(configured_path)), exist_ok=True)
     if scanner is None:
         scanner = trend_radar.scan_global_trends
     if admin is None:
