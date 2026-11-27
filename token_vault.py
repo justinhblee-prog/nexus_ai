@@ -64,6 +64,13 @@ def _keyring(env: Mapping[str, str]) -> tuple[str, dict[str, bytes]]:
     return current, keys
 
 
+def validate_token_vault_config(env: Mapping[str, str] | None = None) -> str:
+    """Validate server-side encryption key configuration and return current key version."""
+    values = os.environ if env is None else env
+    version, _ = _keyring(values)
+    return version
+
+
 def encrypt_refresh_token(token: str, env: Mapping[str, str] | None = None) -> dict[str, str]:
     values = os.environ if env is None else env
     if not isinstance(token, str) or not token.strip():
