@@ -35,7 +35,17 @@ Returns local production and publishing facts:
 - Confirmed private uploads, uploads in progress, privacy-unverified uploads
 - Daily/weekly discovery scan state and source health
 
-YouTube subscriber, view, engagement, and revenue fields remain null with `platform_metrics.status=not_connected` until authorized read-only YouTube Analytics credentials and provider data are available. Upload credentials alone are not treated as analytics access.
+YouTube Analytics now uses per-channel OAuth tokens and returns actual provider metrics when the required read-only scopes are granted.
+
+- Required scopes: `https://www.googleapis.com/auth/yt-analytics.readonly` and `https://www.googleapis.com/auth/youtube.readonly`. Upload permission remains separate as `youtube.upload`.
+- Old upload-only tokens return `status=scope_required`; the Streamlit review/publishing UI offers a channel-specific re-consent flow.
+- `platform_metrics.status`: `connected`, `partial`, `scope_required`, `not_connected`, or `error`.
+- Actual fields: current `subscriber_count`, `views_28d`, `watch_minutes_28d`, `average_view_duration_seconds`, `engagement_rate`, `subscribers_gained_28d`, `subscribers_lost_28d`, provider period, source, and update time.
+- Engagement rate is calculated from provider-returned likes, comments, and shares divided by provider-returned views.
+- `GET /api/analytics/summary?refresh=true` bypasses the 15-minute in-memory cache.
+- Revenue remains null with `revenue_status=monetary_scope_not_requested`. The monetary scope is not requested automatically; revenue must not be estimated.
+- Channels without a valid read-only token remain null and are listed with per-channel status. Partial connection never silently presents missing channels as zero.
+
 
 ## Operations
 
