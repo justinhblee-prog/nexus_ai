@@ -11,7 +11,7 @@ The live project was inspected read-only on 2026-11-28:
 
 The ordinary migration therefore does only the operations its executor can safely perform:
 
-1. Revoke existing `anon` table privileges from the eight NEXUS tenant tables.
+1. Revoke existing `anon` table privileges from all 14 public tenant/legacy tables.
 2. Remove `anon` table defaults for objects created by `postgres`.
 3. Leave `authenticated` and `service_role` privileges unchanged.
 
@@ -24,6 +24,10 @@ A database administrator connected as `supabase_admin` (or another role with the
 ```sql
 ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public
   REVOKE ALL ON TABLES FROM anon;
+
+-- storage.objects is owned by supabase_storage_admin; postgres has grants
+-- but is not a member of its owner role, so the regular migration cannot revoke.
+REVOKE ALL ON TABLE storage.objects FROM anon;
 ```
 
 Then verify the default ACLs:
@@ -46,10 +50,12 @@ WHERE n.nspname = 'public'
   AND d.defaclobjtype = 'r';
 ```
 
-Expected result after the privileged operation: no rows for `supabase_admin` table defaults granted to `anon`.
+Expected result after the privileged operation:
+- no rows for `supabase_admin` table defaults granted to `anon`;
+- `has_table_privilege('anon', 'storage.objects', 'SELECT')` returns false.
 
 ## Operational boundary
 
 This follow-up has **not** been executed. No database password or privileged role credential was retrieved, changed, or placed in GitHub/ChatGPT. It requires an administrator-controlled connection with the required role; if the project owner cannot obtain that connection through supported Supabase controls, request Supabase platform support rather than weakening role boundaries or changing credentials speculatively.
 
-Until this is complete, the current tenant tables are hardened by the regular migration and the `postgres` defaults are hardened, but future tables created by `supabase_admin` may still inherit its existing `anon` defaults. Treat the overall anonymous-privilege hardening as **partially complete**.
+Until this is complete, all 14 public tenant/legacy tables are covered by the regular migration and the `postgres` defaults are hardened, but future tables created by `supabase_admin` may still inherit its existing `anon` defaults and `storage.objects` retains direct `anon` grants. Storage currently has only private buckets and RLS enabled with no `anon` object policies, so no anonymous object access was observed; the remaining direct grant is defense-in-depth. Treat the overall anonymous-privilege hardening as **partially complete**.
