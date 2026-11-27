@@ -25,6 +25,8 @@ class AccountDeletionSafetyMigrationTests(unittest.TestCase):
     def test_approval_and_event_audit_references_are_anonymized_not_cascaded(self):
         self.assertIn("foreign key (actor_id) references auth.users(id) on delete set null", self.sql)
         self.assertIn("foreign key (approved_by) references auth.users(id) on delete set null", self.sql)
+        self.assertIn("drop constraint if exists shorts_jobs_check", self.sql)
+        self.assertIn("approval_status = 'approved' and approved_at is not null", self.sql)
 
     def test_ownership_transfer_requires_authenticated_current_owner(self):
         self.assertIn("create or replace function public.transfer_workspace_ownership", self.sql)
