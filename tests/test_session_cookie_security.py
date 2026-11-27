@@ -75,5 +75,5 @@ class SessionCookieSecurityTests(unittest.TestCase):
         self.assertIn("secure", response.headers["set-cookie"].lower())
 
 
-if __class__ == "__main__":
+if __name__ == "__main__":
     unittest.main()
