@@ -478,6 +478,8 @@ BEGIN
   IF p_worker_id IS NULL OR length(p_worker_id) NOT BETWEEN 1 AND 128 THEN
     RAISE EXCEPTION 'Account deletion worker ID is invalid' USING ERRCODE='22023';
   END IF;
+  DELETE FROM private.account_deletion_worker_heartbeats
+  WHERE last_seen_at < now() - interval '1 day';
   INSERT INTO private.account_deletion_worker_heartbeats(worker_id,last_seen_at)
   VALUES (p_worker_id,now())
   ON CONFLICT (worker_id) DO UPDATE SET last_seen_at=now();
