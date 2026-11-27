@@ -13,7 +13,7 @@ import time
 
 from supabase_admin import SupabaseAdminError, SupabaseAdminRestClient
 from token_vault import TokenVaultError, decrypt_refresh_token, validate_token_vault_config
-from youtube_oauth import GoogleOAuthConfig, GoogleOAuthError
+from youtube_oauth import GoogleOAuthConfig, GoogleOAuthError, GoogleOAuthReauthRequired
 
 
 logger = logging.getLogger("nexus.hosted_upload_worker")
@@ -113,6 +113,24 @@ def process_one_upload(
         if result not in ("published", {"finish_shorts_upload": "published"}):
             raise SupabaseAdminError("Private YouTube upload did not finalize")
         logger.info("Approved Shorts job %s uploaded privately to YouTube", job_id)
+        return True
+    except GoogleOAuthReauthRequired as exc:
+        try:
+            admin.update_connection(
+                str(job["connection_id"]),
+                str(job["workspace_id"]),
+                {"status": "reauth_required"},
+            )
+            admin.delete_credential(str(job["connection_id"]))
+        except Exception as state_exc:
+            logger.warning("Could not mark YouTube connection for reauthorization (%s)", type(state_exc).__name__)
+        try:
+            admin.finish_shorts_upload(
+                job_id, lease_token, False, error=type(exc).__name__, max_attempts=max_attempts
+            )
+        except Exception as finish_exc:
+            logger.warning("Could not finalize reauthorization failure for %s (%s)", job_id, type(finish_exc).__name__)
+        logger.warning("YouTube connection for job %s requires reauthorization", job_id)
         return True
     except Exception as exc:
         try:
