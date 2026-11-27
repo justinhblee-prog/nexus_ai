@@ -46,6 +46,10 @@ class HostedTopicQueueMigrationContractTests(unittest.TestCase):
             self.assertIn("user_id = (select auth.uid())", policy)
             self.assertIn("private.has_workspace_role(", policy)
             self.assertIn("workspace_id", policy)
+        read_policy, insert_policy, delete_policy = policies
+        self.assertIn("array['owner','admin','editor','viewer']", read_policy)
+        self.assertIn("array['owner','admin','editor']", insert_policy)
+        self.assertIn("array['owner','admin','editor']", delete_policy)
 
     def test_client_privileges_are_minimal_and_no_update_is_granted(self):
         self.assertIn(
