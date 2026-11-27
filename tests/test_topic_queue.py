@@ -49,6 +49,18 @@ class DurableTopicQueueTests(unittest.TestCase):
         finally:
             db.close()
 
+    def test_queue_worker_count_defaults_and_is_bounded(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(self.api.configured_queue_worker_count(), 1)
+        with patch.dict(os.environ, {"NEXUS_QUEUE_WORKERS": "3"}, clear=True):
+            self.assertEqual(self.api.configured_queue_worker_count(), 3)
+        with patch.dict(os.environ, {"NEXUS_QUEUE_WORKERS": "99"}, clear=True):
+            self.assertEqual(self.api.configured_queue_worker_count(), 4)
+        with patch.dict(os.environ, {"NEXUS_QUEUE_WORKERS": "0"}, clear=True):
+            self.assertEqual(self.api.configured_queue_worker_count(), 1)
+        with patch.dict(os.environ, {"NEXUS_QUEUE_WORKERS": "invalid"}, clear=True):
+            self.assertEqual(self.api.configured_queue_worker_count(), 1)
+
     def test_plain_topic_expands_to_channel_scoped_jobs(self):
         added = self.api.enqueue_topic("A test topic", source="test")
         self.assertEqual(added, 10)
