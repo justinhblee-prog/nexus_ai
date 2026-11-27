@@ -335,7 +335,11 @@ class SignedSessionTests(unittest.TestCase):
                 "scope": "youtube.upload youtube.readonly",
                 "expires_in": 3600,
             }),
-            fetch_channel=Mock(return_value={"channel_id": "UC123", "title": "NEXUS"}),
+            fetch_account=Mock(return_value={"account_id": "google-account-123", "email": "owner@example.test", "name": "Owner"}),
+            fetch_channels=Mock(return_value=[
+                {"channel_id": "UC123", "title": "NEXUS"},
+                {"channel_id": "UC456", "title": "Second"},
+            ]),
         )
         with patch.object(self.api, "SupabaseAdminRestClient") as admin_type, \
              patch.object(self.api.GoogleOAuthConfig, "from_env", return_value=config), \
@@ -347,6 +351,7 @@ class SignedSessionTests(unittest.TestCase):
         self.assertIn("youtube=connected", response.headers["location"])
         config.exchange_code.assert_called_once_with("google-code", "pkce-verifier")
         admin_type.return_value.upsert_credential.assert_called_once()
+        self.assertEqual(admin_type.return_value.upsert_channel.call_count, 2)
 
     def test_youtube_callback_rejects_replayed_or_unknown_state(self):
         with patch.object(self.api, "SupabaseAdminRestClient") as admin_type:
