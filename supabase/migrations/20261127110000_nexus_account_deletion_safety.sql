@@ -196,13 +196,23 @@ BEGIN
      OR p_workspace_ids IS NULL OR cardinality(p_workspace_ids) > 100
      OR EXISTS (
        SELECT 1 FROM unnest(p_workspace_ids) AS wid
-       WHERE wid !~ '^wsp_[0-9a-fA-F-]{36}  ORDER BY o.bucket_id, o.name
+       WHERE wid !~ '^wsp_[0-9a-fA-F-]{36}$'
+     ) THEN
+    RAISE EXCEPTION 'Storage enumeration request is invalid' USING ERRCODE = '22023';
+  END IF;
+  RETURN QUERY
+  SELECT o.bucket_id, o.name, o.owner_id, o.owner::text
+  FROM storage.objects AS o
+  WHERE o.owner = p_user_id
+     OR o.owner_id = p_user_id::text
+     OR split_part(o.name, '/', 1) = ANY(p_workspace_ids)
+  ORDER BY o.bucket_id, o.name
   LIMIT p_limit OFFSET p_offset;
 END;
 $function$;
 
 REVOKE ALL ON FUNCTION public.list_account_deletion_storage_objects(uuid,integer,integer,text[]) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.list_account_deletion_storage_objects(uuid,integer,integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.list_account_deletion_storage_objects(uuid,integer,integer,text[]) TO service_role;
 
 -- Identify active hosted render/upload leases for workspaces that are safe to
 -- delete. Account cleanup must wait rather than race a worker or private upload.
