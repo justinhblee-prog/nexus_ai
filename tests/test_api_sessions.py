@@ -179,6 +179,26 @@ class SignedSessionTests(unittest.TestCase):
             ))
         self.assertEqual(response.status_code, 401)
 
+    def test_tombstoned_account_can_only_retry_account_deletion_request(self):
+        async def next_response(_request):
+            return Response(status_code=204)
+        with patch.dict(os.environ, {"NEXUS_HOSTED_AUTH_ENABLED": "true"}), \
+             patch.object(self.api, "verify_access_token", return_value={
+                 "user_id": "11111111-1111-4111-8111-111111111111",
+                 "role": "authenticated",
+             }), patch.object(self.api, "SupabaseRestClient") as rest_client:
+            rest_client.return_value.rpc.return_value = True
+            retry = asyncio.run(self.api.enforce_local_origin_and_session(
+                self._request("/api/hosted/account/deletion/request", method="POST", authorization="Bearer valid.jwt.token"),
+                next_response,
+            ))
+            denied = asyncio.run(self.api.enforce_local_origin_and_session(
+                self._request("/api/hosted/account/deletion/preflight", method="GET", authorization="Bearer valid.jwt.token"),
+                next_response,
+            ))
+        self.assertEqual(retry.status_code, 204)
+        self.assertEqual(denied.status_code, 401)
+
     def test_hosted_account_status_check_fails_closed_when_tombstone_lookup_fails(self):
         async def next_response(_request):
             return Response(status_code=204)
