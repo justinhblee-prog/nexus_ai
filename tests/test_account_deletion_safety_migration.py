@@ -101,6 +101,9 @@ class AccountDeletionSafetyMigrationTests(unittest.TestCase):
         self.assertIn("and wm.role = 'admin'", self.sql)
         self.assertIn("when user_id = p_new_owner_id then 'owner'", self.sql)
         self.assertIn("when user_id = v_current_owner then 'admin'", self.sql)
+        self.assertIn("current workspace owner membership is inconsistent", self.sql)
+        self.assertIn("get diagnostics v_updated_members = row_count", self.sql)
+        self.assertIn("if v_updated_members <> 2 then", self.sql)
         self.assertIn("revoke all on function public.transfer_workspace_ownership(text, uuid) from public, anon", self.sql)
         self.assertIn("grant execute on function public.transfer_workspace_ownership(text, uuid) to authenticated", self.sql)
 
