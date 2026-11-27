@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 from unittest.mock import Mock
 
 from token_vault import TokenVaultError
