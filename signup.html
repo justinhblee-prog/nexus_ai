@@ -350,12 +350,16 @@
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || "트렌드 정보를 불러오지 못했습니다.");
         const scan = result.scan || {};
-        status.textContent = scan.status === "completed"
-          ? "최근 스캔 완료 · " + (scan.completed_at || "완료 시간 미상")
-          : scan.status === "not_scanned" ? "아직 트렌드 스캔 기록이 없습니다."
-          : "최근 스캔 상태 · " + (scan.status || "확인 중");
+        status.textContent = result.available === false
+          ? "공유 트렌드 데이터 저장소 연결 대기"
+          : scan.status === "completed"
+            ? "최근 스캔 완료 · " + (scan.completed_at || "완료 시간 미상")
+            : scan.status === "not_scanned" ? "아직 트렌드 스캔 기록이 없습니다."
+            : "최근 스캔 상태 · " + (scan.status || "확인 중");
         if (!(result.items || []).length) {
-          node.textContent = "표시할 트렌드가 없습니다. 레이더 스캔 데이터가 준비되면 여기에 표시됩니다.";
+          node.textContent = result.available === false
+            ? "호스팅 환경에 공유 트렌드 데이터 저장소가 아직 연결되지 않았습니다."
+            : "표시할 트렌드가 없습니다. 레이더 스캔 데이터가 준비되면 여기에 표시됩니다.";
           return;
         }
         for (const item of result.items) {
