@@ -245,12 +245,10 @@
     }
     async function loadJobs(append = false) {
       const node = document.getElementById("jobs");
+      const previousMore = append ? node.querySelector("[data-load-more]") : null;
       if (!append) {
         node.replaceChildren();
         node.dataset.nextOffset = "0";
-      } else {
-        const previousMore = node.querySelector("[data-load-more]");
-        if (previousMore) previousMore.remove();
       }
       if (!activeWorkspaceId || !activeAccessToken) return;
       const requestedWorkspaceId = activeWorkspaceId;
@@ -264,6 +262,7 @@
       if (!response.ok) throw new Error("Shorts 작업 목록을 불러오지 못했습니다.");
       const result = await response.json();
       if (requestedWorkspaceId !== activeWorkspaceId || requestedToken !== activeAccessToken) return;
+      if (previousMore) previousMore.remove();
       const items = result.items || [];
       if (!items.length && !append) {
         node.textContent = "아직 등록된 Shorts 작업이 없습니다.";
