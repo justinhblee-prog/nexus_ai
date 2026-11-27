@@ -428,7 +428,7 @@ def hosted_youtube_disconnect(workspace_id: str, connection_id: UUID, request: R
         if not any(item.get("role") in {"owner", "admin"} for item in memberships):
             raise HTTPException(status_code=403, detail="Workspace owner or admin permission required")
         connections = client.select("youtube_connections", {
-            "select": "connection_id,status",
+            "select": "connection_id,status,provider_account_id",
             "workspace_id": f"eq.{workspace_id}",
             "connection_id": f"eq.{connection_id}",
         }) or []
@@ -436,7 +436,9 @@ def hosted_youtube_disconnect(workspace_id: str, connection_id: UUID, request: R
             raise HTTPException(status_code=404, detail="YouTube connection not found")
         admin = SupabaseAdminRestClient()
         credential = admin.get_credential(str(connection_id))
-        if credential:
+        if credential and not admin.has_other_active_connections(
+            connections[0]["provider_account_id"], str(connection_id)
+        ):
             refresh_token = decrypt_refresh_token(
                 credential["encrypted_refresh_token_hex"],
                 credential["encryption_key_version"],
