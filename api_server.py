@@ -400,6 +400,12 @@ def hosted_account_deletion_preflight(request: Request):
             if len(page) < 1000:
                 break
             offset += len(page)
+        personal_gallery_images = admin.list_account_personal_gallery_images(user_id)
+        personal_gallery_keys = {
+            key for item in personal_gallery_images
+            for key in (item.get("storage_key"), item.get("thumbnail_key"))
+            if key
+        }
         connections = admin.list_youtube_connections_for_workspaces(deletion_workspace_ids)
         credential_cleanup_count = len(connections)
         provider_grants_to_revoke = 0
@@ -431,7 +437,7 @@ def hosted_account_deletion_preflight(request: Request):
             workspace_prefix = (obj.get("name") or "").split("/", 1)[0]
             if workspace_prefix in shared_workspace_ids:
                 shared_storage_count += 1
-            elif workspace_prefix not in deletion_workspace_ids:
+            elif workspace_prefix not in deletion_workspace_ids and obj.get("name") not in personal_gallery_keys:
                 unclassified_storage_count += 1
         if shared_storage_count:
             blockers.append({
@@ -458,6 +464,7 @@ def hosted_account_deletion_preflight(request: Request):
             "storage": {
                 "cleanup_candidate_object_count": len(storage_objects),
                 "account_owned_object_count": user_owned_storage_count,
+                "personal_gallery_image_count": len(personal_gallery_images),
                 "unclassified_object_blockers": unclassified_storage_count,
                 "objects_by_bucket": bucket_counts,
                 "shared_workspace_object_blockers": shared_storage_count,
