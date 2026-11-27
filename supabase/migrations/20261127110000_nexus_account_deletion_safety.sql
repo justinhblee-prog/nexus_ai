@@ -237,3 +237,57 @@ $function$;
 
 REVOKE ALL ON FUNCTION public.list_account_deletion_active_leases(text[]) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.list_account_deletion_active_leases(text[]) TO service_role;
+
+-- Persistent tombstones survive auth.users deletion and invalidate otherwise
+-- still-unexpired access JWTs at the hosted API boundary.
+CREATE TABLE IF NOT EXISTS private.account_deletion_tombstones (
+  user_id uuid PRIMARY KEY,
+  tombstoned_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE private.account_deletion_tombstones ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE private.account_deletion_tombstones FROM PUBLIC, anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.mark_account_deletion_tombstone(p_user_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $function$
+BEGIN
+  IF COALESCE((SELECT auth.jwt() ->> 'role'), '') <> 'service_role' THEN
+    RAISE EXCEPTION 'service_role required' USING ERRCODE = '42501';
+  END IF;
+  IF p_user_id IS NULL THEN
+    RAISE EXCEPTION 'User ID is required' USING ERRCODE = '22023';
+  END IF;
+  INSERT INTO private.account_deletion_tombstones(user_id)
+  VALUES (p_user_id)
+  ON CONFLICT (user_id) DO NOTHING;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.is_account_deletion_tombstoned()
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $function$
+DECLARE
+  v_user_id uuid;
+BEGIN
+  v_user_id := (SELECT auth.uid());
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'Authentication required' USING ERRCODE = '42501';
+  END IF;
+  RETURN EXISTS (
+    SELECT 1 FROM private.account_deletion_tombstones AS t
+    WHERE t.user_id = v_user_id
+  );
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.mark_account_deletion_tombstone(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.mark_account_deletion_tombstone(uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.is_account_deletion_tombstoned() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.is_account_deletion_tombstoned() TO authenticated;
