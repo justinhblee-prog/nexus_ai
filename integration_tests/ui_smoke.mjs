@@ -68,11 +68,23 @@ try {
     throw new Error("Sample data panel was not removed");
   }
 
+  const analyticsRequests = [];
+  page.on("request", request => {
+    if (request.url().includes("/api/analytics/summary")) analyticsRequests.push(request.url());
+  });
   const workspaceIds = ["dashboard", "studio", "discovery", "review", "publishing", "analytics", "operations"];
   for (const workspaceId of workspaceIds) {
     await page.locator('.side-nav button[data-workspace="' + workspaceId + '"]').click();
     if (!(await page.locator('.workspace-view[data-workspace="' + workspaceId + '"]').evaluate(node => node.classList.contains("active")))) {
       throw new Error("Workspace navigation failed: " + workspaceId);
+    }
+    if (workspaceId === "analytics") {
+      await page.locator("#nexus-analytics-platform-cards").waitFor();
+      await page.locator("#nexus-analytics-refresh").click();
+      await page.waitForTimeout(100);
+      if (!analyticsRequests.some(url => url.includes("refresh=true"))) {
+        throw new Error("Analytics refresh did not request a fresh provider summary");
+      }
     }
   }
 
@@ -172,6 +184,7 @@ try {
     workspaceNavigation: "passed",
     mobileThemeSelection: "passed",
     workspaceNavigationAllSeven: "passed",
+    analyticsProviderRefresh: "passed",
     appearancePersistence: "passed",
     staticPreviewHtmlFallback: "passed",
     secureLoginAndSessionExpiry: "passed",
