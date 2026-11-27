@@ -174,7 +174,7 @@ class SupabaseAdminRestClient:
         })
 
     def download_storage_object(self, storage_key):
-        if not re.fullmatch(r"wsp_[0-9a-fA-F-]{36}/[0-9a-fA-F-]{36}/[0-9a-f]{32}\\.mp4", storage_key):
+        if not re.fullmatch(r"wsp_[0-9a-fA-F-]{36}/[0-9a-fA-F-]{36}/[0-9a-f]{32}\.mp4", storage_key):
             raise ValueError("Storage key is invalid")
         url_path = quote(storage_key, safe="/")
         headers = {
