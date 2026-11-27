@@ -155,9 +155,9 @@ class SharedTrendPersistenceTests(unittest.TestCase):
             admin = Mock()
             with patch.dict(os.environ, {}, clear=True), \
                  patch.object(worker.trend_radar, "DB_PATH", str(path)):
-                result = worker.run_once(admin=admin, scanner=scanner, db_path=str(path))
+                with self.assertRaisesRegex(RuntimeError, "daily scan"):
+                    worker.run_once(admin=admin, scanner=scanner, db_path=str(path))
 
-            self.assertEqual(result, {"daily": 0, "weekly": 0})
             self.assertEqual(
                 [call.args[0]["status"] for call in admin.upsert_public_trend_scan.call_args_list],
                 ["failed", "success"],
