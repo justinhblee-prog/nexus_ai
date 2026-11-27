@@ -20,6 +20,8 @@ The repository ignores `.env`. Never commit it or paste its values into an issue
 
 ## FastAPI browser session
 
+- `NEXUS_AUTH_ENABLED=true` is the secure default in Docker Compose. Set it to `false` only for a strictly loopback-only development instance; do not disable it on a network-accessible host.
+
 - Successful login issues a 12-hour HMAC-signed cookie with `HttpOnly`, `SameSite=Strict`, and path `/`.
 - The browser does not store the password or a bearer token in local/session storage.
 - API endpoints and `/output/*` preview media reject requests without a valid session.
