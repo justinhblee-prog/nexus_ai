@@ -306,23 +306,48 @@ with t3:
                     st.rerun()
                 c1 = st.checkbox("AI 생성 콘텐츠 라벨 적용 및 1차 비공개(Private) 안전 업로드 동의", value=True)
                 safe_channel = "".join(ch for ch in ch_n if ch.isalnum() or ch in ("-", "_"))
-                token_ok = os.path.exists(f"tokens/yt_token_{safe_channel}.json")
+                token_status = yt_uploader.get_channel_token_status(ch_n)
+                token_ok = bool(token_status.get("upload"))
                 if not token_ok:
-                    st.warning(f"⚠️ [{ch_n}] 채널의 유튜브 인증이 필요합니다 (최초 1회)")
-                    if st.button("🔗 구글 계정 로그인 인증 링크 생성", use_container_width=True):
+                    st.warning(f"⚠️ [{ch_n}] YouTube 업로드 인증이 필요합니다.")
+                    if token_status.get("error"):
+                        st.caption("기존 토큰을 읽지 못했습니다. 다시 인증해 주세요.")
+                    if st.button("🔗 YouTube 업로드 + Analytics 읽기 권한 연결", key=f"oauth-link-{safe_channel}", use_container_width=True):
                         flow, url = yt_uploader.get_auth_url(ch_n)
                         if flow:
                             st.session_state["oauth_flow"] = flow
-                            st.markdown(f"👉 **[구글 로그인 페이지 열기]({url})** 후 리다이렉트된 주소창 URL 전체를 아래에 붙여넣으세요.")
+                            st.session_state["oauth_channel"] = ch_n
+                            st.markdown(f"👉 **[Google 로그인 페이지 열기]({url})** 후 리다이렉트된 주소창 URL 전체를 아래에 붙여넣으세요.")
                         else:
                             st.error(url)
-                    auth_code = st.text_input("리다이렉트 URL(또는 인증 코드) 붙여넣기")
-                    if st.button("인증 토큰 저장", use_container_width=True) and auth_code and "oauth_flow" in st.session_state:
+                    auth_code = st.text_input("리다이렉트 URL(또는 인증 코드) 붙여넣기", key=f"oauth-code-{safe_channel}")
+                    if st.button("인증 토큰 저장", key=f"oauth-save-{safe_channel}", use_container_width=True) and auth_code and st.session_state.get("oauth_channel") == ch_n:
                         yt_uploader.save_auth_code(ch_n, st.session_state["oauth_flow"], auth_code)
+                        st.session_state.pop("oauth_flow", None)
+                        st.session_state.pop("oauth_channel", None)
                         st.success("인증 완료!")
                         st.rerun()
                 else:
-                    st.caption(f"🟢 `{ch_n}` 유튜브 API 토큰 연결됨")
+                    st.caption(f"🟢 `{ch_n}` YouTube 업로드 토큰 연결됨")
+                    if not token_status.get("analytics"):
+                        st.warning("YouTube Analytics 읽기 전용 권한이 없습니다. 실제 조회수/구독자/참여율을 보려면 다시 동의해 주세요.")
+                        if st.button("🔐 Analytics 읽기 전용 권한 추가", key=f"analytics-oauth-link-{safe_channel}", use_container_width=True):
+                            flow, url = yt_uploader.get_auth_url(ch_n)
+                            if flow:
+                                st.session_state["oauth_flow"] = flow
+                                st.session_state["oauth_channel"] = ch_n
+                                st.markdown(f"👉 **[Google 권한 동의 페이지 열기]({url})** 후 리다이렉트 URL 전체를 아래에 붙여넣으세요.")
+                            else:
+                                st.error(url)
+                        auth_code = st.text_input("Analytics 권한 리다이렉트 URL", key=f"analytics-oauth-code-{safe_channel}")
+                        if st.button("Analytics 권한 저장", key=f"analytics-oauth-save-{safe_channel}", use_container_width=True) and auth_code and st.session_state.get("oauth_channel") == ch_n:
+                            yt_uploader.save_auth_code(ch_n, st.session_state["oauth_flow"], auth_code)
+                            st.session_state.pop("oauth_flow", None)
+                            st.session_state.pop("oauth_channel", None)
+                            st.success("읽기 전용 Analytics 권한이 저장되었습니다.")
+                            st.rerun()
+                    else:
+                        st.caption("🟢 YouTube Analytics 읽기 전용 권한 연결됨")
                     if jb["stage"] == "업로드 상태 확인 필요":
                         st.warning("YouTube 업로드는 생성됐지만 Private 상태를 확인하지 못했습니다. 중복 업로드를 막기 위해 재시도를 차단했습니다.")
                     if st.button("✅ 최종 컨펌 승인 및 유튜브 비공개 업로드", type="primary", use_container_width=True,
