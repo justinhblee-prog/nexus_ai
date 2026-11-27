@@ -27,16 +27,23 @@ try {
     await option.getByRole("button", { name: "이 시안 적용" }).click();
     const actual = await page.locator("html").getAttribute("data-layout");
     if (actual !== id) throw new Error(`Theme selection failed: expected ${id}, received ${actual}`);
-    await page.waitForTimeout(260); // allow the intentional grid transition to settle
-    const columns = await page.locator(".nexus-shell").evaluate(node => getComputedStyle(node).gridTemplateColumns);
-    gridSnapshots.set(id, columns);
-    const tracks = columns.split(" ");
     const expectedFirstTrack = { creator: 82, executive: 220, intelligence: 250 };
     if (id === "global") {
-      if (tracks.length !== 1) throw new Error("Global Analytics must use a full-width single-column shell");
-    } else if (Math.abs(parseFloat(tracks[0]) - expectedFirstTrack[id]) > 2) {
-      throw new Error(`Unexpected ${id} shell track: ${columns}`);
+      await page.waitForFunction(() => {
+        const node = document.querySelector(".nexus-shell");
+        return node && getComputedStyle(node).gridTemplateColumns.trim().split(/\\s+/).length === 1;
+      });
+    } else {
+      await page.waitForFunction(({ layout, expected }) => {
+        if (document.documentElement.dataset.layout !== layout) return false;
+        const node = document.querySelector(".nexus-shell");
+        if (!node) return false;
+        const firstTrack = parseFloat(getComputedStyle(node).gridTemplateColumns);
+        return Math.abs(firstTrack - expected) < 2;
+      }, { layout: id, expected: expectedFirstTrack[id] }, { timeout: 2500 });
     }
+    const columns = await page.locator(".nexus-shell").evaluate(node => getComputedStyle(node).gridTemplateColumns);
+    gridSnapshots.set(id, columns);
   }
   if (new Set(gridSnapshots.values()).size !== 4) {
     throw new Error("The four design themes must each produce a distinct shell layout");
