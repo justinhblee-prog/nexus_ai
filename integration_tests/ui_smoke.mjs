@@ -27,10 +27,19 @@ try {
     await option.getByRole("button", { name: "이 시안 적용" }).click();
     const actual = await page.locator("html").getAttribute("data-layout");
     if (actual !== id) throw new Error(`Theme selection failed: expected ${id}, received ${actual}`);
-    gridSnapshots.set(id, await page.locator(".nexus-shell").evaluate(node => getComputedStyle(node).gridTemplateColumns));
+    await page.waitForTimeout(260); // allow the intentional grid transition to settle
+    const columns = await page.locator(".nexus-shell").evaluate(node => getComputedStyle(node).gridTemplateColumns);
+    gridSnapshots.set(id, columns);
+    const tracks = columns.split(" ");
+    const expectedFirstTrack = { creator: 82, executive: 220, intelligence: 250 };
+    if (id === "global") {
+      if (tracks.length !== 1) throw new Error("Global Analytics must use a full-width single-column shell");
+    } else if (Math.abs(parseFloat(tracks[0]) - expectedFirstTrack[id]) > 2) {
+      throw new Error(`Unexpected ${id} shell track: ${columns}`);
+    }
   }
-  if (new Set(gridSnapshots.values()).size < 3) {
-    throw new Error("The four design themes do not produce sufficiently distinct shell layouts");
+  if (new Set(gridSnapshots.values()).size !== 4) {
+    throw new Error("The four design themes must each produce a distinct shell layout");
   }
 
   await page.getByRole("button", { name: "닫기" }).click();
