@@ -4,7 +4,7 @@ import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-MIGRATION = ROOT / "supabase" / "migrations" / "20261127093000_nexus_oauth_private_rpc.sql"
+MIGRATION = ROOT / "supabase" / "migrations" / "20261127092912_nexus_oauth_private_rpc.sql"
 
 
 class OAuthPrivateRpcMigrationTests(unittest.TestCase):
