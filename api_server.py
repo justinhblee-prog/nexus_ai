@@ -107,6 +107,12 @@ async def enforce_local_origin_and_session(request, call_next):
             return JSONResponse(status_code=401, content={"detail": "Authentication required"})
     return await call_next(request)
 
+@app.get("/signup")
+def signup_page():
+    """Serve the hosted account registration and login experience."""
+    return FileResponse("signup.html", media_type="text/html; charset=utf-8")
+
+
 @app.get("/api/hosted/auth-config")
 def hosted_auth_configuration():
     """Expose only the Supabase URL and publishable key required by browser auth."""
