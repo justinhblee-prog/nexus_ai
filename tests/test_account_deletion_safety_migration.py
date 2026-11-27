@@ -45,6 +45,9 @@ class AccountDeletionSafetyMigrationTests(unittest.TestCase):
 
     def test_storage_inventory_rpc_is_service_role_only_and_paginates(self):
         self.assertIn("create or replace function public.list_account_deletion_storage_objects", self.sql)
+        self.assertIn("p_workspace_ids text[] default array[]::text[]", self.sql)
+        self.assertIn("split_part(o.name, '/', 1) = any(p_workspace_ids)", self.sql)
+        self.assertIn("public.list_account_deletion_storage_objects(uuid,integer,integer,text[])", self.sql)
         self.assertIn("auth.jwt() ->> 'role'", self.sql)
         self.assertIn("service_role required", self.sql)
         self.assertIn("o.owner = p_user_id or o.owner_id = p_user_id::text", self.sql)
