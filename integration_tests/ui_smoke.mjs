@@ -79,7 +79,9 @@ try {
       throw new Error("Workspace navigation failed: " + workspaceId);
     }
     if (workspaceId === "analytics") {
-      await page.locator("#nexus-analytics-platform-cards").waitFor();
+      // In static-preview mode the provider cards remain empty until a live API is connected.
+      // Assert the visible refresh control, not the intentionally empty data container.
+      await page.locator("#nexus-analytics-refresh").waitFor({ state: "visible" });
       await page.locator("#nexus-analytics-refresh").click();
       await page.waitForTimeout(100);
       if (!analyticsRequests.some(url => url.includes("refresh=true"))) {
