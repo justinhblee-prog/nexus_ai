@@ -57,6 +57,29 @@ services:
     command: ["python", "hosted_worker.py"]
     restart: on-failure
 
+  hosted-account-deletion-worker:
+    build: .
+    container_name: nexus_ai_account_deletion_worker
+    profiles: ["hosted"]
+    environment:
+      NEXUS_ACCOUNT_DELETION_WORKER_ENABLED: ${NEXUS_ACCOUNT_DELETION_WORKER_ENABLED:-false}
+      NEXUS_ACCOUNT_DELETION_POLL_SECONDS: ${NEXUS_ACCOUNT_DELETION_POLL_SECONDS:-20}
+      NEXUS_ACCOUNT_DELETION_WORKER_ID: ${NEXUS_ACCOUNT_DELETION_WORKER_ID:-}
+      NEXUS_SUPABASE_URL: ${NEXUS_SUPABASE_URL:-}
+      NEXUS_SUPABASE_SERVICE_ROLE_KEY: ${NEXUS_SUPABASE_SERVICE_ROLE_KEY:-}
+      NEXUS_TOKEN_ENCRYPTION_KEY: ${NEXUS_TOKEN_ENCRYPTION_KEY:-}
+      NEXUS_TOKEN_ENCRYPTION_KEY_VERSION: ${NEXUS_TOKEN_ENCRYPTION_KEY_VERSION:-v1}
+      NEXUS_TOKEN_ENCRYPTION_KEYS_JSON: ${NEXUS_TOKEN_ENCRYPTION_KEYS_JSON:-}
+      NEXUS_GOOGLE_OAUTH_CLIENT_ID: ${NEXUS_GOOGLE_OAUTH_CLIENT_ID:-}
+      NEXUS_GOOGLE_OAUTH_CLIENT_SECRET: ${NEXUS_GOOGLE_OAUTH_CLIENT_SECRET:-}
+      NEXUS_GOOGLE_OAUTH_REDIRECT_URI: ${NEXUS_GOOGLE_OAUTH_REDIRECT_URI:-}
+      NEXUS_HOSTED_APP_URL: ${NEXUS_HOSTED_APP_URL:-}
+      NEXUS_LOG_LEVEL: ${NEXUS_LOG_LEVEL:-INFO}
+    volumes:
+      - .:/app
+    command: ["python", "account_deletion_worker.py"]
+    restart: on-failure
+
   hosted-upload-worker:
     build: .
     container_name: nexus_ai_hosted_upload_worker
