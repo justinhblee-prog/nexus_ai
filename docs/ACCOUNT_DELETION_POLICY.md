@@ -25,7 +25,7 @@ The eventual server-only deletion workflow must be idempotent and resumable:
 2. Block deletion while the user owns any workspace with other members. Return the workspace IDs and require ownership transfer first.
 3. Mark the account as deletion-pending and prevent new workspace writes/jobs for that user.
 4. Stop or cancel the user's pending work and wait for active render/upload leases to finish or expire safely.
-5. Revoke each connected provider grant where the deleted user is the credential owner; remove encrypted refresh-token records even when provider revocation fails, and record the revocation outcome without storing token material.
+5. For connections inside sole-member workspaces that will be deleted, revoke the Google/provider grant before deleting the encrypted refresh-token record. Preserve connections and credentials in shared workspaces after ownership transfer; they are workspace resources, not personal tokens. Record revocation outcomes without storing token material.
 6. Enumerate and delete Storage objects owned by the user, including objects in all NEXUS buckets. Do not delete Storage metadata rows directly; use the Storage API.
 7. Delete the user's sole-member workspaces and their workspace-scoped records. Preserve all shared workspaces and their content.
 8. Remove any remaining user-owned personal assets according to the product retention policy.
