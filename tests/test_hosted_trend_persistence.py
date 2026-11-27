@@ -3,7 +3,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from hosted_trend_store import read_shared_trends
 from hosted_trend_worker import persist_period
@@ -61,7 +61,10 @@ class SharedTrendPersistenceTests(unittest.TestCase):
                  "source points", None, None, "source rank", "2026-11-28T00:00:00"),
             )
             conn.execute(
-                "INSERT INTO radar_scans VALUES (?,?,?,?,?,?,?,?)",
+                """INSERT INTO radar_scans
+                   (period_type,status,started_at,completed_at,item_count,
+                    successful_sources,failed_sources,source_summary_json)
+                   VALUES (?,?,?,?,?,?,?,?)""",
                 ("daily", "partial", "2026-11-28T00:00:00", "2026-11-28T00:01:00",
                  1, 1, 1, json.dumps({"Feed": {"status": "success"}})),
             )
