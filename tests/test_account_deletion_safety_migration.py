@@ -63,6 +63,11 @@ class AccountDeletionSafetyMigrationTests(unittest.TestCase):
         self.assertIn("create or replace function public.claim_next_account_deletion_request", self.sql)
         self.assertIn("for update skip locked", self.sql)
         self.assertIn("create or replace function public.update_account_deletion_request", self.sql)
+        self.assertIn("create or replace function public.mark_account_deletion_sessions_revoked", self.sql)
+        self.assertIn("sessions_revoked boolean not null default false", self.sql)
+        self.assertIn("r.sessions_revoked = true", self.sql)
+        self.assertIn("create or replace function public.heartbeat_account_deletion_request", self.sql)
+        self.assertIn("create or replace function public.delete_account_deletion_private_user_rows", self.sql)
         self.assertIn("to service_role", self.sql)
 
     def test_reviewer_fk_anonymization_does_not_weaken_authenticated_approval_guard(self):
