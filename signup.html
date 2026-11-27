@@ -65,6 +65,8 @@
         <strong>로그인 확인 완료</strong>
         <div id="session-email"></div>
         <div id="workspace" class="workspace">워크스페이스 정보를 확인하고 있습니다.</div>
+        <div id="connections" class="connections"></div>
+        <button class="primary" type="button" id="connect-youtube">YouTube 채널 연결</button>
         <button class="secondary" type="button" id="signout">로그아웃</button>
       </div>
       <div class="muted">현재는 계정·개인 워크스페이스 기반을 연결하는 단계입니다. 기존 단일 사용자 제작 API는 SaaS 테넌트 격리가 끝날 때까지 호스팅 모드에서 차단됩니다.</div>
@@ -80,6 +82,8 @@
     const sessionPanel = document.getElementById("session");
     const authForms = document.getElementById("auth-forms");
     let supabase = null;
+    let activeWorkspaceId = null;
+    let activeAccessToken = null;
 
     function showMessage(text, kind = "info") {
       message.textContent = text;
@@ -96,6 +100,56 @@
       loginForm.classList.toggle("hidden", signup);
       passwordForm.classList.add("hidden");
     }
+    async function loadConnections() {
+      const node = document.getElementById("connections");
+      node.replaceChildren();
+      if (!activeWorkspaceId || !activeAccessToken) {
+        node.textContent = "워크스페이스를 선택할 수 없어 채널 연결을 시작할 수 없습니다.";
+        return;
+      }
+      const response = await fetch(
+        "/api/hosted/workspaces/" + encodeURIComponent(activeWorkspaceId) + "/youtube/connections",
+        { headers: { Authorization: "Bearer " + activeAccessToken } }
+      );
+      if (!response.ok) throw new Error("YouTube 연결 정보를 불러오지 못했습니다.");
+      const result = await response.json();
+      const items = result.items || [];
+      if (!items.length) {
+        node.textContent = "연결된 YouTube 채널이 없습니다.";
+        return;
+      }
+      for (const item of items) {
+        const row = document.createElement("div");
+        row.className = "connection-row";
+        const detail = document.createElement("span");
+        detail.textContent = item.display_name + " · " + item.status;
+        row.appendChild(detail);
+        if (item.status !== "disconnected") {
+          const disconnect = document.createElement("button");
+          disconnect.type = "button";
+          disconnect.textContent = "연결 해제";
+          disconnect.addEventListener("click", async () => {
+            disconnect.disabled = true;
+            try {
+              const disconnected = await fetch(
+                "/api/hosted/workspaces/" + encodeURIComponent(activeWorkspaceId) +
+                  "/youtube/" + encodeURIComponent(item.connection_id) + "/disconnect",
+                { method: "POST", headers: { Authorization: "Bearer " + activeAccessToken } }
+              );
+              if (!disconnected.ok) throw new Error("YouTube 연결 해제에 실패했습니다.");
+              await loadConnections();
+              showMessage("YouTube 채널 연결을 해제하고 토큰 폐기를 확인했습니다.", "success");
+            } catch (error) {
+              showMessage(error.message || "연결 해제에 실패했습니다.", "error");
+              disconnect.disabled = false;
+            }
+          });
+          row.appendChild(disconnect);
+        }
+        node.appendChild(row);
+      }
+    }
+
     async function loadSession() {
       const { data: { session }, error } = await supabase.auth.getSession();
       if (error) throw error;
@@ -120,6 +174,8 @@
       if (!workspaceResponse.ok) throw new Error("워크스페이스 확인 실패 (" + workspaceResponse.status + ")");
       const workspaceResult = await workspaceResponse.json();
       const workspaces = workspaceResult.items || [];
+      activeAccessToken = session.access_token;
+      activeWorkspaceId = workspaces[0]?.workspace_id || null;
       document.getElementById("session-email").textContent = user.email || "인증된 계정";
       const workspaceNode = document.getElementById("workspace");
       workspaceNode.textContent = workspaces.length
@@ -128,8 +184,42 @@
       workspaceNode.style.whiteSpace = "pre-line";
       sessionPanel.style.display = "block";
       authForms.classList.add("hidden");
-      showMessage("Supabase Auth와 NEXUS 서버 세션 검증이 완료되었습니다.", "success");
+      await loadConnections();
+      const youtubeStatus = new URLSearchParams(window.location.search).get("youtube");
+      if (youtubeStatus === "connected") {
+        window.history.replaceState({}, "", "/signup");
+        showMessage("YouTube 채널이 연결되었습니다.", "success");
+      } else if (youtubeStatus === "denied") {
+        window.history.replaceState({}, "", "/signup");
+        showMessage("YouTube 채널 연결이 취소되었습니다.", "info");
+      } else if (youtubeStatus === "reauth_required" || youtubeStatus === "error") {
+        window.history.replaceState({}, "", "/signup");
+        showMessage("YouTube 연결을 완료하지 못했습니다. Google 계정 권한을 다시 확인하세요.", "error");
+      } else {
+        showMessage("Supabase Auth와 NEXUS 서버 세션 검증이 완료되었습니다.", "success");
+      }
     }
+
+    document.getElementById("connect-youtube").addEventListener("click", async () => {
+      if (!activeWorkspaceId || !activeAccessToken) {
+        showMessage("먼저 로그인하고 개인 워크스페이스를 확인하세요.", "error");
+        return;
+      }
+      const button = document.getElementById("connect-youtube");
+      button.disabled = true;
+      try {
+        const response = await fetch(
+          "/api/hosted/workspaces/" + encodeURIComponent(activeWorkspaceId) + "/youtube/connect",
+          { method: "POST", headers: { Authorization: "Bearer " + activeAccessToken } }
+        );
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "YouTube 연결을 시작하지 못했습니다.");
+        window.location.assign(result.authorization_url);
+      } catch (error) {
+        showMessage(error.message || "YouTube 연결을 시작하지 못했습니다.", "error");
+        button.disabled = false;
+      }
+    });
 
     document.getElementById("tab-signup").addEventListener("click", () => selectTab("signup"));
     document.getElementById("tab-login").addEventListener("click", () => selectTab("login"));
