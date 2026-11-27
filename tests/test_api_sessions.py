@@ -196,7 +196,7 @@ class SignedSessionTests(unittest.TestCase):
             jobs = self.api.hosted_workspace_jobs("wsp_11111111-1111-4111-8111-111111111111", request)
             self.assertEqual(jobs["items"][0]["job_id"], "job-1")
             self.assertEqual(
-                client_type.return_value.select.call_args.kwargs["params"]["workspace_id"],
+                client_type.return_value.select.call_args.args[1]["workspace_id"],
                 "eq.wsp_11111111-1111-4111-8111-111111111111",
             )
 
