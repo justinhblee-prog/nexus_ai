@@ -112,6 +112,24 @@ class SupabaseAdminRestClient:
             prefer="resolution=merge-duplicates,return=representation",
         ) or []
 
+    def upsert_channel(self, payload):
+        return self._call(
+            "POST",
+            "shorts_channels",
+            params={"on_conflict": "workspace_id,platform,provider_channel_id"},
+            payload=payload,
+            prefer="resolution=merge-duplicates,return=representation",
+        ) or []
+
+    def update_channels(self, workspace_id, connection_id, payload):
+        return self._call(
+            "PATCH",
+            "shorts_channels",
+            params={"workspace_id": f"eq.{workspace_id}", "connection_id": f"eq.{connection_id}"},
+            payload=payload,
+            prefer="return=representation",
+        ) or []
+
     def update_connection(self, connection_id, workspace_id, payload):
         return self._call(
             "PATCH",
