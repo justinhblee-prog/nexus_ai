@@ -8,7 +8,7 @@
 **IN PROGRESS · PR #11 Draft/Open · 운영 전환 차단**
 
 - 작업 브랜치: `feat/nexus-user-onboarding-web-oauth-20261127`
-- 최신 CI 검증 branch head: `5f54bf0d092a05086a455758ec10e0bd9f687023` (이후 변경은 상태 문서 갱신만 포함)
+- 최신 CI 검증 branch head: `3643e9c29100fdd88d6a5cb69aa01c65976ee0a2` (OAuth callback membership revalidation 포함)
 - Pull Request: [#11 — User onboarding and hosted OAuth](https://github.com/justinhblee-prog/nexus_ai/pull/11)
 - 최신 GitHub Actions: [run 46015313085](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46015313085) — exact head `5f54bf0d092a05086a455758ec10e0bd9f687023`에서 **309 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, Playwright browser smoke 모두 통과.
 - PR은 Draft/Open이며 merge하지 않음. main push, production deployment, public YouTube upload 금지.
@@ -23,7 +23,7 @@
 - Workspace RLS 기반 exact-count overview, paginated job history, workspace 전환 stale-response 방지.
 - Owner/admin 전용 최종 승인 및 conditional state update.
 - Vercel FastAPI entrypoint 분리. 로컬 Streamlit `app.py`는 유지하며 Hosted cold start는 로컬 SQLite/worker/scheduler를 시작하지 않음.
-- OAuth PKCE/state, encrypted token vault, private render/upload worker, private-only YouTube upload path, account-deletion retry/checkpoint 설계 및 테스트.
+- OAuth PKCE/state, encrypted token vault, private render/upload worker, private-only YouTube upload path, account-deletion retry/checkpoint 설계 및 테스트. OAuth 시작 후 Google 왕복 중 workspace admin 권한이 강등/삭제되는 경우를 막기 위해 callback에서 code exchange 전과 credential persistence 직전에 현재 membership role을 재검증함.
 - Saved topic queue 사용자·워크스페이스 scoped list/add/delete API와 UI, browser-local fallback 및 migration handoff 문서.
 - Hosted trend radar endpoint는 로컬 SQLite를 쓰거나 초기화하지 않으며, Vercel 번들에 데이터 snapshot이 없을 때 unavailable 상태로 fail closed.
 
@@ -55,7 +55,7 @@
 3. **Hosted trend persistence**: shared persistent trend snapshot/source 및 수집 파이프라인이 필요. 현재는 데이터가 없으면 unavailable로 표시.
 4. **Google OAuth**: Vercel Preview에 Google client ID/secret, redirect URI, app URL, encryption key 및 필요한 server-only key를 안전하게 등록하고 Google Console redirect URI를 일치시킨 뒤 실제 동의/refresh/revoke를 테스트해야 함.
 5. **Tenant E2E**: 실제 두 사용자 계정으로 같은 workspace 및 서로 다른 workspace의 read/write/delete 격리 검증이 필요. 현재 DB에는 테스트 계정이 없어 완료되지 않음.
-6. **Preview runtime**: Vercel 무료 배포 한도 해제 후 최신 branch head `5f54bf0d...`의 Preview를 배포하고 signup/login/API/browser smoke를 수행해야 함. 기존 READY Preview는 최신 head 증거가 아님.
+6. **Preview runtime**: Vercel 무료 배포 한도 해제 후 최신 branch head `3643e9c2...`의 Preview를 배포하고 signup/login/API/browser smoke를 수행해야 함. 기존 READY Preview는 최신 head 증거가 아님.
 7. **Account deletion / workers / upload**: 실제 계정·Google 동의·migration·private Storage prerequisites 및 E2E 전까지 `NEXUS_ACCOUNT_DELETION_ENABLED`, `NEXUS_ACCOUNT_DELETION_WORKER_ENABLED`, `NEXUS_HOSTED_WORKER_ENABLED`, `NEXUS_HOSTED_UPLOAD_ENABLED`는 false 유지. YouTube 업로드는 명시적 승인 후 Private만 허용.
 
 ### 안전 경계
@@ -139,3 +139,8 @@
 - 사용자 데이터, DB, 영상, OAuth 토큰, .env를 삭제하거나 초기화하지 않음.
 
 **전체 프로젝트는 아직 완료가 아닙니다.** 원격 코드·통합 테스트가 통과한 범위와 사용자 Windows/Google 계정이 필요한 실환경 범위를 구분합니다.
+
+### OAuth callback authorization revalidation — 2026-11-27
+- Public Google OAuth callback consumes the one-time state and then rechecks that the initiating user is still owner/admin of the same workspace before exchanging the authorization code.
+- It checks the membership again immediately before privileged connection/credential persistence, so a role downgrade during the Google round trip cannot retain previously granted admin authority.
+- Regression tests cover both a role already downgraded at callback entry and a role downgraded during code exchange. Latest CI run 46016494231 passes 311 tests and browser smoke.
