@@ -332,15 +332,18 @@ class SignedSessionTests(unittest.TestCase):
             hosted_access_token="verified.user.jwt",
         ))
         fake_conn = Mock()
-        fake_conn.execute.return_value.fetchall.return_value = [
-            {"region": "KR", "rank_no": 1, "topic": "AI 업무 자동화", "source_name": "News",
-             "source_url": "https://example.com/story", "viral_score": 88},
-            {"region": "US", "rank_no": 2, "topic": "AI 업무 자동화", "source_name": "HN",
-             "source_url": "javascript:alert(1)", "viral_score": 80},
+        fake_conn.execute.side_effect = [
+            Mock(fetchall=Mock(return_value=[
+                {"region": "KR", "rank_no": 1, "topic": "AI 업무 자동화", "source_name": "News",
+                 "source_url": "https://example.com/story", "viral_score": 88},
+                {"region": "US", "rank_no": 2, "topic": "AI 업무 자동화", "source_name": "HN",
+                 "source_url": "javascript:alert(1)", "viral_score": 80},
+            ])),
+            Mock(fetchone=Mock(return_value={"status": "completed", "completed_at": "2026-11-27T00:00:00Z", "item_count": 2})),
         ]
         with patch.object(self.api, "SupabaseRestClient") as client_type, \
-             patch.object(self.api.trend_radar, "init_radar_db", return_value=fake_conn, create=True), \
-             patch.object(self.api.trend_radar, "get_scan_status", return_value={"status": "completed", "item_count": 2}, create=True):
+             patch.object(self.api.os.path, "isfile", return_value=True), \
+             patch.object(self.api.sqlite3, "connect", return_value=fake_conn) as connect:
             client_type.return_value.select.return_value = [{"role": "viewer"}]
             result = self.api.hosted_workspace_trends(
                 "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", request
@@ -348,6 +351,8 @@ class SignedSessionTests(unittest.TestCase):
         self.assertEqual(len(result["items"]), 1)
         self.assertEqual(result["items"][0]["source_url"], "https://example.com/story")
         self.assertEqual(result["scope"], "shared_public_signals")
+        self.assertTrue(result["available"])
+        connect.assert_called_once_with("file:data/studio_data.db?mode=ro", uri=True)
         fake_conn.close.assert_called_once()
 
     def test_hosted_trends_reject_non_members(self):
