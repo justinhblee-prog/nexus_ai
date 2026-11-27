@@ -29,7 +29,8 @@ class HostedSignupPageContractTests(unittest.TestCase):
     def test_session_is_verified_by_backend_before_workspace_display(self):
         self.assertIn('"/api/hosted/session"', self.html)
         self.assertIn('Authorization: "Bearer " + session.access_token', self.html)
-        self.assertIn('.from("workspaces")', self.html)
+        self.assertIn('"/api/hosted/workspaces"', self.html)
+        self.assertNotIn('.from("workspaces")', self.html)
         self.assertIn("verified.user.user_id !== user.id", self.html)
 
     def test_local_session_storage_and_text_only_status_rendering(self):
