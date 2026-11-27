@@ -165,7 +165,7 @@ class SupabaseAdminRestClient:
         })
 
     def upload_storage_object(self, storage_key, content, content_type="video/mp4"):
-        if not re.fullmatch(r"wsp_[0-9a-fA-F-]{36}/[0-9a-fA-F-]{36}/[0-9a-f]{32}\\.mp4", storage_key):
+        if not re.fullmatch(r"wsp_[0-9a-fA-F-]{36}/[0-9a-fA-F-]{36}/[0-9a-f]{32}\.mp4", storage_key):
             raise ValueError("Storage key is invalid")
         url_path = quote(storage_key, safe="/")
         headers = {
@@ -210,7 +210,7 @@ class SupabaseAdminRestClient:
         )
 
     def create_signed_url(self, storage_key, expires_in=300):
-        if not storage_key.startswith("wsp_") or ".." in storage_key or storage_key.startswith("/"):
+        if not re.fullmatch(r"wsp_[0-9a-fA-F-]{36}/[0-9a-fA-F-]{36}/[0-9a-f]{32}\.mp4", storage_key):
             raise ValueError("Storage key is invalid")
         path = quote(storage_key, safe="/")
         headers = {
@@ -241,6 +241,8 @@ class SupabaseAdminRestClient:
         return f"{self.base_url}/storage/v1" + (signed if signed.startswith("/") else "/" + signed)
 
     def delete_storage_object(self, storage_key):
+        if not re.fullmatch(r"wsp_[0-9a-fA-F-]{36}/[0-9a-fA-F-]{36}/[0-9a-f]{32}\.mp4", storage_key):
+            raise ValueError("Storage key is invalid")
         headers = {
             "apikey": self.service_key,
             "Authorization": f"Bearer {self.service_key}",
