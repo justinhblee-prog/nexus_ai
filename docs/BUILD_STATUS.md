@@ -179,3 +179,11 @@
 - **324 Python tests passed**; Docker Compose configuration, Python compilation (including the new trend worker/store), browser JavaScript syntax, and Playwright browser interaction smoke all passed.
 - A follow-up commit `50f14bdda72322bf3b5317add0146083af18e24b` updates this status document only; it does not change application code.
 - This CI result validates code contracts and the static browser preview, not a live Supabase migration, actual collector writes, Vercel deployment, or real OAuth/tenant E2E.
+
+
+### Vercel environment and Preview quota recheck — 2026-11-28
+
+- Read-only Vercel metadata confirms eight branch-scoped Preview environment-variable records for this feature branch: Supabase URL/publishable key/secret key, Google Web OAuth client ID/secret/redirect URI, hosted app URL, and AES-256-GCM token-encryption key. Secret values were not exposed. `hiddenProductionEnvCount=0`; no Production variables were added.
+- Latest READY deployment record is `dpl_8WHbaquRhTogFcaYi6cynD7ayumg` at commit `f61159be418a2c24ecdcd28896bb98de1dbe8469`, which predates the completed shared-trend implementation.
+- A Preview-only deployment attempt for current branch head `715298de7466be1a29e5ed5a64cacc9c53a5b061` was rejected with HTTP 402 `api-deployments-free-per-day`, retryAfter 86400. No Production deployment or plan upgrade was attempted. Do not retry until the free daily quota resets.
+- PR #11 remains Draft/Open/unmerged. The current application-code commit `34d636ffe34b8766d842f7de80de99b748ddd440` has the passing 324-test CI result above; the later commits update documentation only.
