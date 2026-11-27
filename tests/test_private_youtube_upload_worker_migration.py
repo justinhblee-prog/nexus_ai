@@ -19,7 +19,7 @@ class PrivateYouTubeUploadWorkerMigrationTests(unittest.TestCase):
         self.assertIn("record_shorts_upload_video_id", self.sql)
         self.assertIn("finish_shorts_upload", self.sql)
         self.assertIn("to service_role", self.sql)
-        self.assertIn("from public, anon, authenticated", self.sql)
+        self.assertRegex(self.sql, r"from\\s+public\\s*,\\s*anon\\s*,\\s*authenticated")
 
     def test_only_approved_private_jobs_are_claimed_with_daily_quota_cap(self):
         self.assertIn("j.approval_status='approved'", self.sql)
