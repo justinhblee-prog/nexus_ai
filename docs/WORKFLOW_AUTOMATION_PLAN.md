@@ -15,6 +15,7 @@
 - Docker 운영 이미지에서 실제 세로형 H.264/AAC MP4를 생성하고 ffprobe QA까지 수행했습니다. FFmpeg/MoviePy 리소스 경고 없이 임시 파일을 정리합니다.
 - Playwright Chromium으로 네 가지 디자인 테마의 실제 레이아웃 차이, 색상 스킨 독립성, 샘플 토글, 워크스페이스 이동, 모바일 전환, 운영자 로그인과 세션 만료를 검사했습니다.
 - Windows 운영자용 scripts/setup-local-nexus.ps1 및 scripts/verify-local-nexus.ps1를 추가했고 PowerShell parser CI를 통과했습니다. Windows 호스트에서의 실제 실행은 아직 대기입니다.
+- Durable queue consumers can run as a bounded local worker pool (`NEXUS_QUEUE_WORKERS=1..4`); the legacy `topics.txt` importer is isolated in one bridge thread. Startup/configuration tests cover worker count bounds and thread registration. Multi-host/shared-network-filesystem execution remains unsupported and unverified.
 - Vercel Preview는 정적 UI 전용이며 FastAPI/SQLite 운영 백엔드와 연결되지 않습니다. Vercel 일일 배포 제한으로 최신 커밋 배포가 차단될 수 있습니다.
 - Google/YouTube OAuth, Private 업로드, YouTube Analytics 읽기 권한은 실계정 연결 및 Windows 호스트에서 검증해야 합니다. 성과 데이터는 권한 연결 전까지 계속 null/미수집으로 둡니다.
 ## 1. 운영 목표와 자동화 경계
@@ -283,6 +284,9 @@ flowchart TD
 **완료 기준:** 재시작·네트워크 오류 후에도 작업 유실 없이 중복 없이 복구.
 
 ### Phase 3 — 제작 파이프라인 자동화
+
+- [x] 단일 큐 소비자를 `NEXUS_QUEUE_WORKERS` 설정 기반의 1~4개 bounded local render worker pool로 분리하고, legacy `topics.txt` importer는 단일 전용 bridge thread로 격리한다. SQLite lease/fencing token으로 동시 작업 claim을 보호하며 기본 worker 수는 1이다.
+- [ ] 대본·TTS·렌더링·QA를 독립 재시작 가능한 stage worker로 분리하고 단계별 산출물·버전·재시작 지점을 저장한다.
 
 - [x] 렌더 결과를 검수 대기열에 넣기 전 ffprobe로 파일 존재·크기·H.264/AAC·1080x1920·오디오 트랙·1~180초 길이를 자동 검사한다. 실패 결과는 `qa.failed` 이벤트로 남기고 검수 대기열 진입을 차단한다.
 - [x] 모델 응답이 비어 있거나 형식이 잘못된 경우 검증된 한국어 6문장 fallback을 사용하고, 모델 대본은 제목·문장 수·길이를 검증한 뒤 렌더링한다.
