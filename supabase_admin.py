@@ -335,15 +335,22 @@ class SupabaseAdminRestClient:
             "p_user_id": value,
         })
 
-    def list_account_deletion_storage_objects(self, user_id, limit=1000, offset=0):
+    def list_account_deletion_storage_objects(self, user_id, limit=1000, offset=0, workspace_ids=None):
         """List Storage objects owned by one verified account via a service-only RPC."""
         value = str(user_id)
         if not re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", value):
             raise ValueError("User ID is invalid")
+        workspace_values = [str(item) for item in (workspace_ids or [])]
+        if len(workspace_values) > 100 or any(
+            not re.fullmatch(r"wsp_[0-9a-fA-F-]{36}", item)
+            for item in workspace_values
+        ):
+            raise ValueError("Workspace Storage inventory request is invalid")
         rows = self.rpc("list_account_deletion_storage_objects", {
             "p_user_id": value,
             "p_limit": max(1, min(int(limit), 1000)),
             "p_offset": max(0, int(offset)),
+            "p_workspace_ids": workspace_values,
         }) or []
         return rows
 
