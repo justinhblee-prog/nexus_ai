@@ -283,5 +283,26 @@ class SupabaseAdminClientTests(unittest.TestCase):
         self.assertIn("/storage/v1/object/authenticated/nexus-shorts/", http.call_args_list[1].args[1])
 
 
+    def test_account_deletion_oauth_state_rpc_methods_are_allowlisted_and_validate_fingerprint(self):
+        http = Mock()
+        response = Mock(status_code=200)
+        response.json.return_value = [{"state": "revoked"}]
+        http.return_value = response
+        client = SupabaseAdminRestClient(ENV, http_request=http)
+        user_id = "11111111-1111-4111-8111-111111111111"
+        fingerprint = "a" * 64
+
+        self.assertEqual(client.get_account_deletion_oauth_state(user_id, fingerprint), "revoked")
+        self.assertIn("/rpc/get_account_deletion_oauth_state", http.call_args.args[1])
+        self.assertEqual(http.call_args.kwargs["json"]["p_provider_account_hash"], fingerprint)
+        self.assertEqual(client.set_account_deletion_oauth_state(user_id, fingerprint, "revoked"), "revoked")
+        self.assertIn("/rpc/set_account_deletion_oauth_state", http.call_args.args[1])
+        self.assertEqual(http.call_args.kwargs["json"]["p_state"], "revoked")
+        with self.assertRaises(ValueError):
+            client.get_account_deletion_oauth_state(user_id, "not-a-fingerprint")
+        with self.assertRaises(ValueError):
+            client.set_account_deletion_oauth_state(user_id, fingerprint, "refresh-token")
+
+
 if __name__ == "__main__":
     unittest.main()
