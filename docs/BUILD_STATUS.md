@@ -5,7 +5,7 @@
 
 ## 최신 Hosted SaaS 진행 현황
 
-<badge>IN PROGRESS · PR #11 Draft/Open</badge>
+**IN PROGRESS · PR #11 Draft/Open**
 
 - 작업 브랜치: `feat/nexus-user-onboarding-web-oauth-20261127`
 - 최신 검증 커밋: `1e27338ce0277e443cc315ddef00efed53761ac3`
