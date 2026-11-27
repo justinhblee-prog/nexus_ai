@@ -1,7 +1,7 @@
 import os, time, sqlite3, threading, logging, hmac, hashlib, secrets, re
 from datetime import datetime, timezone, timedelta
 from uuid import UUID
-from fastapi import FastAPI, BackgroundTasks, HTTPException, Request, Query
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
@@ -634,10 +634,12 @@ def hosted_workspace_channels(workspace_id: str, request: Request):
 def hosted_workspace_jobs(
     workspace_id: str,
     request: Request,
-    limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
+    limit: int = 50,
+    offset: int = 0,
 ):
     _validate_workspace_id(workspace_id)
+    if limit < 1 or limit > 100 or offset < 0:
+        raise HTTPException(status_code=422, detail="Invalid jobs pagination")
     client = _hosted_rest_client(request)
     try:
         # Fetch one extra row to determine whether another page exists without
