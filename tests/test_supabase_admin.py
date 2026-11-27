@@ -190,6 +190,18 @@ class SupabaseAdminClientTests(unittest.TestCase):
         self.assertEqual(http.call_args.kwargs["json"]["p_limit"], 500)
         self.assertEqual(http.call_args.kwargs["json"]["p_workspace_ids"], ["wsp_11111111-1111-4111-8111-111111111111"])
 
+    def test_global_session_revocation_accepts_documented_already_revoked_responses(self):
+        for status_code in (200, 204, 401, 403, 404):
+            http = Mock()
+            http.return_value = Mock(status_code=status_code)
+            client = SupabaseAdminRestClient(ENV, http_request=http)
+            self.assertTrue(client.revoke_user_sessions("verified.user.jwt"))
+            self.assertEqual(http.call_args.kwargs["params"], {"scope": "global"})
+            self.assertEqual(
+                http.call_args.kwargs["headers"]["Authorization"],
+                "Bearer verified.user.jwt",
+            )
+
     def test_auth_and_storage_deletes_are_idempotent_on_not_found(self):
         http = Mock()
         http.return_value = Mock(status_code=404)
