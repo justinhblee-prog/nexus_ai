@@ -31,6 +31,10 @@ class NexusUiContractTests(unittest.TestCase):
         self.assertIn("function setAccent", self.script)
         self.assertIn("function setDensity", self.script)
 
+    def test_default_editorial_accent_is_not_overridden_by_legacy_black(self):
+        self.assertIn(":root{--accent:#38BDF8}", self.html)
+        self.assertNotIn(":root{--accent:#111}", self.html)
+
     def test_dashboard_uses_persisted_queue_and_upload_states(self):
         self.assertIn("queuePending = Number.isFinite(Number(d.queue_pending))", self.script)
         for stage in (
