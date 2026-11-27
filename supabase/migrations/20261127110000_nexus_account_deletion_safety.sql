@@ -461,6 +461,49 @@ $function$;
 
 
 
+CREATE TABLE IF NOT EXISTS private.account_deletion_worker_heartbeats (
+  worker_id text PRIMARY KEY,
+  last_seen_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE private.account_deletion_worker_heartbeats ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE private.account_deletion_worker_heartbeats FROM PUBLIC, anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.heartbeat_account_deletion_worker(p_worker_id text)
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
+AS $function$
+BEGIN
+  IF COALESCE((SELECT auth.jwt()->>'role'),'') <> 'service_role' THEN
+    RAISE EXCEPTION 'service_role required' USING ERRCODE='42501';
+  END IF;
+  IF p_worker_id IS NULL OR length(p_worker_id) NOT BETWEEN 1 AND 128 THEN
+    RAISE EXCEPTION 'Account deletion worker ID is invalid' USING ERRCODE='22023';
+  END IF;
+  INSERT INTO private.account_deletion_worker_heartbeats(worker_id,last_seen_at)
+  VALUES (p_worker_id,now())
+  ON CONFLICT (worker_id) DO UPDATE SET last_seen_at=now();
+  RETURN true;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.is_account_deletion_worker_online()
+RETURNS boolean LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=''
+AS $function$
+BEGIN
+  IF COALESCE((SELECT auth.jwt()->>'role'),'') <> 'service_role' THEN
+    RAISE EXCEPTION 'service_role required' USING ERRCODE='42501';
+  END IF;
+  RETURN EXISTS (
+    SELECT 1 FROM private.account_deletion_worker_heartbeats
+    WHERE last_seen_at > now() - interval '90 seconds'
+  );
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.heartbeat_account_deletion_worker(text) FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.is_account_deletion_worker_online() FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.heartbeat_account_deletion_worker(text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.is_account_deletion_worker_online() TO service_role;
+
 CREATE TABLE IF NOT EXISTS private.account_deletion_requests (
   user_id uuid PRIMARY KEY,
   status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','retry','blocked','completed','failed')),
