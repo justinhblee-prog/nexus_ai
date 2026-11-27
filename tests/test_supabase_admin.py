@@ -76,6 +76,57 @@ class SupabaseAdminClientTests(unittest.TestCase):
             client.create_signed_url("wsp_11111111-1111-4111-8111-111111111111/other/video.mp4")
 
 
+
+    def test_account_storage_inventory_uses_allowlisted_service_rpc(self):
+        http = Mock()
+        response = Mock(status_code=200)
+        response.json.return_value = [{
+            "bucket_id": "nexus-shorts",
+            "name": "wsp_11111111-1111-4111-8111-111111111111/video.mp4",
+            "owner_id": "11111111-1111-4111-8111-111111111111",
+            "owner": "11111111-1111-4111-8111-111111111111",
+        }]
+        http.return_value = response
+        client = SupabaseAdminRestClient(ENV, http_request=http)
+        rows = client.list_account_deletion_storage_objects("11111111-1111-4111-8111-111111111111", limit=500, offset=0)
+        self.assertEqual(len(rows), 1)
+        self.assertIn("/rpc/list_account_deletion_storage_objects", http.call_args.args[1])
+        self.assertEqual(http.call_args.kwargs["json"]["p_limit"], 500)
+
+    def test_account_storage_delete_uses_storage_api_and_rejects_unsafe_paths(self):
+        http = Mock()
+        http.return_value = Mock(status_code=200)
+        client = SupabaseAdminRestClient(ENV, http_request=http)
+        self.assertTrue(client.delete_storage_object_in_bucket("acs-assets", "workspace/file.png"))
+        self.assertIn("/storage/v1/object/acs-assets", http.call_args.args[1])
+        self.assertEqual(http.call_args.kwargs["json"], {"prefixes": ["workspace/file.png"]})
+        for bucket, path in (
+            ("unknown-bucket", "file.png"),
+            ("acs-assets", "../file.png"),
+            ("acs-assets", "/file.png"),
+            ("acs-assets", "folder\\\\file.png"),
+            ("acs-assets", "folder//file.png"),
+        ):
+            with self.assertRaises(ValueError):
+                client.delete_storage_object_in_bucket(bucket, path)
+
+    def test_auth_user_deletion_uses_admin_endpoint_and_server_role(self):
+        http = Mock()
+        http.return_value = Mock(status_code=200)
+        client = SupabaseAdminRestClient(ENV, http_request=http)
+        self.assertTrue(client.delete_auth_user("11111111-1111-4111-8111-111111111111"))
+        self.assertIn("/auth/v1/admin/users/11111111-1111-4111-8111-111111111111", http.call_args.args[1])
+        self.assertEqual(http.call_args.kwargs["headers"]["Authorization"], "Bearer " + ENV["NEXUS_SUPABASE_SERVICE_ROLE_KEY"])
+
+    def test_global_session_revocation_uses_the_user_token_not_service_role(self):
+        http = Mock()
+        http.return_value = Mock(status_code=204)
+        client = SupabaseAdminRestClient(ENV, http_request=http)
+        self.assertTrue(client.revoke_user_sessions("verified.user.jwt"))
+        self.assertEqual(http.call_args.args[0], "POST")
+        self.assertEqual(http.call_args.kwargs["params"], {"scope": "global"})
+        self.assertEqual(http.call_args.kwargs["headers"]["Authorization"], "Bearer verified.user.jwt")
+
     def test_approved_upload_claim_and_private_storage_download(self):
         http = Mock()
         claim_response = Mock(status_code=200)
