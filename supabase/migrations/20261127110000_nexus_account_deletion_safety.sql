@@ -130,6 +130,7 @@ SET search_path = ''
 AS $function$
 BEGIN
   IF (SELECT auth.uid()) IS NULL
+     AND current_user IN ('postgres', 'supabase_auth_admin', 'service_role')
      AND OLD.approval_status = 'approved'
      AND NEW.approval_status = 'approved'
      AND OLD.approved_by IS NOT NULL
