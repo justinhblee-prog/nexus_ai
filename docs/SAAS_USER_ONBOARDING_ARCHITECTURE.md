@@ -62,3 +62,13 @@ Add trusted admin roles, retention, account export/deletion, credential revocati
 - Keep YouTube refresh tokens encrypted at rest and redact credentials from logs.
 - Keep YouTube uploads private and require explicit human approval.
 - Do not claim public SaaS readiness until Phases A–C and two-user end-to-end tests pass.
+
+
+## Hosted activation checklist (not enabled yet)
+
+1. Choose the final HTTPS application origin and API origin. The app origin must be configured as `NEXUS_HOSTED_APP_URL`; the exact callback is `NEXUS_GOOGLE_OAUTH_REDIRECT_URI=https://<API_ORIGIN>/api/hosted/youtube/callback`.
+2. In Google Cloud Console, create a separate **Web application** OAuth client (do not reuse the local Desktop client). Add the app origin as an authorized JavaScript origin and the exact callback above as an authorized redirect URI. Keep the client secret server-side.
+3. In Supabase Auth URL Configuration, set the final app origin as Site URL and allow the exact `https://<APP_ORIGIN>/signup` redirect. Enable the Email provider and email confirmation.
+4. Configure server-only environment values: `NEXUS_SUPABASE_SERVICE_ROLE_KEY` (legacy service_role JWT), `NEXUS_TOKEN_ENCRYPTION_KEY` or versioned keyring, `NEXUS_GOOGLE_OAUTH_CLIENT_ID`, `NEXUS_GOOGLE_OAUTH_CLIENT_SECRET`, `NEXUS_GOOGLE_OAUTH_REDIRECT_URI`, and `NEXUS_HOSTED_APP_URL`. Never paste these values into chat or commit them.
+5. Set `NEXUS_CORS_ALLOWED_ORIGINS` only if the browser app and API are on different origins.
+6. Keep `NEXUS_HOSTED_AUTH_ENABLED=false` until tenant-scoped render workers, queue, media, analytics, and upload execution are implemented and verified. Enabling it now intentionally blocks the legacy single-operator API/media routes; the account/OAuth endpoints alone do not make the full Shorts pipeline SaaS-ready.
