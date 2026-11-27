@@ -53,7 +53,7 @@ jobs:
         run: supabase start
 
       - name: Replay the complete migration chain locally
-        run: supabase db reset --local
+        run: supabase db reset
 
       - name: Lint local database functions and schema
         run: supabase db lint --fail-on error
