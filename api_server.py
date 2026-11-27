@@ -26,9 +26,9 @@ def auth_is_configured() -> bool:
 
 
 def auth_is_required() -> bool:
-    """Require browser API authentication by default; only an explicit false opts out."""
-    configured = os.getenv("NEXUS_AUTH_ENABLED")
-    return configured is None or configured.strip().lower() not in ("0", "false", "no", "off")
+    """Authentication is opt-in for loopback-only local deployments."""
+    configured = os.getenv("NEXUS_AUTH_ENABLED", "false")
+    return configured.strip().lower() in ("1", "true", "yes", "on")
 
 def create_session_cookie(now: int | None = None) -> str:
     if not auth_is_configured():
@@ -798,7 +798,9 @@ def serve_home():
 
 @app.get("/api/session/status")
 def session_status(request: Request):
-    return {"configured": auth_is_configured(), "authenticated": verify_session_cookie(request.cookies.get(SESSION_COOKIE_NAME)), "required": auth_is_required()}
+    required = auth_is_required()
+    authenticated = (not required) or verify_session_cookie(request.cookies.get(SESSION_COOKIE_NAME))
+    return {"configured": auth_is_configured(), "authenticated": authenticated, "required": required, "auth_enabled": required}
 
 def session_cookie_is_secure(request: Request) -> bool:
     """Use Secure cookies automatically on HTTPS while preserving local HTTP development."""
