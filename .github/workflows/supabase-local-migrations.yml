@@ -12,8 +12,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: supabase-local-migrations-${{ github.ref }}
-  cancel-in-progress: true
+  group: supabase-local-migrations-${{ github.run_id }}
+  cancel-in-progress: false
 
 jobs:
   local-migrations:
@@ -78,6 +78,3 @@ jobs:
       - name: Lint local database functions and schema
         run: supabase db lint --fail-on error
 
-      - name: Stop local Supabase services
-        if: always()
-        run: supabase stop --no-backup
