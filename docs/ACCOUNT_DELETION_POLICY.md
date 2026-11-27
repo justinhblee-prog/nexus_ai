@@ -2,7 +2,7 @@
 
 ## Current status
 
-Account deletion is a required SaaS capability, but the destructive Auth deletion endpoint is intentionally not exposed yet. The account-lifecycle work in this PR establishes the safe ownership-transfer and audit-preservation prerequisites, plus a read-only deletion preflight. No production migration or user deletion has been executed.
+Account deletion is a required SaaS capability, but the destructive Auth deletion endpoint is intentionally not exposed yet. The account-lifecycle work in this PR establishes the safe ownership-transfer and audit-preservation prerequisites, plus a read-only deletion preflight that inventories account-owned Storage objects through a service-only database RPC. Server-only helpers now cover exact Storage API object deletion, global refresh-session revocation, and the Supabase Auth Admin deletion endpoint. They are not yet wired into a destructive workflow. No production migration or user deletion has been executed.
 
 ## Workspace rules
 
@@ -26,11 +26,12 @@ The eventual server-only deletion workflow must be idempotent and resumable:
 3. Mark the account as deletion-pending and prevent new workspace writes/jobs for that user.
 4. Stop or cancel the user's pending work and wait for active render/upload leases to finish or expire safely.
 5. For connections inside sole-member workspaces that will be deleted, revoke the Google/provider grant before deleting the encrypted refresh-token record. Preserve connections and credentials in shared workspaces after ownership transfer; they are workspace resources, not personal tokens. Record revocation outcomes without storing token material.
-6. Enumerate and delete Storage objects owned by the user, including objects in all NEXUS buckets. Do not delete Storage metadata rows directly; use the Storage API.
+6. Enumerate Storage objects owned by the user across all NEXUS buckets through the service-only inventory RPC. If a user-owned object is inside a shared workspace, block deletion until the file is safely re-uploaded or ownership is otherwise transferred; never remove a shared team's only copy. For deletable objects, call the Storage API for each exact bucket/path. Do not delete Storage metadata rows directly.
 7. Delete the user's sole-member workspaces and their workspace-scoped records. Preserve all shared workspaces and their content.
 8. Remove any remaining user-owned personal assets according to the product retention policy.
 9. Revoke sessions and delete the Auth user through the Supabase Auth Admin API.
-10. Verify no user-owned Storage objects, OAuth credentials, workspace ownership, or user foreign-key references remain. Mark the deletion request complete only after verification.
+10. Revoke the user's global Supabase refresh sessions using their verified access token. Then delete the Auth user through the server-only Auth Admin endpoint. Note that existing access JWTs may remain valid until expiry; the application must enforce a deletion tombstone or wait for the configured JWT lifetime before treating revocation as complete.
+11. Verify no user-owned Storage objects, OAuth credentials, workspace ownership, or user foreign-key references remain. Mark the deletion request complete only after verification.
 
 If any external cleanup fails, retain a retryable deletion-pending record and do not report completion. Do not partially delete the Auth identity while required cleanup is still outstanding.
 
@@ -41,3 +42,13 @@ If any external cleanup fails, retain a retryable deletion-pending record and do
 - Never expose service-role credentials or OAuth tokens to the browser.
 - Never treat an HTTP success from the Auth Admin API as proof that Storage and provider credentials were cleaned.
 - Account deletion is not complete until the verification step succeeds.
+
+
+## Storage and Auth adapter safeguards
+
+- Storage inventory is restricted to a service-role-only RPC and paginated in batches of at most 1,000 rows.
+- Storage object deletion uses the Storage API with an exact bucket and object path. The adapter rejects unknown buckets, absolute paths, empty path segments, dot segments, and backslashes.
+- The Auth Admin deletion helper is server-only and is not exposed as an HTTP route.
+- Global session revocation uses the verified user's bearer token, not the service-role token as the user identity.
+- The account deletion preflight fails closed if it cannot verify Storage ownership.
+- The currently observed NEXUS buckets are private: `acs-assets`, `acs-gallery`, `acs-outputs`, and `nexus-shorts`. The observed object count was zero at the time of inspection; this is not a permanent assumption and runtime inventory is still required.
