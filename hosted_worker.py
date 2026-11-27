@@ -15,7 +15,6 @@ import time
 import uuid
 
 from supabase_admin import SupabaseAdminError, SupabaseAdminRestClient
-from video_maker import render_pro_short
 from video_qa import validate_video
 
 
@@ -54,7 +53,10 @@ def process_one_job(
     lease_seconds=DEFAULT_LEASE_SECONDS,
     max_attempts=DEFAULT_MAX_ATTEMPTS,
 ):
-    renderer = renderer or render_pro_short
+    if renderer is None:
+        # Import the full media stack only in the actual worker process.
+        from video_maker import render_pro_short
+        renderer = render_pro_short
     validator = validator or validate_video
     job = admin.claim_next_shorts_job(worker_id, lease_seconds, max_attempts)
     if not job:
