@@ -284,6 +284,7 @@ select,input,textarea{background:var(--surface);color:var(--text);border-color:v
       </div>
     </div>
     <div class="controls">
+      <a href="/signup" style="display:inline-flex;align-items:center;padding:8px 12px;border:1px solid #31518a;border-radius:9px;color:#bfdbfe;text-decoration:none;font-size:12px;font-weight:700;">회원가입 / 로그인</a>
       <select id="scan-interval" onchange="changeInterval(this.value)"><option value="1">1분마다</option><option value="5" selected>5분마다</option><option value="15">15분마다</option></select>
       <button onclick="forceScan()" id="btn-scan" class="btn-blue"><span id="scan-arrow">↻</span> <span id="scan-label">즉시 재스캔</span></button>
     </div>
