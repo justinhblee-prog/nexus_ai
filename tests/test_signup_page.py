@@ -26,6 +26,13 @@ class HostedSignupPageContractTests(unittest.TestCase):
         self.assertIn("/overview", self.html)
         self.assertIn('headers: { Authorization: "Bearer " + activeAccessToken }', self.html)
         self.assertIn("await loadWorkspaceOverview()", self.html)
+    def test_final_approval_refreshes_jobs_and_workspace_metrics(self):
+        approval_start = self.html.index('"/api/hosted/jobs/" + encodeURIComponent(item.job_id) + "/approve"')
+        approval_end = self.html.index("showMessage(\"최종 승인되었습니다.", approval_start)
+        approval_handler = self.html[approval_start:approval_end]
+        self.assertIn("await loadJobs()", approval_handler)
+        self.assertIn("await loadWorkspaceOverview()", approval_handler)
+
     def test_email_registration_login_and_recovery_flows_exist(self):
         self.assertIn("supabase.auth.signUp", self.html)
         self.assertIn("supabase.auth.signInWithPassword", self.html)
