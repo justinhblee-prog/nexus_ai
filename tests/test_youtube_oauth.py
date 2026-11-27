@@ -7,6 +7,7 @@ import requests
 from youtube_oauth import (
     GoogleOAuthConfig,
     GoogleOAuthError,
+    GoogleOAuthReauthRequired,
     create_oauth_state,
     create_pkce_pair,
 )
