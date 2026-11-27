@@ -311,6 +311,156 @@ GRANT EXECUTE ON FUNCTION public.mark_account_deletion_tombstone(uuid) TO servic
 REVOKE ALL ON FUNCTION public.is_account_deletion_tombstoned() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.is_account_deletion_tombstoned() TO authenticated;
 
+-- Stop new render and upload claims for a workspace owned by a tombstoned
+-- account. Existing leases are drained before workspace deletion; transferred
+-- shared workspaces remain active under their new owner.
+CREATE OR REPLACE FUNCTION public.claim_next_shorts_job(
+  p_worker_id text,
+  p_lease_seconds integer DEFAULT 600,
+  p_max_attempts integer DEFAULT 3
+)
+RETURNS TABLE (
+  job_id uuid,
+  workspace_id text,
+  channel_id uuid,
+  topic text,
+  title text,
+  script text,
+  channel_name text,
+  persona text,
+  attempts integer,
+  lease_token text
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $function$
+DECLARE
+  v_job record;
+  v_attempts integer;
+  v_token text;
+BEGIN
+  IF COALESCE(auth.jwt() ->> 'role', '') <> 'service_role' THEN
+    RAISE EXCEPTION 'service_role required' USING ERRCODE = '42501';
+  END IF;
+  IF p_worker_id IS NULL OR length(p_worker_id) NOT BETWEEN 1 AND 80
+     OR p_lease_seconds NOT BETWEEN 60 AND 1800
+     OR p_max_attempts NOT BETWEEN 1 AND 5 THEN
+    RAISE EXCEPTION 'Worker lease request is invalid' USING ERRCODE = '22023';
+  END IF;
+
+  UPDATE public.shorts_jobs AS j
+  SET stage = 'failed', updated_at = now()
+  FROM private.shorts_worker_leases AS l
+  WHERE l.job_id = j.job_id
+    AND l.workspace_id = j.workspace_id
+    AND j.stage IN ('drafting', 'rendering', 'quality_review')
+    AND l.lease_until <= now()
+    AND l.attempts >= p_max_attempts;
+
+  SELECT j.job_id, j.workspace_id, j.channel_id, j.topic, j.title, j.script,
+         c.display_name AS channel_name, c.persona,
+         COALESCE(l.attempts, 0) AS attempts
+  INTO v_job
+  FROM public.shorts_jobs AS j
+  JOIN public.shorts_channels AS c
+    ON c.workspace_id = j.workspace_id AND c.channel_id = j.channel_id
+  LEFT JOIN private.shorts_worker_leases AS l
+    ON l.workspace_id = j.workspace_id AND l.job_id = j.job_id
+  WHERE j.stage IN ('queued', 'drafting', 'rendering', 'quality_review')
+    AND j.approval_status = 'pending'
+    AND (l.lease_until IS NULL OR l.lease_until <= now())
+    AND COALESCE(l.attempts, 0) < p_max_attempts
+    AND NOT EXISTS (
+      SELECT 1
+      FROM public.workspaces AS w
+      JOIN private.account_deletion_tombstones AS t ON t.user_id = w.owner_id
+      WHERE w.workspace_id = j.workspace_id
+    )
+  ORDER BY j.created_at ASC
+  LIMIT 1
+  FOR UPDATE OF j SKIP LOCKED;
+
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
+  v_attempts := v_job.attempts + 1;
+  v_token := gen_random_uuid()::text;
+  INSERT INTO private.shorts_worker_leases (
+    job_id, workspace_id, worker_id, lease_token, lease_until, attempts, last_error, updated_at
+  )
+  VALUES (
+    v_job.job_id, v_job.workspace_id, p_worker_id, v_token,
+    now() + make_interval(secs => p_lease_seconds), v_attempts, NULL, now()
+  )
+  ON CONFLICT (job_id) DO UPDATE SET
+    worker_id = EXCLUDED.worker_id,
+    lease_token = EXCLUDED.lease_token,
+    lease_until = EXCLUDED.lease_until,
+    attempts = EXCLUDED.attempts,
+    last_error = NULL,
+    updated_at = now();
+
+  UPDATE public.shorts_jobs
+  SET stage = 'drafting', updated_at = now()
+  WHERE shorts_jobs.job_id = v_job.job_id
+    AND shorts_jobs.workspace_id = v_job.workspace_id;
+
+  RETURN QUERY SELECT v_job.job_id, v_job.workspace_id, v_job.channel_id,
+    v_job.topic, v_job.title, v_job.script, v_job.channel_name, v_job.persona,
+    v_attempts, v_token;
+END;
+$function$;
+
+
+CREATE OR REPLACE FUNCTION public.claim_next_approved_shorts_job(p_worker_id text,p_lease_seconds integer DEFAULT 600,p_max_attempts integer DEFAULT 2,p_daily_limit integer DEFAULT 3)
+RETURNS TABLE(job_id uuid,workspace_id text,channel_id uuid,connection_id uuid,provider_channel_id text,topic text,title text,script text,output_storage_key text,attempts integer,lease_token text,provider_video_id text)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $function$
+DECLARE v_job record; v_attempts integer; v_token text;
+BEGIN
+ IF COALESCE(auth.jwt()->>'role','') <> 'service_role' THEN RAISE EXCEPTION 'service_role required' USING ERRCODE='42501'; END IF;
+ IF p_worker_id IS NULL OR length(p_worker_id) NOT BETWEEN 1 AND 80 OR p_lease_seconds NOT BETWEEN 60 AND 1800 OR p_max_attempts NOT BETWEEN 1 AND 3 OR p_daily_limit NOT BETWEEN 1 AND 3 THEN
+  RAISE EXCEPTION 'Upload worker lease request is invalid' USING ERRCODE='22023';
+ END IF;
+ UPDATE public.shorts_jobs AS j SET stage='failed',updated_at=now()
+ FROM private.shorts_upload_leases AS l
+ WHERE l.job_id=j.job_id AND l.workspace_id=j.workspace_id AND j.stage='uploading' AND l.lease_until<=now() AND l.attempts>=p_max_attempts;
+ IF (SELECT count(*) FROM public.shorts_jobs WHERE stage='published'
+  AND uploaded_at >= (date_trunc('day',now() AT TIME ZONE 'America/Los_Angeles') AT TIME ZONE 'America/Los_Angeles')) >= p_daily_limit THEN RETURN; END IF;
+ SELECT j.job_id,j.workspace_id,j.channel_id,c.connection_id,c.provider_channel_id,j.topic,j.title,j.script,j.output_storage_key,
+  COALESCE(l.attempts,0) AS attempts,l.provider_video_id
+ INTO v_job
+ FROM public.shorts_jobs AS j
+ JOIN public.shorts_channels AS c ON c.workspace_id=j.workspace_id AND c.channel_id=j.channel_id
+ JOIN public.youtube_connections AS yc ON yc.workspace_id=c.workspace_id AND yc.connection_id=c.connection_id
+ LEFT JOIN private.shorts_upload_leases AS l ON l.workspace_id=j.workspace_id AND l.job_id=j.job_id
+ WHERE j.stage IN ('approved','uploading') AND j.approval_status='approved' AND j.privacy_status='private'
+  AND j.output_storage_key IS NOT NULL AND c.is_active=true AND c.connection_id IS NOT NULL AND yc.status='connected'
+  AND (l.lease_until IS NULL OR l.lease_until<=now()) AND COALESCE(l.attempts,0)<p_max_attempts
+  AND NOT EXISTS (
+   SELECT 1 FROM public.workspaces AS w
+   JOIN private.account_deletion_tombstones AS t ON t.user_id=w.owner_id
+   WHERE w.workspace_id=j.workspace_id
+  )
+ ORDER BY j.created_at ASC LIMIT 1 FOR UPDATE OF j SKIP LOCKED;
+ IF NOT FOUND THEN RETURN; END IF;
+ v_attempts:=v_job.attempts+1; v_token:=gen_random_uuid()::text;
+ INSERT INTO private.shorts_upload_leases(job_id,workspace_id,worker_id,lease_token,lease_until,attempts,provider_video_id,verified_channel_id,privacy_status,last_error,updated_at)
+ VALUES(v_job.job_id,v_job.workspace_id,p_worker_id,v_token,now()+make_interval(secs=>p_lease_seconds),v_attempts,v_job.provider_video_id,NULL,NULL,NULL,now())
+ ON CONFLICT ON CONSTRAINT shorts_upload_leases_pkey DO UPDATE SET worker_id=EXCLUDED.worker_id,lease_token=EXCLUDED.lease_token,
+ lease_until=EXCLUDED.lease_until,attempts=EXCLUDED.attempts,last_error=NULL,updated_at=now();
+ UPDATE public.shorts_jobs SET stage='uploading',updated_at=now()
+ WHERE shorts_jobs.job_id=v_job.job_id AND shorts_jobs.workspace_id=v_job.workspace_id;
+ RETURN QUERY SELECT v_job.job_id,v_job.workspace_id,v_job.channel_id,v_job.connection_id,v_job.provider_channel_id,v_job.topic,
+ v_job.title,v_job.script,v_job.output_storage_key,v_attempts,v_token,v_job.provider_video_id;
+END;
+$function$;
+
+
+
+
 CREATE TABLE IF NOT EXISTS private.account_deletion_requests (
   user_id uuid PRIMARY KEY,
   status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','retry','blocked','completed','failed')),
