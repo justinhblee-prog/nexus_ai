@@ -138,6 +138,29 @@ class SupabaseAdminClientTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             client.get_account_deletion_request("../../user")
 
+    def test_youtube_disconnect_checkpoint_is_validated_and_uses_service_rpcs(self):
+        http = Mock()
+        response = Mock(status_code=200)
+        response.json.return_value = [{"state": "revoked"}]
+        http.return_value = response
+        client = SupabaseAdminRestClient(ENV, http_request=http)
+        self.assertEqual(
+            client.get_youtube_disconnect_state("11111111-1111-4111-8111-111111111111"),
+            "revoked",
+        )
+        self.assertIn("/rpc/get_youtube_disconnect_state", http.call_args.args[1])
+        response.json.return_value = [{"state": "preserved"}]
+        self.assertEqual(
+            client.set_youtube_disconnect_state("11111111-1111-4111-8111-111111111111", "preserved"),
+            "preserved",
+        )
+        self.assertIn("/rpc/set_youtube_disconnect_state", http.call_args.args[1])
+        self.assertEqual(http.call_args.kwargs["json"]["p_state"], "preserved")
+        with self.assertRaises(ValueError):
+            client.get_youtube_disconnect_state("../../connection")
+        with self.assertRaises(ValueError):
+            client.set_youtube_disconnect_state("11111111-1111-4111-8111-111111111111", "unknown")
+
     def test_shared_google_grant_detection_spans_all_workspaces(self):
         http = Mock()
         response = Mock(status_code=200)
