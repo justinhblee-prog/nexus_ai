@@ -42,6 +42,7 @@ class NexusAnonPrivilegeHardeningMigrationTests(unittest.TestCase):
         admin_sql = (ROOT / "supabase" / "operations" / "nexus_admin_anon_acl_hardening.sql").read_text(encoding="utf-8").lower()
         self.assertIn("alter default privileges for role supabase_admin in schema public", admin_sql)
         self.assertIn("alter default privileges for role supabase_admin in schema public", admin_sql)
+        self.assertIn("revoke all on sequences from anon", admin_sql)
         self.assertIn("revoke all on table storage.objects from anon", admin_sql)
         self.assertIn("set role supabase_admin", admin_sql)
         self.assertIn("partially complete", admin_doc)
