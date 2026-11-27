@@ -1,7 +1,9 @@
-"""Server-only Supabase admin REST adapter for OAuth private RPCs.
+"""Server-only Supabase admin REST adapter for privileged Supabase operations.
 
-This module requires a legacy service_role JWT in server-side environment
-configuration. It must never be imported by browser code or return the key.
+Accepts the current opaque sb_secret_* key or a legacy service_role JWT.
+Opaque secret keys are sent only in the apikey header; legacy JWT keys are
+also sent as Authorization: Bearer for backward compatibility. Never expose
+either key to browser code or return it from this module.
 """
 from __future__ import annotations
 
@@ -66,21 +68,41 @@ def _is_service_role_jwt(value: str) -> bool:
         return False
 
 
+def _is_supabase_secret_key(value: str) -> bool:
+    # Supabase opaque secret keys are API keys, not JWTs. Never put them in
+    # Authorization: Bearer: the hosted gateway accepts them via apikey only.
+    return value.startswith("sb_secret_") and len(value) > len("sb_secret_")
+
+
+
+
 class SupabaseAdminRestClient:
     def __init__(self, env: Mapping[str, str] | None = None, http_request=None):
         values = os.environ if env is None else env
         self.base_url = values.get("NEXUS_SUPABASE_URL", "").strip().rstrip("/")
-        self.service_key = values.get("NEXUS_SUPABASE_SERVICE_ROLE_KEY", "").strip()
+        self.service_key = (
+            values.get("NEXUS_SUPABASE_SECRET_KEY", "").strip()
+            or values.get("NEXUS_SUPABASE_SERVICE_ROLE_KEY", "").strip()
+        )
+        self.uses_opaque_secret_key = _is_supabase_secret_key(self.service_key)
         if not self.base_url.startswith("https://") or not self.service_key:
             raise SupabaseAdminError("Server-side Supabase admin configuration is missing", 503)
-        if not _is_service_role_jwt(self.service_key):
-            raise SupabaseAdminError("NEXUS_SUPABASE_SERVICE_ROLE_KEY must be a service_role JWT", 503)
+        if not self.uses_opaque_secret_key and not _is_service_role_jwt(self.service_key):
+            raise SupabaseAdminError(
+                "NEXUS_SUPABASE_SECRET_KEY must be an sb_secret_* key or a legacy service_role JWT",
+                503,
+            )
         self.http_request = http_request or requests.request
+
+    def _authorization_header(self) -> dict[str, str]:
+        if self.uses_opaque_secret_key:
+            return {}
+        return {"Authorization": f"Bearer {self.service_key}"}
 
     def _call(self, method: str, path: str, params=None, payload=None, prefer=None):
         headers = {
             "apikey": self.service_key,
-            "Authorization": f"Bearer {self.service_key}",
+            **self._authorization_header(),
             "Accept": "application/json",
         }
         if payload is not None:
@@ -196,7 +218,7 @@ class SupabaseAdminRestClient:
         url_path = quote(storage_key, safe="/")
         headers = {
             "apikey": self.service_key,
-            "Authorization": f"Bearer {self.service_key}",
+            **self._authorization_header(),
         }
         try:
             response = self.http_request(
@@ -247,7 +269,7 @@ class SupabaseAdminRestClient:
         url_path = quote(storage_key, safe="/")
         headers = {
             "apikey": self.service_key,
-            "Authorization": f"Bearer {self.service_key}",
+            **self._authorization_header(),
             "Content-Type": content_type,
             "x-upsert": "true",
         }
@@ -292,7 +314,7 @@ class SupabaseAdminRestClient:
         path = quote(storage_key, safe="/")
         headers = {
             "apikey": self.service_key,
-            "Authorization": f"Bearer {self.service_key}",
+            **self._authorization_header(),
             "Content-Type": "application/json",
         }
         try:
@@ -322,7 +344,7 @@ class SupabaseAdminRestClient:
             raise ValueError("Storage key is invalid")
         headers = {
             "apikey": self.service_key,
-            "Authorization": f"Bearer {self.service_key}",
+            **self._authorization_header(),
             "Content-Type": "application/json",
         }
         try:
@@ -636,7 +658,7 @@ class SupabaseAdminRestClient:
             raise ValueError("Storage object path is invalid")
         headers = {
             "apikey": self.service_key,
-            "Authorization": f"Bearer {self.service_key}",
+            **self._authorization_header(),
             "Content-Type": "application/json",
         }
         try:
@@ -687,7 +709,7 @@ class SupabaseAdminRestClient:
                 f"{self.base_url}/auth/v1/admin/users/{quote(value, safe='')}",
                 headers={
                     "apikey": self.service_key,
-                    "Authorization": f"Bearer {self.service_key}",
+                    **self._authorization_header(),
                     "Accept": "application/json",
                 },
                 timeout=12,
