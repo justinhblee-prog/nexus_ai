@@ -1,7 +1,7 @@
 import os, time, sqlite3, threading, logging, hmac, hashlib, secrets, re
 from datetime import datetime, timezone, timedelta
 from uuid import UUID
-from fastapi import FastAPI, BackgroundTasks, HTTPException, Request
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
@@ -631,19 +631,33 @@ def hosted_workspace_channels(workspace_id: str, request: Request):
 
 
 @app.get("/api/hosted/workspaces/{workspace_id}/jobs")
-def hosted_workspace_jobs(workspace_id: str, request: Request):
+def hosted_workspace_jobs(
+    workspace_id: str,
+    request: Request,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
     _validate_workspace_id(workspace_id)
     client = _hosted_rest_client(request)
     try:
-        items = client.select("shorts_jobs", {
+        # Fetch one extra row to determine whether another page exists without
+        # requiring a separate count query or exposing rows outside this tenant.
+        rows = client.select("shorts_jobs", {
             "select": "job_id,channel_id,topic,title,script,stage,approval_status,privacy_status,output_storage_key,created_at,updated_at",
             "workspace_id": f"eq.{workspace_id}",
             "order": "created_at.desc",
-            "limit": "100",
+            "limit": str(limit + 1),
+            "offset": str(offset),
         }) or []
+        has_more = len(rows) > limit
+        items = rows[:limit]
         for item in items:
             item["has_preview"] = bool(item.pop("output_storage_key", None))
-        return {"items": items}
+        return {
+            "items": items,
+            "has_more": has_more,
+            "next_offset": offset + len(items) if has_more else None,
+        }
     except SupabaseRestError as exc:
         _hosted_rest_error(exc)
 
