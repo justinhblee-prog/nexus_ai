@@ -78,6 +78,64 @@ try {
   if (await page.locator("html").getAttribute("data-layout") !== "executive") {
     throw new Error("Mobile theme selection failed");
   }
+  // Exercise the authenticated local-runtime path with a deterministic API fixture.
+  const authPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  let expireNextOverview = false;
+  const apiCalls = [];
+  await authPage.route("**/api/**", async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    apiCalls.push(url.pathname);
+    if (url.pathname === "/api/session/status") {
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+        required: true, configured: true, authenticated: false
+      }) });
+    }
+    if (url.pathname === "/api/session/login") {
+      return route.fulfill({ status: 200, contentType: "application/json",
+        headers: { "set-cookie": "nexus_session=mock-session; Path=/; HttpOnly; SameSite=Strict" },
+        body: JSON.stringify({ ok: true }) });
+    }
+    if (url.pathname === "/api/overview" && expireNextOverview) {
+      return route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ detail: "session expired" }) });
+    }
+    if (url.pathname === "/api/overview") {
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+        channels: [], jobs: [], queue_pending: 0
+      }) });
+    }
+    if (url.pathname.startsWith("/api/radar/")) {
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+        items: [], scan: null, data_status: "not_scanned"
+      }) });
+    }
+    if (url.pathname === "/api/ops/metrics") {
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+        queue_by_status: {}, pipeline_by_stage: {}, sources: [], radar_scans: {}, events_last_24h: 0
+      }) });
+    }
+    if (url.pathname === "/api/events") {
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [] }) });
+    }
+    return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+  });
+  await authPage.goto("http://127.0.0.1:4173/", { waitUntil: "domcontentloaded" });
+  await authPage.waitForSelector("#nexus-login-overlay:not([hidden])");
+  await authPage.locator("#nexus-login-password").fill("local-test-password");
+  await authPage.locator("#nexus-login-submit").click();
+  await authPage.waitForFunction(() => document.getElementById("nexus-login-overlay").hidden);
+  await authPage.waitForResponse(response => response.url().includes("/api/overview") && response.ok());
+  const sessionCookies = await authPage.context().cookies("http://127.0.0.1:4173");
+  const sessionCookie = sessionCookies.find(cookie => cookie.name === "nexus_session");
+  if (!sessionCookie || !sessionCookie.httpOnly || sessionCookie.sameSite !== "Strict") {
+    throw new Error("Login did not retain a secure HttpOnly/SameSite session cookie");
+  }
+  expireNextOverview = true;
+  await authPage.evaluate(() => loadOverview().catch(() => null));
+  await authPage.waitForSelector("#nexus-login-overlay:not([hidden])");
+  if (!apiCalls.includes("/api/session/login")) throw new Error("Login endpoint was not called");
+  await authPage.close();
+
   if (pageErrors.length) throw new Error("Browser runtime errors: " + pageErrors.join(" | "));
   process.stdout.write(JSON.stringify({
     result: "passed",
@@ -87,6 +145,7 @@ try {
     appearanceIndependence: "passed",
     workspaceNavigation: "passed",
     mobileThemeSelection: "passed",
+    secureLoginAndSessionExpiry: "passed",
   }, null, 2));
 } finally {
   await browser.close();
