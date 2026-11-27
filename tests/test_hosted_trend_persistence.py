@@ -66,7 +66,7 @@ class SharedTrendPersistenceTests(unittest.TestCase):
                     successful_sources,failed_sources,source_summary_json)
                    VALUES (?,?,?,?,?,?,?,?)""",
                 ("daily", "partial", "2026-11-28T00:00:00", "2026-11-28T00:01:00",
-                 1, 1, 1, json.dumps({"Feed": {"status": "success"}})),
+                 1, 1, 1, json.dumps({"Feed": {"status": "success"}, "Broken Feed": {"status": "failed"}})),
             )
             conn.commit()
             conn.close()
