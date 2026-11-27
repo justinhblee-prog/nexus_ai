@@ -26,6 +26,7 @@ from script_templates import split_manual_script
 from review_workflow import claim_upload, upload_result_stage
 from supabase_rest import SupabaseRestClient, SupabaseRestError
 from supabase_admin import SupabaseAdminRestClient, SupabaseAdminError
+from hosted_trend_store import read_shared_trends
 from youtube_oauth import GoogleOAuthConfig, GoogleOAuthError, create_oauth_state, create_pkce_pair
 from token_vault import encrypt_refresh_token, decrypt_refresh_token, TokenVaultError
 
@@ -796,7 +797,7 @@ def hosted_workspace_overview(workspace_id: str, request: Request):
 
 @app.get("/api/hosted/workspaces/{workspace_id}/trends")
 def hosted_workspace_trends(workspace_id: str, request: Request):
-    """Read shared public trend signals; never import local channel or job data into a tenant."""
+    """Read shared public trend signals from Supabase after tenant membership verification."""
     _validate_workspace_id(workspace_id)
     client = _hosted_rest_client(request)
     try:
@@ -808,69 +809,9 @@ def hosted_workspace_trends(workspace_id: str, request: Request):
         }) or []
         if not memberships:
             raise HTTPException(status_code=404, detail="Workspace not found")
-        # The hosted API runs on a read-only serverless filesystem. Never call
-        # init_radar_db() here: it creates directories/tables and writes schema.
-        # Read a bundled snapshot only when it exists; otherwise return a valid
-        # empty state until the shared trend store is moved to a hosted data source.
-        radar_db_path = getattr(trend_radar, "DB_PATH", "data/studio_data.db")
-        if not os.path.isfile(radar_db_path):
-            return {
-                "items": [],
-                "scan": {
-                    "status": "not_scanned",
-                    "completed_at": None,
-                    "item_count": 0,
-                },
-                "scope": "shared_public_signals",
-                "available": False,
-            }
-        conn = sqlite3.connect(f"file:{radar_db_path}?mode=ro", uri=True)
-        conn.row_factory = sqlite3.Row
-        try:
-            rows = conn.execute(
-                """SELECT region, rank_no, topic, source_name, source_url,
-                          source_score, source_score_label, growth_pct, viral_score,
-                          ai_reason, created_at
-                   FROM trend_recommendations
-                   WHERE period_type='daily'
-                   ORDER BY rank_no ASC, viral_score DESC, created_at DESC
-                   LIMIT 30"""
-            ).fetchall()
-            items = []
-            seen = set()
-            for row in rows:
-                item = dict(row)
-                topic = str(item.get("topic") or "").strip()
-                if not topic or topic.casefold() in seen:
-                    continue
-                seen.add(topic.casefold())
-                source_url = str(item.get("source_url") or "")
-                item["source_url"] = source_url if source_url.startswith("https://") else None
-                items.append(item)
-            scan_row = conn.execute(
-                """SELECT status, completed_at, item_count
-                   FROM radar_scans
-                   WHERE period_type='daily'
-                   ORDER BY started_at DESC
-                   LIMIT 1"""
-            ).fetchone()
-            return {
-                "items": items,
-                "scan": {
-                    "status": scan_row["status"] if scan_row else "not_scanned",
-                    "completed_at": scan_row["completed_at"] if scan_row else None,
-                    "item_count": scan_row["item_count"] if scan_row else 0,
-                },
-                "scope": "shared_public_signals",
-                "available": True,
-            }
-        finally:
-            conn.close()
+        return read_shared_trends(client, limit=30)
     except SupabaseRestError as exc:
         _hosted_rest_error(exc)
-    except sqlite3.Error as exc:
-        logger.exception("Hosted trend radar read failed")
-        raise HTTPException(status_code=503, detail="Trend radar data is temporarily unavailable") from exc
 
 
 @app.post("/api/hosted/workspaces/{workspace_id}/jobs")
