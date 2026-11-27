@@ -139,6 +139,11 @@
           <div class="actions"><button class="secondary" type="button" id="refresh-trends">트렌드 새로고침</button></div>
           <div id="trend-items" class="connections" aria-live="polite"></div>
         </div>
+        <div class="workspace" id="saved-topic-queue" style="margin-top:16px">
+          <strong>내 제작 주제 큐</strong>
+          <p class="muted">로그인 사용자와 워크스페이스별로 이 브라우저에 저장됩니다. 서버·다른 기기와는 동기화되지 않습니다.</p>
+          <div id="saved-topic-items" class="connections" aria-live="polite"></div>
+        </div>
         <div class="workspace" style="margin-top:16px">
           <strong>Shorts 제작</strong>
           <label for="job-topic">영상 주제</label>
@@ -226,6 +231,7 @@
       authForms.classList.remove("hidden");
       document.getElementById("connections").replaceChildren();
       document.getElementById("jobs").replaceChildren();
+      document.getElementById("saved-topic-items").replaceChildren();
       document.getElementById("workspace-select").replaceChildren();
       document.getElementById("job-channel").replaceChildren();
     }
@@ -370,18 +376,107 @@
           }
           const useTopic = document.createElement("button");
           useTopic.type = "button";
-          useTopic.textContent = "주제 사용";
-          useTopic.addEventListener("click", () => {
-            document.getElementById("job-topic").value = item.topic;
-            document.getElementById("job-topic").focus();
-            showMessage("트렌드 주제를 제작 입력란에 넣었습니다. 채널을 확인한 뒤 제작을 요청하세요.", "success");
-          });
+          useTopic.textContent = "큐에 저장";
+          useTopic.addEventListener("click", () => saveTrendTopic(item));
           row.appendChild(useTopic);
           node.appendChild(row);
         }
       } catch (error) {
         status.textContent = error.message || "트렌드 정보를 불러오지 못했습니다.";
         node.textContent = "현재 트렌드 데이터를 불러올 수 없습니다.";
+      }
+    }
+
+    function savedTopicQueueKey() {
+      if (!currentUserId || !activeWorkspaceId) return null;
+      return "nexus-topic-queue:" + currentUserId + ":" + activeWorkspaceId;
+    }
+
+    function readSavedTopicQueue() {
+      const key = savedTopicQueueKey();
+      if (!key) return [];
+      try {
+        const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+        return Array.isArray(parsed) ? parsed.filter(item =>
+          item && typeof item.topic === "string" && item.topic.trim()
+        ).slice(0, 50) : [];
+      } catch (_) {
+        return [];
+      }
+    }
+
+    function writeSavedTopicQueue(items) {
+      const key = savedTopicQueueKey();
+      if (!key) return false;
+      try {
+        localStorage.setItem(key, JSON.stringify(items.slice(0, 50)));
+        return true;
+      } catch (_) {
+        showMessage("브라우저 저장 공간에 접근할 수 없어 주제를 저장하지 못했습니다.", "error");
+        return false;
+      }
+    }
+
+    function renderSavedTopicQueue() {
+      const node = document.getElementById("saved-topic-items");
+      if (!node) return;
+      node.replaceChildren();
+      const items = readSavedTopicQueue();
+      if (!items.length) {
+        node.textContent = "저장된 주제가 없습니다. 트렌드 레이더에서 주제를 큐에 추가하세요.";
+        return;
+      }
+      for (const item of items) {
+        const row = document.createElement("div");
+        row.className = "connection-row";
+        const detail = document.createElement("span");
+        detail.textContent = (item.region ? "[" + item.region + "] " : "") + item.topic;
+        row.appendChild(detail);
+        const use = document.createElement("button");
+        use.type = "button";
+        use.textContent = "제작 입력";
+        use.addEventListener("click", () => {
+          document.getElementById("job-topic").value = item.topic;
+          document.getElementById("job-topic").focus();
+          showMessage("저장한 주제를 제작 입력란에 넣었습니다. 채널을 확인한 뒤 제작을 요청하세요.", "success");
+        });
+        row.appendChild(use);
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "secondary";
+        remove.textContent = "삭제";
+        remove.addEventListener("click", () => {
+          const next = readSavedTopicQueue().filter(entry => entry.id !== item.id);
+          if (writeSavedTopicQueue(next)) renderSavedTopicQueue();
+        });
+        row.appendChild(remove);
+        node.appendChild(row);
+      }
+    }
+
+    function saveTrendTopic(item) {
+      const topic = String(item.topic || "").trim();
+      if (!topic || !savedTopicQueueKey()) return;
+      const items = readSavedTopicQueue();
+      const normalized = topic.replace(/\\s+/g, " ").toLocaleLowerCase();
+      if (items.some(entry => entry.topic.replace(/\\s+/g, " ").toLocaleLowerCase() === normalized)) {
+        showMessage("이미 제작 주제 큐에 저장된 주제입니다.", "info");
+        return;
+      }
+      if (items.length >= 50) {
+        showMessage("제작 주제 큐는 최대 50개까지 저장할 수 있습니다.", "error");
+        return;
+      }
+      items.unshift({
+        id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()),
+        topic,
+        region: String(item.region || ""),
+        source_name: String(item.source_name || ""),
+        saved_at: new Date().toISOString()
+      });
+      if (writeSavedTopicQueue(items)) {
+        renderSavedTopicQueue();
+        showMessage("주제를 내 제작 큐에 저장했습니다.", "success");
       }
     }
 
@@ -481,6 +576,7 @@
       await loadJobs();
       await loadWorkspaceMembers();
       await loadWorkspaceOverview();
+      renderSavedTopicQueue();
       await loadWorkspaceTrends();
     }
 
@@ -748,6 +844,12 @@
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || "Shorts 제작 요청에 실패했습니다.");
         topicNode.value = "";
+        const queue = readSavedTopicQueue();
+        const normalizedTopic = topic.replace(/\\s+/g, " ").toLocaleLowerCase();
+        const remainingQueue = queue.filter(item =>
+          item.topic.replace(/\\s+/g, " ").toLocaleLowerCase() !== normalizedTopic
+        );
+        if (remainingQueue.length !== queue.length && writeSavedTopicQueue(remainingQueue)) renderSavedTopicQueue();
         await loadJobs();
         await loadWorkspaceOverview();
         showMessage("Shorts 제작 요청을 등록했습니다. 렌더링이 끝나면 최종 승인할 수 있습니다.", "success");
