@@ -79,6 +79,9 @@ class SharedTrendPersistenceTests(unittest.TestCase):
             scan = admin.upsert_public_trend_scan.call_args.args[0]
             self.assertEqual(scan["status"], "partial")
             self.assertEqual(scan["source_summary"]["Feed"]["status"], "success")
+            admin.delete_stale_public_trend_signals.assert_called_once_with(
+                "daily", "Feed", "2026-11-28T00:00:00"
+            )
 
     def test_run_once_honors_configured_persistent_database_path(self):
         import os
