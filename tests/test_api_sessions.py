@@ -448,5 +448,26 @@ class SignedSessionTests(unittest.TestCase):
         thread.assert_not_called()
 
 
+    def test_hosted_job_preview_requires_rls_visible_job_and_returns_short_lived_signed_url(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type, \
+             patch.object(self.api, "SupabaseAdminRestClient") as admin_type:
+            client_type.return_value.select.return_value = [{
+                "job_id": "22222222-2222-4222-8222-222222222222",
+                "workspace_id": "wsp_11111111-1111-4111-8111-111111111111",
+                "output_storage_key": "wsp_11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/render.mp4",
+            }]
+            admin_type.return_value.create_signed_url.return_value = "https://storage.example.test/signed"
+            result = self.api.hosted_job_preview(
+                self.api.UUID("22222222-2222-4222-8222-222222222222"), request
+            )
+        self.assertEqual(result["signed_url"], "https://storage.example.test/signed")
+        self.assertEqual(result["expires_in"], 300)
+        admin_type.return_value.create_signed_url.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
