@@ -46,6 +46,8 @@ _ALLOWED_RPCS = {
     "update_account_deletion_request",
     "delete_account_deletion_private_user_rows",
     "count_account_deletion_private_user_rows",
+    "get_account_deletion_oauth_state",
+    "set_account_deletion_oauth_state",
 }
 
 
