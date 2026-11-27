@@ -214,3 +214,12 @@
 - Regression coverage verifies the failed scan is published, the other period still runs, and the failure is surfaced to the retry loop.
 - Exact application head `65679a02e62685383d6a8f3c1fc4ac4fdc99844a` passed GitHub Actions [run 46039354298](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46039354298): **339 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, and Playwright browser interaction smoke.
 - Worker remains disabled by default; no live Supabase schema/data write, migration, or worker activation was performed.
+
+
+### Shared trend source freshness cleanup — 2026-11-28
+
+- After successful scans, the hosted collector now upserts the latest source rows and prunes older rows for that successful source only. Rows for sources that failed are retained, preserving last-known-good signals while the scan metadata reports the failure.
+- Cleanup is restricted to the same period and source name, uses the server-only admin client, and runs only after the fresh rows have been upserted. No new public client write permission or migration is required by this code change.
+- Added tests for the exact server-side DELETE filter and for retaining failed-source data.
+- Exact application head `ccf24ee4808de05c738993d7b2b151c8d0ae8039` passed GitHub Actions [run 46039623628](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46039623628): **340 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, and Playwright browser interaction smoke.
+- Shared trend tables are still absent from the live project; their documented migration must be generated and linted locally before an approved live migration. The hosted trend worker remains disabled.
