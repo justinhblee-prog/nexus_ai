@@ -147,7 +147,8 @@ class SignedSessionTests(unittest.TestCase):
                 "user_id": "11111111-1111-4111-8111-111111111111",
                 "email": "member@example.test",
                 "role": "authenticated",
-            }):
+            }), patch.object(self.api, "SupabaseRestClient") as rest_client:
+                rest_client.return_value.rpc.return_value = False
                 allowed = asyncio.run(self.api.enforce_local_origin_and_session(
                     self._request('/api/hosted/session', authorization='Bearer valid.jwt.token'),
                     next_response,
@@ -261,7 +262,8 @@ class SignedSessionTests(unittest.TestCase):
             with patch.object(self.api, "verify_access_token", return_value={
                 "user_id": "11111111-1111-4111-8111-111111111111",
                 "role": "authenticated",
-            }):
+            }), patch.object(self.api, "SupabaseRestClient") as rest_client:
+                rest_client.return_value.rpc.return_value = False
                 same_origin = asyncio.run(self.api.enforce_local_origin_and_session(
                     self._request(
                         "/api/hosted/workspaces", method="POST",
