@@ -312,51 +312,102 @@ def hosted_workspace_members(workspace_id: str, request: Request):
 
 @app.get("/api/hosted/account/deletion/preflight")
 def hosted_account_deletion_preflight(request: Request):
-    """Report ownership blockers without starting any destructive operation."""
+    """Report workspace and Storage blockers without starting destructive cleanup."""
     client = _hosted_rest_client(request)
     user_id = request.state.hosted_user["user_id"]
     try:
+        memberships = client.select("workspace_members", {
+            "select": "workspace_id,role",
+            "user_id": f"eq.{user_id}",
+            "order": "created_at.asc",
+        }) or []
+        member_workspace_ids = [row["workspace_id"] for row in memberships]
         owned = client.select("workspaces", {
-            "select": "workspace_id,workspace_name",
+            "select": "workspace_id,workspace_name,owner_id",
             "owner_id": f"eq.{user_id}",
             "order": "created_at.asc",
         }) or []
         blockers = []
         summaries = []
-        for workspace in owned:
+        shared_workspace_ids = set()
+        for membership in memberships:
+            wid = membership["workspace_id"]
+            workspace_rows = client.select("workspaces", {
+                "select": "workspace_id,workspace_name,owner_id",
+                "workspace_id": f"eq.{wid}",
+                "limit": "1",
+            }) or []
+            if not workspace_rows:
+                continue
+            workspace = workspace_rows[0]
             members = client.select("workspace_members", {
                 "select": "user_id,role",
-                "workspace_id": f"eq.{workspace['workspace_id']}",
+                "workspace_id": f"eq.{wid}",
             }) or []
             others = [member for member in members if member.get("user_id") != user_id]
-            admins = [member for member in others if member.get("role") == "admin"]
+            is_owner = workspace.get("owner_id") == user_id
+            if others:
+                shared_workspace_ids.add(wid)
             summary = {
-                "workspace_id": workspace["workspace_id"],
+                "workspace_id": wid,
                 "workspace_name": workspace.get("workspace_name") or "My Workspace",
                 "member_count": len(members),
-                "transfer_ready": bool(admins),
+                "role": membership.get("role"),
+                "owned_by_current_user": is_owner,
+                "transfer_ready": any(member.get("role") == "admin" for member in others),
             }
             summaries.append(summary)
-            if others and not admins:
-                blockers.append({
-                    "workspace_id": workspace["workspace_id"],
-                    "reason": "Promote another workspace member to admin before transferring ownership.",
-                })
-            elif others:
-                blockers.append({
-                    "workspace_id": workspace["workspace_id"],
-                    "reason": "Transfer workspace ownership to an existing admin before account deletion.",
-                })
+            if is_owner and others:
+                if not summary["transfer_ready"]:
+                    blockers.append({
+                        "workspace_id": wid,
+                        "reason": "Promote another workspace member to admin before transferring ownership.",
+                    })
+                else:
+                    blockers.append({
+                        "workspace_id": wid,
+                        "reason": "Transfer workspace ownership to an existing admin before account deletion.",
+                    })
+
+        admin = SupabaseAdminRestClient()
+        storage_objects = []
+        offset = 0
+        while True:
+            page = admin.list_account_deletion_storage_objects(user_id, limit=1000, offset=offset)
+            storage_objects.extend(page)
+            if len(page) < 1000:
+                break
+            offset += len(page)
+        bucket_counts = {}
+        shared_storage_count = 0
+        for obj in storage_objects:
+            bucket = obj.get("bucket_id") or "unknown"
+            bucket_counts[bucket] = bucket_counts.get(bucket, 0) + 1
+            workspace_prefix = (obj.get("name") or "").split("/", 1)[0]
+            if workspace_prefix in shared_workspace_ids:
+                shared_storage_count += 1
+        if shared_storage_count:
+            blockers.append({
+                "reason": "Some Storage objects owned by this account belong to shared workspaces. Re-upload or safely transfer those files before deleting the account.",
+                "storage_object_count": shared_storage_count,
+            })
         return {
-            "ownership_clear": not blockers,
-            "owned_workspaces": summaries,
+            "ownership_clear": not any(item.get("workspace_id") for item in blockers),
+            "workspaces": summaries,
+            "owned_workspaces": [item for item in summaries if item["owned_by_current_user"]],
+            "storage": {
+                "owned_object_count": len(storage_objects),
+                "objects_by_bucket": bucket_counts,
+                "shared_workspace_object_blockers": shared_storage_count,
+            },
             "blockers": blockers,
             "account_deletion_enabled": False,
-            "account_deletion_reason": "Full provider, Storage, worker, session, and Auth cleanup is not yet implemented.",
+            "account_deletion_reason": "The resumable cleanup workflow and final Auth deletion verification are not yet complete.",
         }
     except SupabaseRestError as exc:
         _hosted_rest_error(exc)
-
+    except SupabaseAdminError as exc:
+        raise HTTPException(status_code=503, detail="Account deletion preflight could not verify Storage ownership safely") from exc
 
 @app.get("/api/hosted/workspaces/{workspace_id}/channels")
 def hosted_workspace_channels(workspace_id: str, request: Request):
