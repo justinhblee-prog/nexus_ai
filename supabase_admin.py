@@ -427,6 +427,12 @@ class SupabaseAdminRestClient:
             ("characters", "owner_id"),
             ("generation_jobs", "owner_id"),
             ("character_bundle_imports", "user_id"),
+            ("youtube_connections", "connected_by"),
+            ("shorts_channels", "created_by"),
+            ("shorts_jobs", "created_by"),
+            ("shorts_jobs", "approved_by"),
+            ("shorts_assets", "created_by"),
+            ("shorts_job_events", "actor_id"),
         ):
             params = {owner_column: f"eq.{value}", **shared_filter}
             if table == "generation_jobs" and ids:
@@ -446,6 +452,12 @@ class SupabaseAdminRestClient:
             ("character_bundle_imports", "user_id"),
             ("gallery_images", "owner_id"),
             ("profiles", "id"),
+            ("youtube_connections", "connected_by"),
+            ("shorts_channels", "created_by"),
+            ("shorts_jobs", "created_by"),
+            ("shorts_jobs", "approved_by"),
+            ("shorts_assets", "created_by"),
+            ("shorts_job_events", "actor_id"),
         )
         counts = {}
         for table, column in checks:
