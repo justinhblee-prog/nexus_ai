@@ -133,6 +133,12 @@
           <div id="workspace-members-status" class="muted" role="status"></div>
         </div>
         <button class="primary" type="button" id="connect-youtube">YouTube 채널 연결</button>
+        <div class="workspace" id="trend-panel" style="margin-top:16px">
+          <strong>글로벌 트렌드 레이더</strong>
+          <p class="muted" id="trend-scan-status">공개 트렌드 소스를 확인하고 있습니다.</p>
+          <div class="actions"><button class="secondary" type="button" id="refresh-trends">트렌드 새로고침</button></div>
+          <div id="trend-items" class="connections" aria-live="polite"></div>
+        </div>
         <div class="workspace" style="margin-top:16px">
           <strong>Shorts 제작</strong>
           <label for="job-topic">영상 주제</label>
@@ -202,6 +208,7 @@
     document.getElementById("studio-accent").addEventListener("input", event => {
       applyStudioAppearance(document.getElementById("studio-layout").value, event.currentTarget.value);
     });
+    document.getElementById("refresh-trends").addEventListener("click", () => loadWorkspaceTrends());
     function setBusy(form, busy) {
       form.querySelectorAll("button").forEach(button => { button.disabled = busy; });
     }
@@ -324,6 +331,60 @@
       }
     }
 
+    async function loadWorkspaceTrends() {
+      const node = document.getElementById("trend-items");
+      const status = document.getElementById("trend-scan-status");
+      node.replaceChildren();
+      if (!activeWorkspaceId || !activeAccessToken) return;
+      try {
+        const response = await fetch(
+          "/api/hosted/workspaces/" + encodeURIComponent(activeWorkspaceId) + "/trends",
+          { headers: { Authorization: "Bearer " + activeAccessToken }, cache: "no-store" }
+        );
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "트렌드 정보를 불러오지 못했습니다.");
+        const scan = result.scan || {};
+        status.textContent = scan.status === "completed"
+          ? "최근 스캔 완료 · " + (scan.completed_at || "완료 시간 미상")
+          : scan.status === "not_scanned" ? "아직 트렌드 스캔 기록이 없습니다."
+          : "최근 스캔 상태 · " + (scan.status || "확인 중");
+        if (!(result.items || []).length) {
+          node.textContent = "표시할 트렌드가 없습니다. 레이더 스캔 데이터가 준비되면 여기에 표시됩니다.";
+          return;
+        }
+        for (const item of result.items) {
+          const row = document.createElement("div");
+          row.className = "connection-row";
+          const detail = document.createElement("span");
+          const region = item.region ? "[" + item.region + "] " : "";
+          detail.textContent = region + item.topic + " · " + (item.source_name || "공개 소스") +
+            (Number.isFinite(Number(item.viral_score)) ? " · 점수 " + item.viral_score : "");
+          row.appendChild(detail);
+          if (item.source_url) {
+            const source = document.createElement("a");
+            source.href = item.source_url;
+            source.target = "_blank";
+            source.rel = "noopener noreferrer";
+            source.textContent = "출처";
+            row.appendChild(source);
+          }
+          const useTopic = document.createElement("button");
+          useTopic.type = "button";
+          useTopic.textContent = "주제 사용";
+          useTopic.addEventListener("click", () => {
+            document.getElementById("job-topic").value = item.topic;
+            document.getElementById("job-topic").focus();
+            showMessage("트렌드 주제를 제작 입력란에 넣었습니다. 채널을 확인한 뒤 제작을 요청하세요.", "success");
+          });
+          row.appendChild(useTopic);
+          node.appendChild(row);
+        }
+      } catch (error) {
+        status.textContent = error.message || "트렌드 정보를 불러오지 못했습니다.";
+        node.textContent = "현재 트렌드 데이터를 불러올 수 없습니다.";
+      }
+    }
+
     async function loadWorkspaceOverview() {
       const ids = { channels: "metric-channels", jobs: "metric-jobs", review: "metric-review", published: "metric-published" };
       if (!activeWorkspaceId || !activeAccessToken) return;
@@ -420,6 +481,7 @@
       await loadJobs();
       await loadWorkspaceMembers();
       await loadWorkspaceOverview();
+      await loadWorkspaceTrends();
     }
 
     let currentUserId = "";
