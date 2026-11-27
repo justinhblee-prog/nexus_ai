@@ -31,6 +31,7 @@ class AccountDeletionSafetyMigrationTests(unittest.TestCase):
     def test_reviewer_fk_anonymization_does_not_weaken_authenticated_approval_guard(self):
         self.assertIn("create or replace function private.guard_shorts_job_approval()", self.sql)
         self.assertIn("(select auth.uid()) is null", self.sql)
+        self.assertIn("current_user in ('postgres', 'supabase_auth_admin', 'service_role')", self.sql)
         self.assertIn("old.approval_status = 'approved'", self.sql)
         self.assertIn("new.approval_status = 'approved'", self.sql)
         self.assertIn("old.approved_by is not null", self.sql)
