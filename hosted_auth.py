@@ -99,12 +99,61 @@ def verify_access_token(
             raise HostedAuthConfigurationError("Install the pinned PyJWT[crypto] dependency") from exc
 
     try:
+        header = jwt_module.get_unverified_header(token)
+    except Exception as exc:
+        raise HostedAuthError("Supabase access token header is invalid") from exc
+
+    if header.get("alg") == "HS256":
+        # Supabase's legacy symmetric JWT secret has no public JWKS key. Follow
+        # Supabase's documented verification path: ask Auth /user to validate
+        # the token with the browser-safe publishable key.
+        try:
+            unverified_claims = jwt_module.decode(
+                token,
+                options={
+                    "verify_signature": False,
+                    "verify_exp": False,
+                    "verify_aud": False,
+                    "verify_iss": False,
+                },
+            )
+            publishable_key = values.get("NEXUS_SUPABASE_PUBLISHABLE_KEY", "").strip()
+            if not publishable_key or _is_service_role_key(publishable_key):
+                raise HostedAuthConfigurationError("A safe Supabase publishable key is required for legacy token verification")
+            import requests
+            response = requests.get(
+                f"{url}/auth/v1/user",
+                headers={"apikey": publishable_key, "Authorization": f"Bearer {token}"},
+                timeout=5,
+            )
+            if response.status_code != 200:
+                raise HostedAuthError("Supabase Auth rejected the access token")
+            user = response.json()
+            user_id = str(uuid.UUID(str(user.get("id", ""))))
+            claim_user_id = str(uuid.UUID(str(unverified_claims.get("sub", ""))))
+            aud = unverified_claims.get("aud")
+            if (
+                user_id != claim_user_id
+                or unverified_claims.get("role") != "authenticated"
+                or unverified_claims.get("iss", "").rstrip("/") != issuer
+                or not (audience in aud if isinstance(aud, list) else aud == audience)
+            ):
+                raise HostedAuthError("Supabase access token claims do not match the verified user")
+            return {"user_id": user_id, "email": user.get("email"), "role": "authenticated"}
+        except HostedAuthError:
+            raise
+        except HostedAuthConfigurationError:
+            raise
+        except Exception as exc:
+            raise HostedAuthError("Legacy Supabase access token validation failed") from exc
+
+    try:
         client = jwks_client or jwt_module.PyJWKClient(jwks_url, cache_keys=True)
         signing_key = client.get_signing_key_from_jwt(token)
         claims = jwt_module.decode(
             token,
             signing_key.key,
-            algorithms=["ES256", "RS256", "EdDSA"],
+            algorithms=["ES256", "RS256"],
             audience=audience,
             issuer=issuer,
             leeway=30,
