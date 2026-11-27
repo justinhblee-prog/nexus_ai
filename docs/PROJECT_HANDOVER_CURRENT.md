@@ -124,6 +124,14 @@ docker compose stop
 7. 업로드 완료로 처리하려면 YouTube 응답에 영상 ID와 `privacyStatus=private`가 확인돼야 합니다. 업로드 응답이 모호하면 `업로드 상태 확인 필요`로 격리하고 중복 재시도를 차단합니다.
 8. Public 게시 및 공개 전환 자동화는 없습니다. 최종 사람 승인 없이 업로드하지 않습니다.
 
+## Queue worker concurrency
+
+- `NEXUS_QUEUE_WORKERS` controls parallel render consumers and is clamped to 1–4. The safe default is `1`; increase only after checking host CPU/RAM and render latency.
+- The legacy `topics.txt` bridge runs in one dedicated thread and is not duplicated across render workers.
+- Each render worker claims work through the SQLite lease/fencing-token transaction, so concurrent workers cannot own the same active queue item.
+- Compose passes `NEXUS_QUEUE_WORKERS` to the API process. Example local override: `NEXUS_QUEUE_WORKERS=2` in `.env`.
+- Parallel workers share the same local SQLite database and output directory. This does not imply multi-host or shared-network-filesystem support; keep the service single-container until that topology is separately validated.
+
 ## 7. 운영 데이터와 모니터링
 
 - `topic_queue`: pending/running/completed/failed 작업
