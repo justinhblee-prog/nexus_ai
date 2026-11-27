@@ -388,6 +388,44 @@ BEGIN
 END;
 $function$;
 
+
+CREATE OR REPLACE FUNCTION public.delete_account_deletion_private_user_rows(p_user_id uuid)
+RETURNS TABLE(idempotency_rows integer,oauth_state_rows integer)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
+AS $function$
+BEGIN
+  IF COALESCE((SELECT auth.jwt()->>'role'),'') <> 'service_role' THEN
+    RAISE EXCEPTION 'service_role required' USING ERRCODE='42501';
+  END IF;
+  IF p_user_id IS NULL THEN RAISE EXCEPTION 'User ID is required' USING ERRCODE='22023'; END IF;
+  DELETE FROM private.generation_idempotency WHERE owner_id=p_user_id;
+  GET DIAGNOSTICS idempotency_rows = ROW_COUNT;
+  DELETE FROM private.youtube_oauth_states WHERE user_id=p_user_id;
+  GET DIAGNOSTICS oauth_state_rows = ROW_COUNT;
+  RETURN NEXT;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.count_account_deletion_private_user_rows(p_user_id uuid)
+RETURNS TABLE(idempotency_rows bigint,oauth_state_rows bigint)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=''
+AS $function$
+BEGIN
+  IF COALESCE((SELECT auth.jwt()->>'role'),'') <> 'service_role' THEN
+    RAISE EXCEPTION 'service_role required' USING ERRCODE='42501';
+  END IF;
+  IF p_user_id IS NULL THEN RAISE EXCEPTION 'User ID is required' USING ERRCODE='22023'; END IF;
+  RETURN QUERY SELECT
+    (SELECT count(*) FROM private.generation_idempotency WHERE owner_id=p_user_id),
+    (SELECT count(*) FROM private.youtube_oauth_states WHERE user_id=p_user_id);
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.delete_account_deletion_private_user_rows(uuid) FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.count_account_deletion_private_user_rows(uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.delete_account_deletion_private_user_rows(uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.count_account_deletion_private_user_rows(uuid) TO service_role;
+
 REVOKE ALL ON FUNCTION public.enqueue_account_deletion(uuid,jsonb) FROM PUBLIC,anon,authenticated;
 REVOKE ALL ON FUNCTION public.claim_next_account_deletion_request(text,integer) FROM PUBLIC,anon,authenticated;
 REVOKE ALL ON FUNCTION public.update_account_deletion_request(uuid,text,text,text,text,integer) FROM PUBLIC,anon,authenticated;
