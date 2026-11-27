@@ -22,6 +22,12 @@ class NexusAnonPrivilegeHardeningMigrationTests(unittest.TestCase):
             "public.shorts_job_events",
             "public.shorts_analytics_snapshots",
             "public.shorts_assets",
+            "public.assets",
+            "public.character_assets",
+            "public.character_bundle_imports",
+            "public.characters",
+            "public.gallery_images",
+            "public.generation_jobs",
         ):
             self.assertIn(table, self.sql)
         self.assertIn("from anon", self.sql)
