@@ -54,6 +54,20 @@ class HostedSignupPageContractTests(unittest.TestCase):
         self.assertIn('await loadConnections()', self.html)
         self.assertIn('해당 워크스페이스의 채널과 작업만 표시됩니다.', self.html)
 
+    def test_signout_and_auth_expiry_clear_cached_tenant_credentials_and_data(self):
+        self.assertIn("function clearHostedSession()", self.html)
+        self.assertIn("activeAccessToken = null", self.html)
+        self.assertIn("activeWorkspaceId = null", self.html)
+        self.assertIn("activeWorkspaceRole = null", self.html)
+        self.assertIn('document.getElementById("connections").replaceChildren()', self.html)
+        self.assertIn('document.getElementById("jobs").replaceChildren()', self.html)
+        self.assertIn("if (!session) clearHostedSession()", self.html)
+
+    def test_workspace_switch_failure_restores_previous_selection(self):
+        self.assertIn("const previousWorkspaceId = activeWorkspaceId", self.html)
+        self.assertIn("select.value = activeWorkspaceId || \"\"", self.html)
+        self.assertIn("finally {\n        select.disabled = false;", self.html)
+
     def test_youtube_channel_connect_and_disconnect_controls_use_authenticated_api(self):
         self.assertIn('"/youtube/connections"', self.html)
         self.assertIn('"/youtube/connect"', self.html)
