@@ -70,8 +70,11 @@ class HostedAuthTokenTests(unittest.TestCase):
             "sub": "not-a-uuid", "role": "authenticated",
             "iss": "https://example-project.supabase.co/auth/v1",
         }
-        result, _ = self._verify(base)
-        self.assertEqual(result["user_id"], "not-a-uuid") if False else None
+        jwt_module = Mock()
+        jwt_module.PyJWKClient.return_value.get_signing_key_from_jwt.return_value.key = "verified-key"
+        jwt_module.decode.return_value = base
+        with self.assertRaises(HostedAuthError):
+            verify_access_token("token", ENV, jwt_module=jwt_module)
 
         claims = {**base, "sub": "11111111-1111-4111-8111-111111111111", "role": "anon"}
         jwt_module = Mock()
