@@ -4,7 +4,10 @@ on:
   pull_request:
     paths:
       - "supabase/migrations/**"
+      - "supabase/fixtures/**"
+      - "supabase/operations/**"
       - "docs/SHARED_PUBLIC_TREND_STORE_MIGRATION.md"
+      - "docs/SUPABASE_ADMIN_DEFAULT_PRIVILEGES.md"
       - ".github/workflows/supabase-local-migrations.yml"
   workflow_dispatch:
 
