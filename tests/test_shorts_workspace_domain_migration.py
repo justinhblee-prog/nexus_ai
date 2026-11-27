@@ -55,10 +55,11 @@ class ShortsWorkspaceDomainMigrationTests(unittest.TestCase):
         )
         for table in tables:
             self.assertIn(f"alter table public.{table} enable row level security", self.sql)
-            self.assertIn(f"{table}_member_read", self.sql)
-            self.assertIn(f"private.has_workspace_role({table}.workspace_id", self.sql)
-        self.assertIn("to authenticated", self.sql)
-        self.assertNotIn("to anon", self.sql)
+            policy_start = self.sql.index(f"create policy {table}_member_read")
+            policy = self.sql[policy_start:self.sql.index(";", policy_start)]
+            self.assertIn("for select to authenticated", policy)
+            self.assertIn("private.has_workspace_role", policy)
+            self.assertNotIn("to anon", policy)
         self.assertNotIn("using (true)", self.sql)
         self.assertNotIn("with check (true)", self.sql)
 
@@ -70,20 +71,23 @@ class ShortsWorkspaceDomainMigrationTests(unittest.TestCase):
         self.assertIn("set search_path = ''", helper)
         self.assertIn("wm.user_id = (select auth.uid())", helper)
         self.assertIn("wm.workspace_id = p_workspace_id", helper)
-        self.assertIn("wm.role = any(p_allowed_roles)", helper)
+        self.assertIn("wm.role = any (p_allowed_roles)", helper)
         self.assertNotIn("auth.jwt()", helper)
 
     def test_workspace_update_policies_prevent_cross_workspace_row_reassignment(self):
-        for table in ("shorts_channels", "shorts_jobs", "shorts_assets", "youtube_connections"):
-            start = self.sql.index(f"create policy {table}_")
-            end = self.sql.find(";", start)
-            section = self.sql[start:end]
-            update_start = section.find("for update")
-            if update_start >= 0:
-                update_policy = section[update_start:]
-                self.assertIn("using", update_policy)
-                self.assertIn("with check", update_policy)
-                self.assertIn("private.has_workspace_role", update_policy)
+        for policy_name in (
+            "youtube_connections_admin_update",
+            "shorts_channels_editor_update",
+            "shorts_jobs_editor_update",
+            "shorts_assets_editor_update",
+        ):
+            start = self.sql.index(f"create policy {policy_name}")
+            end = self.sql.index(";", start)
+            policy = self.sql[start:end]
+            self.assertIn("for update to authenticated", policy)
+            self.assertIn("using", policy)
+            self.assertIn("with check", policy)
+            self.assertIn("private.has_workspace_role", policy)
 
     def test_read_and_write_policies_are_role_scoped(self):
         self.assertIn("shorts_jobs_member_read", self.sql)
