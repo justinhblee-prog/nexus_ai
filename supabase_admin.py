@@ -39,6 +39,7 @@ _ALLOWED_RPCS = {
     "mark_account_deletion_tombstone",
     "enqueue_account_deletion",
     "claim_next_account_deletion_request",
+    "heartbeat_account_deletion_request",
     "mark_account_deletion_sessions_revoked",
     "update_account_deletion_request",
     "delete_account_deletion_private_user_rows",
@@ -480,6 +481,16 @@ class SupabaseAdminRestClient:
         value = self._account_user_id(user_id)
         return self.rpc("mark_account_deletion_sessions_revoked", {"p_user_id": value})
 
+    def heartbeat_account_deletion_request(self, user_id, worker_id, lease_seconds=180):
+        value = self._account_user_id(user_id)
+        if not isinstance(worker_id, str) or not 1 <= len(worker_id) <= 128:
+            raise ValueError("Account deletion worker ID is invalid")
+        return self.rpc("heartbeat_account_deletion_request", {
+            "p_user_id": value,
+            "p_worker_id": worker_id,
+            "p_lease_seconds": max(30, min(int(lease_seconds), 900)),
+        })
+
     def update_account_deletion_request(self, user_id, worker_id, status, phase, error_code=None, retry_seconds=60):
         value = str(user_id)
         if not re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", value):
@@ -555,7 +566,7 @@ class SupabaseAdminRestClient:
             )
         except requests.RequestException as exc:
             raise SupabaseAdminError("Supabase account media cleanup is temporarily unavailable") from exc
-        if response.status_code not in (200, 204):
+        if response.status_code not in (200, 204, 404):
             raise SupabaseAdminError("Supabase account media cleanup failed", response.status_code if 400 <= response.status_code < 500 else 502)
         return True
 
