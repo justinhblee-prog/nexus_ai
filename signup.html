@@ -458,8 +458,8 @@
       const topic = String(item.topic || "").trim();
       if (!topic || !savedTopicQueueKey()) return;
       const items = readSavedTopicQueue();
-      const normalized = topic.replace(/\\s+/g, " ").toLocaleLowerCase();
-      if (items.some(entry => entry.topic.replace(/\\s+/g, " ").toLocaleLowerCase() === normalized)) {
+      const normalized = topic.replace(/\s+/g, " ").toLocaleLowerCase();
+      if (items.some(entry => entry.topic.replace(/\s+/g, " ").toLocaleLowerCase() === normalized)) {
         showMessage("이미 제작 주제 큐에 저장된 주제입니다.", "info");
         return;
       }
@@ -845,9 +845,9 @@
         if (!response.ok) throw new Error(result.detail || "Shorts 제작 요청에 실패했습니다.");
         topicNode.value = "";
         const queue = readSavedTopicQueue();
-        const normalizedTopic = topic.replace(/\\s+/g, " ").toLocaleLowerCase();
+        const normalizedTopic = topic.replace(/\s+/g, " ").toLocaleLowerCase();
         const remainingQueue = queue.filter(item =>
-          item.topic.replace(/\\s+/g, " ").toLocaleLowerCase() !== normalizedTopic
+          item.topic.replace(/\s+/g, " ").toLocaleLowerCase() !== normalizedTopic
         );
         if (remainingQueue.length !== queue.length && writeSavedTopicQueue(remainingQueue)) renderSavedTopicQueue();
         await loadJobs();
