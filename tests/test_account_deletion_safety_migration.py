@@ -84,7 +84,8 @@ class AccountDeletionSafetyMigrationTests(unittest.TestCase):
         self.assertIn("alter table public.assets alter column owner_id drop not null", self.sql)
         self.assertIn("alter table public.characters alter column owner_id drop not null", self.sql)
         self.assertIn("alter table public.generation_jobs alter column owner_id drop not null", self.sql)
-        self.assertIn("alter table public.character_bundle_imports alter column user_id drop not null", self.sql)
+        self.assertNotIn("alter table public.character_bundle_imports alter column user_id drop not null", self.sql)
+        self.assertIn("character_bundle_imports.user_id is part of its composite primary key", self.sql)
 
     def test_reviewer_fk_anonymization_does_not_weaken_authenticated_approval_guard(self):
         self.assertIn("create or replace function private.guard_shorts_job_approval()", self.sql)
