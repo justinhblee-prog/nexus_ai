@@ -371,6 +371,11 @@ class SupabaseAdminRestClient:
             "select": "user_id,role", "workspace_id": f"eq.{ids[0]}", "order": "created_at.asc",
         }) or []
 
+    def delete_account_profile(self, user_id):
+        value = self._account_user_id(user_id)
+        self._call("DELETE", "profiles", params={"id": f"eq.{value}"}, prefer="return=minimal")
+        return True
+
     def delete_account_workspace(self, workspace_id):
         ids = self._account_workspace_ids([workspace_id])
         self._call("DELETE", "workspaces", params={"workspace_id": f"eq.{ids[0]}"}, prefer="return=minimal")
@@ -423,6 +428,9 @@ class SupabaseAdminRestClient:
             ("character_bundle_imports", "user_id"),
         ):
             params = {owner_column: f"eq.{value}", **shared_filter}
+            if table == "generation_jobs" and ids:
+                params.pop("workspace_id", None)
+                params["or"] = "(workspace_id.is.null,workspace_id.not.in.(" + ",".join(ids) + "))"
             self._call("PATCH", table, params=params, payload={owner_column: None}, prefer="return=minimal")
         return True
 
@@ -590,7 +598,7 @@ class SupabaseAdminRestClient:
             )
         except requests.RequestException as exc:
             raise SupabaseAdminError("Supabase Auth account deletion is temporarily unavailable") from exc
-        if response.status_code not in (200, 204):
+        if response.status_code not in (200, 204, 404):
             raise SupabaseAdminError("Supabase Auth account deletion failed", response.status_code if 400 <= response.status_code < 500 else 502)
         return True
 
