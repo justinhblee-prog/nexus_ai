@@ -254,8 +254,10 @@ class GoogleOAuthConfig:
             )
         except requests.RequestException as exc:
             raise GoogleOAuthError("Google token revocation service is temporarily unavailable") from exc
-        if response.status_code != 200:
+        if response.status_code not in (200, 400):
             raise GoogleOAuthError("Google did not confirm token revocation")
+        # Google returns 400 for an already-invalid or previously revoked token;
+        # treating that response as idempotent cleanup is safe.
 
 
 def create_pkce_pair():
