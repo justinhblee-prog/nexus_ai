@@ -361,7 +361,7 @@ BEGIN
     SELECT r.user_id FROM private.account_deletion_requests r
     WHERE r.sessions_revoked = true AND ((r.status IN ('pending','retry','blocked') AND r.next_attempt_at <= now())
        OR (r.status='running' AND r.lease_until < now()))
-    ORDER BY r.requested_at FOR UPDATE SKIP LOCKED LIMIT 1
+    ORDER BY r.requested_at LIMIT 1 FOR UPDATE SKIP LOCKED
   )
   UPDATE private.account_deletion_requests r
   SET status='running',phase=CASE WHEN r.status='running' THEN r.phase ELSE 'claimed' END,
