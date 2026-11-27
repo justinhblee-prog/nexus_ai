@@ -26,6 +26,9 @@ _ALLOWED_RPCS = {
     "upsert_youtube_oauth_credential",
     "get_youtube_oauth_credential",
     "delete_youtube_oauth_credential",
+    "claim_next_shorts_job",
+    "heartbeat_shorts_job",
+    "finish_shorts_job",
 }
 
 
@@ -126,6 +129,68 @@ class SupabaseAdminRestClient:
             "PATCH",
             "shorts_channels",
             params={"workspace_id": f"eq.{workspace_id}", "connection_id": f"eq.{connection_id}"},
+            payload=payload,
+            prefer="return=representation",
+        ) or []
+
+    def claim_next_shorts_job(self, worker_id, lease_seconds=600, max_attempts=3):
+        rows = self.rpc("claim_next_shorts_job", {
+            "p_worker_id": worker_id,
+            "p_lease_seconds": lease_seconds,
+            "p_max_attempts": max_attempts,
+        }) or []
+        return rows[0] if rows else None
+
+    def heartbeat_shorts_job(self, job_id, lease_token, lease_seconds=600):
+        return self.rpc("heartbeat_shorts_job", {
+            "p_job_id": job_id,
+            "p_lease_token": lease_token,
+            "p_lease_seconds": lease_seconds,
+        })
+
+    def finish_shorts_job(
+        self, job_id, lease_token, success, output_storage_key=None,
+        title=None, script=None, error=None, max_attempts=3,
+    ):
+        return self.rpc("finish_shorts_job", {
+            "p_job_id": job_id,
+            "p_lease_token": lease_token,
+            "p_success": success,
+            "p_output_storage_key": output_storage_key,
+            "p_title": title,
+            "p_script": script,
+            "p_error": error,
+            "p_max_attempts": max_attempts,
+        })
+
+    def upload_storage_object(self, storage_key, content, content_type="video/mp4"):
+        if not storage_key.startswith("wsp_") or ".." in storage_key or storage_key.startswith("/"):
+            raise ValueError("Storage key is invalid")
+        url_path = quote(storage_key, safe="/")
+        headers = {
+            "apikey": self.service_key,
+            "Authorization": f"Bearer {self.service_key}",
+            "Content-Type": content_type,
+            "x-upsert": "true",
+        }
+        try:
+            response = self.http_request(
+                "POST",
+                f"{self.base_url}/storage/v1/object/nexus-shorts/{url_path}",
+                data=content,
+                headers=headers,
+                timeout=60,
+            )
+        except requests.RequestException as exc:
+            raise SupabaseAdminError("Supabase media storage is temporarily unavailable") from exc
+        if response.status_code not in (200, 201):
+            raise SupabaseAdminError("Rendered media could not be stored", response.status_code if 400 <= response.status_code < 500 else 502)
+        return storage_key
+
+    def create_asset(self, payload):
+        return self._call(
+            "POST",
+            "shorts_assets",
             payload=payload,
             prefer="return=representation",
         ) or []
