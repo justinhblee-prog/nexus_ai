@@ -63,6 +63,9 @@ class HostedWorkspaceMetricsContractTests(unittest.TestCase):
         self.assertIn("현재 브라우저 임시 저장을 사용합니다.", html)
         self.assertIn("readSavedTopicQueue()", html)
         self.assertIn("savedTopicQueueMode = serverAvailable ? \"server\" : \"local\"", html)
+        self.assertIn("remainingLocalItems", html)
+        self.assertIn("migrationResponse.status !== 409", html)
+        self.assertIn("workspaceId !== activeWorkspaceId || token !== activeAccessToken", html)
 
     def test_topic_queue_schema_handoff_keeps_worker_and_account_boundaries(self):
         spec = (ROOT / "docs" / "TOPIC_QUEUE_SERVER_PERSISTENCE.md").read_text(encoding="utf-8")
