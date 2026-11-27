@@ -58,6 +58,7 @@ class AccountDeletionSafetyMigrationTests(unittest.TestCase):
         self.assertIn("create or replace function public.heartbeat_account_deletion_worker", self.sql)
         self.assertIn("create or replace function public.is_account_deletion_worker_online", self.sql)
         self.assertIn("interval '90 seconds'", self.sql)
+        self.assertIn("interval '1 day'", self.sql)
         self.assertIn("create table if not exists private.account_deletion_requests", self.sql)
         self.assertIn("sessions_revoked boolean not null default false", self.sql)
         self.assertIn("create or replace function public.enqueue_account_deletion", self.sql)
