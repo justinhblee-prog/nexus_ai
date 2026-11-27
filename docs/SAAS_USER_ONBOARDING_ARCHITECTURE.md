@@ -11,17 +11,20 @@ Target: `feat/nexus-user-onboarding-web-oauth-20261127`, based on the current fu
 - Added a private, non-exposed Auth trigger that creates a profile and a personal workspace when Supabase Auth inserts a new user.
 - Reuses the existing workspace-owner membership trigger to grant the new user the owner role.
 - Replaced recursive workspace-membership policy lookups with a private owner-check helper that binds authorization to `auth.uid()`.
-- Added server-side Supabase JWT verification using the project JWKS, issuer, audience, expiry, subject UUID, and authenticated-role checks.
+- Added server-side Supabase JWT verification using the project JWKS, issuer, audience, expiry, subject UUID, and authenticated-role checks; legacy HS256 tokens are verified by calling Supabase Auth's `/auth/v1/user` endpoint with the publishable key.
 - Added public auth configuration that exposes only the project URL and publishable key, explicitly rejecting service-role keys (including legacy JWT-form keys).
 - Added a hosted-auth safety gate: hosted mode blocks legacy single-operator SQLite API and media routes until tenant-scoped equivalents are implemented; only verified hosted-session and public auth-config routes remain available.
-- Added regression tests for token validation, service-role key rejection, and fail-closed route isolation.
+- Added a responsive `/signup` page with email registration, login, verification redirect, password recovery/update, session refresh, logout, and personal workspace display after backend identity verification.
+- Added a dashboard entry point to the account page.
+- Added regression tests for token validation, service-role key rejection, signup UI contract, and fail-closed route isolation.
 - No service-role key, Google client secret, or token is stored in browser-visible data.
 - No additional Supabase project, paid add-on, or paid resource is used.
 
 ## Remaining Phase A work
 
 - Configure Supabase Auth site URL and redirect allowlist for the actual hosted domain.
-- Implement the browser signup, email verification, login, logout, password reset, session refresh, and account deletion experience.
+- Configure the actual Supabase Auth Site URL and redirect allowlist for the hosted domain; verify signup/email confirmation/login/recovery against a real test mailbox.
+- Implement secure account deletion and credential revocation.
 - Add tenant-scoped application endpoints and bind every query/worker/media operation to the verified workspace membership.
 - Verify cross-user access denial with two isolated test identities in the same project.
 
