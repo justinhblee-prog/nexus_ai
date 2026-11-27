@@ -457,6 +457,25 @@ class SupabaseAdminRestClient:
             },
         ) or []
 
+    def has_active_connection_outside_workspaces(self, provider_account_id, workspace_ids):
+        """Check whether a provider grant is still used outside workspaces being deleted."""
+        ids = [str(value) for value in workspace_ids]
+        if len(ids) > 100 or any(not re.fullmatch(r"wsp_[0-9a-fA-F-]{36}", value) for value in ids):
+            raise ValueError("Workspace connection inventory request is invalid")
+        if not provider_account_id:
+            return False
+        params = {
+            "select": "connection_id",
+            "provider": "eq.youtube",
+            "provider_account_id": f"eq.{provider_account_id}",
+            "status": "eq.connected",
+            "limit": "1",
+        }
+        if ids:
+            params["workspace_id"] = "not.in.(" + ",".join(ids) + ")"
+        rows = self._call("GET", "youtube_connections", params=params) or []
+        return bool(rows)
+
     def has_other_active_connections(self, provider_account_id, connection_id):
         rows = self._call(
             "GET",
