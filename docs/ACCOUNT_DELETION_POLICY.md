@@ -10,7 +10,7 @@ The API accepts a deletion request only when:
 - The read-only preflight has no ownership, active-worker, shared-Storage, or unclassified-Storage blockers.
 - Both `NEXUS_ACCOUNT_DELETION_ENABLED` and `NEXUS_ACCOUNT_DELETION_WORKER_ENABLED` are explicitly enabled after the migration and deployment configuration are reviewed.
 
-The queue RPC atomically creates a non-FK tombstone and a durable request. The worker cannot claim a request until global refresh-session revocation has been confirmed and persisted. If session revocation fails, the user may retry the same request endpoint; the middleware permits only that exact POST path for an already-tombstoned account.
+The queue RPC atomically creates a non-FK tombstone and a durable request. The worker cannot claim a request until global refresh-session revocation has been confirmed and persisted. The render and private-upload claim RPCs also exclude jobs in workspaces still owned by a tombstoned account, closing the race between preflight and a new job lease. If session revocation fails, the user may retry the same request endpoint; the middleware permits only that exact POST path for an already-tombstoned account.
 
 ## Workspace rules
 
