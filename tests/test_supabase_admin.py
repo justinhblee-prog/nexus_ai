@@ -78,6 +78,39 @@ class SupabaseAdminClientTests(unittest.TestCase):
 
 
 
+    def test_account_deletion_queue_rpc_methods_validate_and_use_service_role(self):
+        http = Mock()
+        response = Mock(status_code=200)
+        response.json.return_value = [{"status": "pending", "phase": "queued", "attempt_count": 0}]
+        http.return_value = response
+        client = SupabaseAdminRestClient(ENV, http_request=http)
+        queued = client.enqueue_account_deletion(
+            "11111111-1111-4111-8111-111111111111",
+            {"preflight_clear": True, "workspaces": []},
+        )
+        self.assertEqual(queued["status"], "pending")
+        self.assertIn("/rpc/enqueue_account_deletion", http.call_args.args[1])
+        self.assertEqual(http.call_args.kwargs["json"]["p_preflight_snapshot"]["preflight_clear"], True)
+        response.json.return_value = [{
+            "user_id": "11111111-1111-4111-8111-111111111111",
+            "status": "running", "phase": "claimed", "attempt_count": 1,
+        }]
+        claimed = client.claim_next_account_deletion_request("worker-1")
+        self.assertEqual(claimed["phase"], "claimed")
+        self.assertIn("/rpc/claim_next_account_deletion_request", http.call_args.args[1])
+        response.json.return_value = True
+        self.assertTrue(client.update_account_deletion_request(
+            "11111111-1111-4111-8111-111111111111", "worker-1", "retry", "storage_cleanup",
+            "storage_unavailable", 120,
+        ))
+        self.assertIn("/rpc/update_account_deletion_request", http.call_args.args[1])
+        with self.assertRaises(ValueError):
+            client.enqueue_account_deletion("../../user", {})
+        with self.assertRaises(ValueError):
+            client.update_account_deletion_request(
+                "11111111-1111-4111-8111-111111111111", "worker-1", "done", "complete"
+            )
+
     def test_account_deletion_tombstone_uses_allowlisted_service_rpc(self):
         http = Mock()
         response = Mock(status_code=204)
