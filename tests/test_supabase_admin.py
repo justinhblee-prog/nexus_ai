@@ -190,6 +190,31 @@ class SupabaseAdminClientTests(unittest.TestCase):
         self.assertEqual(http.call_args.kwargs["json"]["p_limit"], 500)
         self.assertEqual(http.call_args.kwargs["json"]["p_workspace_ids"], ["wsp_11111111-1111-4111-8111-111111111111"])
 
+    def test_auth_and_storage_deletes_are_idempotent_on_not_found(self):
+        http = Mock()
+        http.return_value = Mock(status_code=404)
+        client = SupabaseAdminRestClient(ENV, http_request=http)
+        self.assertTrue(client.delete_auth_user("11111111-1111-4111-8111-111111111111"))
+        self.assertTrue(client.delete_storage_object_in_bucket(
+            "nexus-shorts",
+            "wsp_11111111-1111-4111-8111-111111111111/job/" + "a" * 32 + ".mp4",
+        ))
+
+    def test_shared_legacy_generation_job_authorship_includes_null_workspace_rows(self):
+        http = Mock()
+        http.return_value = Mock(status_code=204)
+        client = SupabaseAdminRestClient(ENV, http_request=http)
+        client.anonymize_account_authorship(
+            "11111111-1111-4111-8111-111111111111",
+            ["wsp_22222222-2222-4222-8222-222222222222"],
+        )
+        calls = [call for call in http.call_args_list if call.args[1].endswith("/generation_jobs")]
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(
+            calls[0].kwargs["params"]["or"],
+            "(workspace_id.is.null,workspace_id.not.in.(wsp_22222222-2222-4222-8222-222222222222))",
+        )
+
     def test_account_storage_delete_uses_storage_api_and_rejects_unsafe_paths(self):
         http = Mock()
         http.return_value = Mock(status_code=200)
