@@ -43,4 +43,4 @@ jobs:
             --volume "${{ github.workspace }}:/app" \
             --workdir /app \
             nexus-studio-ci \
-            python -m unittest discover -s tests -p "test_video_render_integration.py" -v
+            python -m unittest discover -s integration_tests -p "test_video_render_integration.py" -v
