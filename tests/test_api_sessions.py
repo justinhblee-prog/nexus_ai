@@ -574,6 +574,40 @@ class SignedSessionTests(unittest.TestCase):
         config.exchange_code.assert_not_called()
         admin_type.return_value.upsert_connection.assert_not_called()
 
+    def test_youtube_callback_rechecks_membership_after_google_exchange(self):
+        admin_state = {
+            "user_id": "11111111-1111-4111-8111-111111111111",
+            "workspace_id": "wsp_11111111-1111-4111-8111-111111111111",
+            "provider": "youtube",
+            "redirect_uri": "https://api.example.test/api/hosted/youtube/callback",
+            "return_uri": "https://app.example.test/signup",
+            "code_verifier": "pkce-verifier",
+        }
+        config = types.SimpleNamespace(
+            redirect_uri=admin_state["redirect_uri"],
+            app_url="https://app.example.test",
+            exchange_code=Mock(return_value={
+                "access_token": "temporary-access", "refresh_token": "refresh-secret",
+                "scope": "youtube.upload", "expires_in": 3600,
+            }),
+            fetch_account=Mock(return_value={"account_id": "google-account-123"}),
+            fetch_channels=Mock(return_value=[{"channel_id": "UC123", "title": "NEXUS"}]),
+        )
+        with patch.object(self.api, "SupabaseAdminRestClient") as admin_type, \\
+             patch.object(self.api.GoogleOAuthConfig, "from_env", return_value=config), \\
+             patch.object(self.api, "encrypt_refresh_token", return_value={"ciphertext_hex": "aabb", "key_version": "v1"}):
+            admin_type.return_value.consume_oauth_state.return_value = admin_state
+            admin_type.return_value.list_account_user_memberships.side_effect = [
+                [{"workspace_id": admin_state["workspace_id"], "role": "owner"}],
+                [{"workspace_id": admin_state["workspace_id"], "role": "editor"}],
+            ]
+            with self.assertRaises(self.api.HTTPException) as raised:
+                self.api.hosted_youtube_callback(code="google-code", state="raw-state")
+        self.assertEqual(raised.exception.status_code, 403)
+        config.exchange_code.assert_called_once()
+        admin_type.return_value.upsert_connection.assert_not_called()
+        admin_type.return_value.upsert_credential.assert_not_called()
+
     def test_youtube_callback_rejects_replayed_or_unknown_state(self):
         with patch.object(self.api, "SupabaseAdminRestClient") as admin_type:
             admin_type.return_value.consume_oauth_state.return_value = None
