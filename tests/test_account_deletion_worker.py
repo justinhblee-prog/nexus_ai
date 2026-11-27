@@ -1,4 +1,5 @@
 import unittest
+import hashlib
 from unittest.mock import patch
 from unittest.mock import Mock
 
@@ -103,6 +104,32 @@ class AccountDeletionWorkerTests(unittest.TestCase):
         decrypt = Mock(return_value="refresh-token")
         _cleanup_oauth(admin, [SOLE], oauth_config_factory=config_factory, decrypt_token=decrypt)
         oauth.revoke_refresh_token.assert_called_once_with("refresh-token")
+        self.assertEqual(admin.delete_credential.call_count, 2)
+
+    def test_oauth_revocation_state_makes_retry_skip_completed_provider_call(self):
+        admin = Mock()
+        admin.list_youtube_connections_for_workspaces.return_value = [{
+            "connection_id": "55555555-5555-4555-8555-555555555555",
+            "provider_account_id": "google-account",
+            "status": "connected",
+        }]
+        admin.get_account_deletion_oauth_state.side_effect = [None, "revoked"]
+        admin.get_credential.return_value = {
+            "encrypted_refresh_token_hex": "ciphertext",
+            "encryption_key_version": "v1",
+        }
+        oauth = Mock()
+        decrypt = Mock(return_value="refresh-token")
+        fingerprint = hashlib.sha256(b"google-account").hexdigest()
+
+        _cleanup_oauth(admin, USER, [SOLE], Mock(return_value=oauth), decrypt)
+        _cleanup_oauth(admin, USER, [SOLE], Mock(return_value=oauth), decrypt)
+
+        oauth.revoke_refresh_token.assert_called_once_with("refresh-token")
+        self.assertEqual(admin.set_account_deletion_oauth_state.call_args_list, [
+            unittest.mock.call(USER, fingerprint, "revocation_started"),
+            unittest.mock.call(USER, fingerprint, "revoked"),
+        ])
         self.assertEqual(admin.delete_credential.call_count, 2)
 
     def test_oauth_cleanup_tries_another_credential_when_one_ciphertext_is_invalid(self):
