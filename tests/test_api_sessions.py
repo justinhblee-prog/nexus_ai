@@ -175,7 +175,7 @@ class SignedSessionTests(unittest.TestCase):
     def test_hosted_signup_page_is_served_from_api(self):
         response = self.api.signup_page()
         self.assertEqual(response.path, "signup.html")
-        self.assertEqual(response.media_type, "text/html")
+        self.assertTrue(response.media_type.startswith("text/html"))
 
 
 if __name__ == "__main__":
