@@ -105,6 +105,11 @@ class SupabaseAdminClientTests(unittest.TestCase):
         ))
         self.assertIn("/rpc/update_account_deletion_request", http.call_args.args[1])
         response.json.return_value = True
+        response.json.return_value = True
+        self.assertTrue(client.heartbeat_account_deletion_worker("worker-1"))
+        self.assertIn("/rpc/heartbeat_account_deletion_worker", http.call_args.args[1])
+        self.assertTrue(client.is_account_deletion_worker_online())
+        self.assertIn("/rpc/is_account_deletion_worker_online", http.call_args.args[1])
         self.assertTrue(client.mark_account_deletion_sessions_revoked("11111111-1111-4111-8111-111111111111"))
         self.assertIn("/rpc/mark_account_deletion_sessions_revoked", http.call_args.args[1])
         self.assertTrue(client.heartbeat_account_deletion_request("11111111-1111-4111-8111-111111111111", "worker-1"))
