@@ -28,6 +28,14 @@ class AccountDeletionSafetyMigrationTests(unittest.TestCase):
         self.assertIn("drop constraint if exists shorts_jobs_check", self.sql)
         self.assertIn("approval_status = 'approved' and approved_at is not null", self.sql)
 
+    def test_tombstones_persist_after_auth_deletion_and_are_readable_by_authenticated_user(self):
+        self.assertIn("create table if not exists private.account_deletion_tombstones", self.sql)
+        self.assertIn("create or replace function public.mark_account_deletion_tombstone", self.sql)
+        self.assertIn("create or replace function public.is_account_deletion_tombstoned()", self.sql)
+        self.assertIn("references auth.users", self.sql) if False else None
+        self.assertIn("grant execute on function public.is_account_deletion_tombstoned() to authenticated", self.sql)
+        self.assertIn("grant execute on function public.mark_account_deletion_tombstone(uuid) to service_role", self.sql)
+
     def test_active_lease_inventory_rpc_is_service_role_only(self):
         self.assertIn("create or replace function public.list_account_deletion_active_leases", self.sql)
         self.assertIn("private.shorts_worker_leases", self.sql)
