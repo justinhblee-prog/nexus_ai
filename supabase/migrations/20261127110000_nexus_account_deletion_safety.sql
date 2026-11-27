@@ -81,7 +81,7 @@ BEGIN
     RAISE EXCEPTION 'Authentication required' USING ERRCODE = '42501';
   END IF;
   IF p_workspace_id IS NULL
-     OR p_workspace_id !~ '^wsp_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+     OR p_workspace_id !~ '^wsp_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
      OR p_new_owner_id IS NULL
      OR p_new_owner_id = (SELECT auth.uid()) THEN
     RAISE EXCEPTION 'Ownership transfer request is invalid' USING ERRCODE = '22023';
@@ -202,7 +202,7 @@ BEGIN
      OR p_workspace_ids IS NULL OR cardinality(p_workspace_ids) > 100
      OR EXISTS (
        SELECT 1 FROM unnest(p_workspace_ids) AS item(workspace_id)
-       WHERE item.workspace_id !~ '^wsp_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+       WHERE item.workspace_id !~ '^wsp_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
      ) THEN
     RAISE EXCEPTION 'Storage enumeration request is invalid' USING ERRCODE = '22023';
   END IF;
