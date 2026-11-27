@@ -647,7 +647,7 @@ def hosted_workspace_jobs(
         rows = client.select("shorts_jobs", {
             "select": "job_id,channel_id,topic,title,script,stage,approval_status,privacy_status,output_storage_key,created_at,updated_at",
             "workspace_id": f"eq.{workspace_id}",
-            "order": "created_at.desc",
+            "order": "created_at.desc,job_id.desc",
             "limit": str(limit + 1),
             "offset": str(offset),
         }) or []
