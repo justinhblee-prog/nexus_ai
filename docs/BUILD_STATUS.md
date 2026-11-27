@@ -8,10 +8,10 @@
 **IN PROGRESS · PR #11 Draft/Open · 운영 전환 차단**
 
 - 작업 브랜치: `feat/nexus-user-onboarding-web-oauth-20261127`
-- 현재 PR branch head: `7369889a95c3f695663d635da01cdc1a3cead7ac` (Topic Queue RLS viewer read/editor write 권한 수정 포함)
-- 마지막 성공 CI: run `46021232590`, head `1c06415b01e3fadcc52c6a9ee57e09ef636319dd`, 315 tests PASS. 중간 수정 커밋 `aa89daffe6745d09feaa6e31ff3eab2b7faf565b` CI는 정책 회귀 테스트 실패로 확인되어, 정책을 재수정한 현재 head의 새 검증은 아직 확인 전.
+- 현재 PR branch head: `c41694c5c47c02852a0fe19c847f75a010646e11` (CI 통과한 코드 커밋 `7369889a95c3f695663d635da01cdc1a3cead7ac` 뒤 문서 정합성 수정)
+- 코드 검증 CI: run `46022786431`, code head `7369889a95c3f695663d635da01cdc1a3cead7ac`, **315 tests PASS**, Playwright PASS. 이후 커밋은 문서만 변경.
 - Pull Request: [#11 — User onboarding and hosted OAuth](https://github.com/justinhblee-prog/nexus_ai/pull/11)
-- 마지막 성공 GitHub Actions: [run 46021232590](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46021232590) — exact head `1c06415b01e3fadcc52c6a9ee57e09ef636319dd`에서 **315 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, Playwright browser smoke 모두 통과. 이후 Topic Queue 권한 정책 변경은 현재 head에서 새 CI 통과를 확인해야 함.
+- 최신 코드 검증 GitHub Actions: [run 46022786431](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46022786431) — code head `7369889a95c3f695663d635da01cdc1a3cead7ac`에서 **315 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, Playwright browser smoke 모두 통과.
 - PR은 Draft/Open이며 merge하지 않음. main push, production deployment, public YouTube upload 금지.
 - Supabase 서비스 프로젝트 `ai_studio` (`lmdhgqfqvfyymfrovaty`)는 ACTIVE_HEALTHY, PostgreSQL 17.11, Seoul ap-northeast-2, Free plan.
 - 현재 운영 DB migration history는 총 14개(NEXUS foundation/auth/workspace/OAuth/render/upload 기반). 계정 삭제/권한 강화 후속 6개는 미적용.
@@ -56,7 +56,7 @@
 3. **Hosted trend persistence**: shared persistent trend snapshot/source 및 수집 파이프라인이 필요. 현재는 데이터가 없으면 unavailable로 표시.
 4. **Google OAuth**: Vercel Preview에 Google client ID/secret, redirect URI, app URL, encryption key 및 필요한 server-only key를 안전하게 등록하고 Google Console redirect URI를 일치시킨 뒤 실제 동의/refresh/revoke를 테스트해야 함.
 5. **Tenant E2E**: 실제 두 사용자 계정으로 같은 workspace 및 서로 다른 workspace의 read/write/delete 격리 검증이 필요. 현재 DB에는 테스트 계정이 없어 완료되지 않음.
-6. **Preview runtime**: Vercel 무료 배포 한도 해제 후 최신 branch head `3643e9c2...`의 Preview를 배포하고 signup/login/API/browser smoke를 수행해야 함. 기존 READY Preview는 최신 head 증거가 아님.
+6. **Preview runtime**: Vercel deployment `dpl_4peW8RQNxPiwbwVkPwbWSHbawyp6` is READY on commit `0dda21d...`; the current PR branch includes later migration/test/documentation commits. No production deployment was made. Once the required Preview server secrets and Web OAuth client are configured, run real signup/login/API/OAuth browser E2E against a current Preview. Runtime logs for the existing READY deployment returned no warning/error records in the inspected window.
 7. **Account deletion / workers / upload**: 실제 계정·Google 동의·migration·private Storage prerequisites 및 E2E 전까지 `NEXUS_ACCOUNT_DELETION_ENABLED`, `NEXUS_ACCOUNT_DELETION_WORKER_ENABLED`, `NEXUS_HOSTED_WORKER_ENABLED`, `NEXUS_HOSTED_UPLOAD_ENABLED`는 false 유지. YouTube 업로드는 명시적 승인 후 Private만 허용.
 
 ### 안전 경계
