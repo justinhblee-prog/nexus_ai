@@ -40,6 +40,12 @@ class ShortsWorkspaceDomainMigrationTests(unittest.TestCase):
         self.assertIn("array['owner','admin']", self.sql)
         self.assertIn("approval must be attributed to the authenticated reviewer", self.sql)
 
+    def test_client_grants_prevent_tenant_and_pipeline_control_field_reassignment(self):
+        self.assertIn("grant update (display_name, persona, is_active, updated_at)", self.sql)
+        self.assertIn("grant update (topic, title, script, updated_at, approval_status, approved_by, approved_at)", self.sql)
+        self.assertNotIn("grant update on public.shorts_jobs", self.sql)
+        self.assertNotIn("grant insert, update, delete on public.shorts_jobs", self.sql)
+
     def test_read_and_write_policies_are_role_scoped(self):
         self.assertIn("shorts_jobs_member_read", self.sql)
         self.assertIn("shorts_jobs_editor_insert", self.sql)
