@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
-import video_maker, yt_uploader, trend_radar
+import video_maker, yt_uploader, trend_radar, youtube_analytics
 from audit_log import safe_record_event as record_event, list_events, get_ops_metrics
 from video_qa import validate_video
 from script_templates import split_manual_script
@@ -830,10 +830,11 @@ def get_events(limit: int = 50, event_type: str | None = None):
     return {"items": list_events(limit=limit, event_type=event_type)}
 
 @app.get("/api/analytics/summary")
-def analytics_summary():
+def analytics_summary(refresh: bool = False):
     db = get_db()
     try:
         total_jobs = db.execute("SELECT COUNT(*) FROM pipeline_jobs").fetchone()[0]
+        channel_names = [row[0] for row in db.execute("SELECT name FROM channels ORDER BY name").fetchall()]
         by_stage = {
             row[0]: row[1] for row in db.execute(
                 "SELECT stage, COUNT(*) FROM pipeline_jobs GROUP BY stage"
@@ -860,6 +861,7 @@ def analytics_summary():
     daily_scan = trend_radar.get_scan_status("daily")
     weekly_scan = trend_radar.get_scan_status("weekly")
     source_health = trend_radar.get_source_health()
+    platform_metrics = youtube_analytics.get_platform_metrics(channel_names, force_refresh=refresh)
     return {
         "production": {"jobs_total": total_jobs, "by_stage": by_stage, "by_channel": by_channel},
         "publishing": publishing,
@@ -869,16 +871,7 @@ def analytics_summary():
             "source_health": source_health,
             "global_ranking_available": False,
         },
-        "platform_metrics": {
-            "status": "not_connected",
-            "subscribers": None,
-            "views": None,
-            "engagement_rate": None,
-            "revenue": None,
-            "source": None,
-            "updated_at": None,
-            "note": "YouTube read-only analytics credentials are not connected; platform performance is not estimated.",
-        },
+        "platform_metrics": platform_metrics,
     }
 
 
