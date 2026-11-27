@@ -1,10 +1,11 @@
-import os, time, sqlite3, threading, logging, hmac, hashlib, secrets
-from datetime import datetime
+import os, time, sqlite3, threading, logging, hmac, hashlib, secrets, re
+from datetime import datetime, timezone
+from uuid import UUID
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import video_maker, trend_radar, youtube_analytics, yt_uploader
 from audit_log import safe_record_event as record_event, list_events, get_ops_metrics
 from video_qa import validate_video
@@ -14,6 +15,7 @@ from hosted_auth import (
     HostedAuthConfigurationError, HostedAuthError, extract_bearer_token,
     is_hosted_auth_enabled, public_auth_config, verify_access_token,
 )
+from supabase_rest import SupabaseRestClient, SupabaseRestError
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("nexus.api")
@@ -81,10 +83,11 @@ async def enforce_local_origin_and_session(request, call_next):
     if is_hosted_auth_enabled():
         if path in {"/api/hosted/auth-config", "/api/session/status"} and request.method == "GET":
             return await call_next(request)
-        if path == "/api/hosted/session" and request.method == "GET":
+        if path.startswith("/api/hosted/"):
             try:
                 token = extract_bearer_token(request.headers.get("authorization"))
                 request.state.hosted_user = verify_access_token(token)
+                request.state.hosted_access_token = token
             except HostedAuthConfigurationError as exc:
                 return JSONResponse(status_code=503, content={"detail": str(exc)})
             except HostedAuthError:
@@ -129,6 +132,150 @@ def hosted_session(request: Request):
     if not user:
         raise HTTPException(status_code=401, detail="Valid Supabase bearer token required")
     return {"authenticated": True, "user": user}
+
+
+class HostedJobCreateReq(BaseModel):
+    channel_id: UUID
+    topic: str = Field(min_length=1, max_length=300)
+    title: str = Field(default="", max_length=200)
+    script: str = Field(default="", max_length=12000)
+
+    class Config:
+        extra = "forbid"
+
+
+def _hosted_rest_client(request: Request) -> SupabaseRestClient:
+    token = getattr(request.state, "hosted_access_token", None)
+    user = getattr(request.state, "hosted_user", None)
+    if not token or not user:
+        raise HTTPException(status_code=401, detail="Valid Supabase bearer token required")
+    try:
+        return SupabaseRestClient(token)
+    except HostedAuthConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+def _hosted_rest_error(exc: SupabaseRestError):
+    status = exc.status_code if 400 <= exc.status_code < 500 else 502
+    raise HTTPException(status_code=status, detail=exc.public_message) from exc
+
+
+def _validate_workspace_id(workspace_id: str):
+    if not re.fullmatch(r"wsp_[0-9a-fA-F-]{36}", workspace_id or ""):
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+
+@app.get("/api/hosted/workspaces")
+def hosted_workspaces(request: Request):
+    client = _hosted_rest_client(request)
+    try:
+        items = client.select("workspaces", {
+            "select": "workspace_id,workspace_name,owner_id,created_at",
+            "order": "created_at.asc",
+        })
+        return {"items": items or []}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+@app.get("/api/hosted/workspaces/{workspace_id}/channels")
+def hosted_workspace_channels(workspace_id: str, request: Request):
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    try:
+        items = client.select("shorts_channels", {
+            "select": "channel_id,platform,provider_channel_id,display_name,persona,is_active,created_at,updated_at",
+            "workspace_id": f"eq.{workspace_id}",
+            "order": "created_at.desc",
+        })
+        return {"items": items or []}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+@app.get("/api/hosted/workspaces/{workspace_id}/jobs")
+def hosted_workspace_jobs(workspace_id: str, request: Request):
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    try:
+        items = client.select("shorts_jobs", {
+            "select": "job_id,channel_id,topic,title,script,stage,approval_status,privacy_status,provider_video_id,created_at,updated_at",
+            "workspace_id": f"eq.{workspace_id}",
+            "order": "created_at.desc",
+            "limit": "100",
+        })
+        return {"items": items or []}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+@app.get("/api/hosted/workspaces/{workspace_id}/overview")
+def hosted_workspace_overview(workspace_id: str, request: Request):
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    try:
+        channels = client.select("shorts_channels", {
+            "select": "channel_id,is_active",
+            "workspace_id": f"eq.{workspace_id}",
+        }) or []
+        jobs = client.select("shorts_jobs", {
+            "select": "job_id,stage,approval_status",
+            "workspace_id": f"eq.{workspace_id}",
+            "limit": "1000",
+        }) or []
+        return {
+            "workspace_id": workspace_id,
+            "channel_count": len(channels),
+            "active_channel_count": sum(1 for channel in channels if channel.get("is_active")),
+            "job_count": len(jobs),
+            "queued_count": sum(1 for job in jobs if job.get("stage") == "queued"),
+            "review_pending_count": sum(1 for job in jobs if job.get("approval_status") == "pending"),
+            "published_count": sum(1 for job in jobs if job.get("stage") == "published"),
+        }
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+@app.post("/api/hosted/workspaces/{workspace_id}/jobs")
+def hosted_create_job(workspace_id: str, req: HostedJobCreateReq, request: Request):
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    user = request.state.hosted_user
+    payload = {
+        "workspace_id": workspace_id,
+        "channel_id": str(req.channel_id),
+        "created_by": user["user_id"],
+        "topic": req.topic.strip(),
+        "title": req.title.strip(),
+        "script": req.script.strip(),
+    }
+    if not payload["topic"]:
+        raise HTTPException(status_code=422, detail="Topic is required")
+    try:
+        rows = client.insert("shorts_jobs", payload) or []
+        if not rows:
+            raise HTTPException(status_code=403, detail="Workspace job creation was denied")
+        return {"job": rows[0]}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+@app.post("/api/hosted/jobs/{job_id}/approve")
+def hosted_approve_job(job_id: UUID, request: Request):
+    client = _hosted_rest_client(request)
+    user = request.state.hosted_user
+    payload = {
+        "approval_status": "approved",
+        "approved_by": user["user_id"],
+        "approved_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        rows = client.update("shorts_jobs", {"job_id": f"eq.{job_id}"}, payload) or []
+        if not rows:
+            raise HTTPException(status_code=404, detail="Job not found or approval was denied")
+        return {"job": rows[0]}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
 
 
 os.makedirs("export", exist_ok=True)
