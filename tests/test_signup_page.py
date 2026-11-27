@@ -26,6 +26,16 @@ class HostedSignupPageContractTests(unittest.TestCase):
         self.assertIn("/overview", self.html)
         self.assertIn('headers: { Authorization: "Bearer " + activeAccessToken }', self.html)
         self.assertIn("await loadWorkspaceOverview()", self.html)
+    def test_hosted_workspace_supports_four_layouts_and_custom_accent(self):
+        for layout in ("intelligence", "creator", "global", "operations"):
+            self.assertIn('value="' + layout + '"', self.html)
+        self.assertIn('id="studio-accent"', self.html)
+        self.assertIn("function applyStudioAppearance(layout, accent, persist = true)", self.html)
+        self.assertIn('localStorage.setItem("nexus-studio-layout"', self.html)
+        self.assertIn('localStorage.setItem("nexus-studio-accent"', self.html)
+        self.assertIn('document.body.dataset.authenticated = "true"', self.html)
+        self.assertIn(':root[data-layout="operations"]', self.html)
+
     def test_hosted_job_cards_show_pipeline_stages_and_inline_private_preview(self):
         self.assertIn('queued: "제작 대기"', self.html)
         self.assertIn('rendering: "영상 렌더링"', self.html)
