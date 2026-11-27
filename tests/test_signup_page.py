@@ -45,6 +45,19 @@ class HostedSignupPageContractTests(unittest.TestCase):
         self.assertIn('textContent = "주제 사용"', self.html)
         self.assertIn('await loadWorkspaceTrends()', self.html)
 
+    def test_saved_topic_queue_is_scoped_to_user_and_workspace_with_deduplication(self):
+        self.assertIn('id="saved-topic-queue"', self.html)
+        self.assertIn('function savedTopicQueueKey()', self.html)
+        self.assertIn('"nexus-topic-queue:" + currentUserId + ":" + activeWorkspaceId', self.html)
+        self.assertIn('function saveTrendTopic(item)', self.html)
+        self.assertIn('이미 제작 주제 큐에 저장된 주제입니다.', self.html)
+        self.assertIn('최대 50개까지 저장할 수 있습니다.', self.html)
+        self.assertIn('useTopic.textContent = "큐에 저장"', self.html)
+        self.assertIn('textContent = "제작 입력"', self.html)
+        self.assertIn('renderSavedTopicQueue()', self.html)
+        self.assertIn('const remainingQueue = queue.filter(item =>', self.html)
+        self.assertIn('서버·다른 기기와는 동기화되지 않습니다.', self.html)
+
     def test_hosted_job_cards_show_pipeline_stages_and_inline_private_preview(self):
         self.assertIn('queued: "제작 대기"', self.html)
         self.assertIn('rendering: "영상 렌더링"', self.html)
