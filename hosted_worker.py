@@ -181,7 +181,11 @@ def run_worker():
     if os.getenv("NEXUS_HOSTED_WORKER_ENABLED", "false").strip().lower() not in {"1", "true", "yes", "on"}:
         logger.info("Hosted Shorts worker is disabled; no jobs will be claimed.")
         return
-    admin = SupabaseAdminRestClient()
+    try:
+        admin = SupabaseAdminRestClient()
+    except SupabaseAdminError as exc:
+        logger.error("Hosted render worker configuration is invalid (%s)", type(exc).__name__)
+        return
     worker_id = os.getenv("NEXUS_HOSTED_WORKER_ID", "").strip() or f"{socket.gethostname()}-{os.getpid()}"
     try:
         poll_seconds = max(1, min(60, int(os.getenv("NEXUS_HOSTED_WORKER_POLL_SECONDS", "5"))))
