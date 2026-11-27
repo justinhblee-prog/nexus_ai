@@ -21,6 +21,9 @@ class SupabaseRestError(RuntimeError):
         self.public_message = message
 
 
+_ALLOWED_RPCS = {"transfer_workspace_ownership"}
+
+
 _ALLOWED_TABLES = {
     "workspaces",
     "workspace_members",
@@ -100,3 +103,43 @@ class SupabaseRestClient:
 
     def update(self, table: str, params: dict, payload: dict):
         return self._request("PATCH", table, params=params, payload=payload)
+
+
+    def rpc(self, name: str, payload: dict):
+        if name not in _ALLOWED_RPCS:
+            raise ValueError("Unsupported Supabase RPC")
+        url = f"{self.base_url}/rest/v1/rpc/{quote(name, safe='')}"
+        headers = {
+            "apikey": self.publishable_key,
+            "Authorization": f"Bearer {self.access_token}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        try:
+            response = self.http_request(
+                "POST",
+                url,
+                json=payload,
+                headers=headers,
+                timeout=8,
+            )
+        except requests.RequestException as exc:
+            raise SupabaseRestError(502, "Supabase data service is temporarily unavailable") from exc
+        if response.status_code == 204:
+            return None
+        if not 200 <= response.status_code < 300:
+            if response.status_code in (401, 403):
+                message = "Workspace access denied by Supabase RLS"
+            elif response.status_code == 404:
+                message = "Requested workspace operation was not found"
+            elif response.status_code == 409:
+                message = "Workspace operation conflicts with current membership"
+            elif 400 <= response.status_code < 500:
+                message = "Supabase rejected the workspace operation"
+            else:
+                message = "Supabase data service is temporarily unavailable"
+            raise SupabaseRestError(response.status_code, message)
+        try:
+            return response.json()
+        except ValueError:
+            return None
