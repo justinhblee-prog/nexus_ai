@@ -599,7 +599,9 @@ class SupabaseAdminRestClient:
             )
         except requests.RequestException as exc:
             raise SupabaseAdminError("Supabase session revocation is temporarily unavailable") from exc
-        if response.status_code not in (200, 204):
+        # Supabase documents 401/403/404 as successful global sign-out outcomes
+        # when the submitted session has already been revoked or no longer exists.
+        if response.status_code not in (200, 204, 401, 403, 404):
             raise SupabaseAdminError("Supabase sessions could not be revoked", response.status_code if 400 <= response.status_code < 500 else 502)
         return True
 
