@@ -1,4 +1,5 @@
 import pathlib
+import re
 import unittest
 
 
@@ -30,7 +31,7 @@ class OAuthPrivateRpcMigrationTests(unittest.TestCase):
         self.assertIn("revoke all on function public.get_youtube_oauth_credential(uuid) from public, anon, authenticated", self.sql)
 
     def test_functions_have_fixed_search_path_and_validate_state_inputs(self):
-        self.assertEqual(self.sql.count("security definer"), 5)
+        self.assertEqual(len(re.findall(r"language plpgsql\\s+security definer", self.sql)), 5)
         self.assertEqual(self.sql.count("set search_path = ''"), 5)
         self.assertIn("p_state_hash !~ '^[0-9a-f]{64}$'", self.sql)
         self.assertIn("p_expires_at > now() + interval '10 minutes'", self.sql)
