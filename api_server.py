@@ -356,7 +356,8 @@ def hosted_youtube_callback(code: str | None = None, state: str | None = None, e
         refresh_token = token_data.get("refresh_token")
         if not refresh_token:
             return RedirectResponse(f"{expected_return_uri}?youtube=reauth_required", status_code=303)
-        channel = config.fetch_channel(token_data["access_token"])
+        account = config.fetch_account(token_data["access_token"])
+        channels = config.fetch_channels(token_data["access_token"])
         encrypted = encrypt_refresh_token(refresh_token)
         scopes = (token_data.get("scope") or "").split()
         expires_in = max(60, int(token_data.get("expires_in") or 3600))
@@ -364,8 +365,8 @@ def hosted_youtube_callback(code: str | None = None, state: str | None = None, e
         connections = admin.upsert_connection({
             "workspace_id": state_data["workspace_id"],
             "provider": "youtube",
-            "provider_account_id": channel["channel_id"],
-            "display_name": channel["title"],
+            "provider_account_id": account["account_id"],
+            "display_name": account.get("email") or account.get("name") or "Google account",
             "status": "connected",
             "scopes": scopes,
             "connected_by": state_data["user_id"],
@@ -379,6 +380,15 @@ def hosted_youtube_callback(code: str | None = None, state: str | None = None, e
                 connection_id, state_data["workspace_id"], encrypted["ciphertext_hex"],
                 encrypted["key_version"], scopes, token_expires_at,
             )
+            for channel in channels:
+                admin.upsert_channel({
+                    "workspace_id": state_data["workspace_id"],
+                    "connection_id": connection_id,
+                    "platform": "youtube",
+                    "provider_channel_id": channel["channel_id"],
+                    "display_name": channel["title"],
+                    "created_by": state_data["user_id"],
+                })
         except SupabaseAdminError:
             admin.update_connection(connection_id, state_data["workspace_id"], {
                 "status": "reauth_required",
@@ -432,6 +442,10 @@ def hosted_youtube_disconnect(workspace_id: str, connection_id: UUID, request: R
         })
         if not updated:
             raise SupabaseAdminError("YouTube connection could not be updated")
+        admin.update_channels(workspace_id, str(connection_id), {
+            "is_active": False,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
         admin.delete_credential(str(connection_id))
         return {"status": "disconnected", "connection_id": str(connection_id)}
     except SupabaseRestError as exc:
