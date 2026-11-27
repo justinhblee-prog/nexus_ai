@@ -10,6 +10,10 @@ from audit_log import safe_record_event as record_event, list_events, get_ops_me
 from video_qa import validate_video
 from script_templates import split_manual_script
 from review_workflow import claim_upload, upload_result_stage
+from hosted_auth import (
+    HostedAuthConfigurationError, HostedAuthError, extract_bearer_token,
+    is_hosted_auth_enabled, public_auth_config, verify_access_token,
+)
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("nexus.api")
@@ -74,7 +78,27 @@ async def enforce_local_origin_and_session(request, call_next):
     if request.method not in ("GET", "HEAD", "OPTIONS") and origin and origin not in LOCAL_UI_ORIGINS:
         return JSONResponse(status_code=403, content={"detail": "Cross-origin mutation rejected"})
     path = request.url.path
-    public_paths = {"/api/session/status", "/api/session/login", "/api/session/logout"}
+    if is_hosted_auth_enabled():
+        if path == "/api/hosted/auth-config" and request.method == "GET":
+            return await call_next(request)
+        if path == "/api/hosted/session" and request.method == "GET":
+            try:
+                token = extract_bearer_token(request.headers.get("authorization"))
+                request.state.hosted_user = verify_access_token(token)
+            except HostedAuthConfigurationError as exc:
+                return JSONResponse(status_code=503, content={"detail": str(exc)})
+            except HostedAuthError:
+                return JSONResponse(status_code=401, content={"detail": "Valid Supabase bearer token required"})
+            return await call_next(request)
+        if path.startswith("/api/") or path.startswith("/output/"):
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Hosted tenant-scoped API is not enabled for this route yet"},
+            )
+    public_paths = {
+        "/api/session/status", "/api/session/login", "/api/session/logout",
+        "/api/hosted/auth-config",
+    }
     protected = (path.startswith("/api/") and path not in public_paths) or path.startswith("/output/")
     if protected and auth_is_required():
         if not auth_is_configured():
@@ -82,6 +106,24 @@ async def enforce_local_origin_and_session(request, call_next):
         if not verify_session_cookie(request.cookies.get(SESSION_COOKIE_NAME)):
             return JSONResponse(status_code=401, content={"detail": "Authentication required"})
     return await call_next(request)
+
+@app.get("/api/hosted/auth-config")
+def hosted_auth_configuration():
+    """Expose only the Supabase URL and publishable key required by browser auth."""
+    try:
+        return public_auth_config()
+    except HostedAuthConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get("/api/hosted/session")
+def hosted_session(request: Request):
+    """Return the identity verified by the hosted-auth middleware."""
+    user = getattr(request.state, "hosted_user", None)
+    if not user:
+        raise HTTPException(status_code=401, detail="Valid Supabase bearer token required")
+    return {"authenticated": True, "user": user}
+
 
 os.makedirs("export", exist_ok=True)
 os.makedirs("output", exist_ok=True)
