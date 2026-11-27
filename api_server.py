@@ -373,7 +373,18 @@ def hosted_account_deletion_preflight(request: Request):
                         "reason": "Transfer workspace ownership to an existing admin before account deletion.",
                     })
 
+        deletion_workspace_ids = [
+            item["workspace_id"] for item in summaries
+            if item["owned_by_current_user"] and item["member_count"] <= 1
+        ]
         admin = SupabaseAdminRestClient()
+        active_leases = admin.list_account_deletion_active_leases(deletion_workspace_ids)
+        if active_leases:
+            blockers.append({
+                "reason": "Wait for active render or upload workers to finish before deleting a workspace.",
+                "active_lease_count": len(active_leases),
+                "latest_lease_expiry": max(item["lease_until"] for item in active_leases),
+            })
         storage_objects = []
         offset = 0
         while True:
@@ -401,6 +412,7 @@ def hosted_account_deletion_preflight(request: Request):
             "preflight_clear": not blockers,
             "workspaces": summaries,
             "owned_workspaces": [item for item in summaries if item["owned_by_current_user"]],
+            "active_worker_lease_count": len(active_leases),
             "storage": {
                 "owned_object_count": len(storage_objects),
                 "objects_by_bucket": bucket_counts,
