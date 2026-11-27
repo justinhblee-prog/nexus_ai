@@ -372,11 +372,12 @@ class SignedSessionTests(unittest.TestCase):
              patch.object(self.api, "decrypt_refresh_token", return_value="refresh-secret"):
             client_type.return_value.select.side_effect = [
                 [{"role": "owner"}],
-                [{"connection_id": "33333333-3333-4333-8333-333333333333", "status": "connected"}],
+                [{"connection_id": "33333333-3333-4333-8333-333333333333", "status": "connected", "provider_account_id": "google-account-123"}],
             ]
             admin_type.return_value.get_credential.return_value = {
                 "encrypted_refresh_token_hex": "aabb", "encryption_key_version": "v1"
             }
+            admin_type.return_value.has_other_active_connections.return_value = False
             admin_type.return_value.update_connection.return_value = [{"status": "disconnected"}]
             result = self.api.hosted_youtube_disconnect(
                 "wsp_11111111-1111-4111-8111-111111111111",
