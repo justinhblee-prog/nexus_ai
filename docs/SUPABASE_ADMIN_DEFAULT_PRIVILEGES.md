@@ -19,16 +19,11 @@ It intentionally does **not** claim to change defaults owned by `supabase_admin`
 
 ## Privileged follow-up SQL
 
-A database administrator connected as `supabase_admin` (or another role with the required authority) can run:
+The exact privileged SQL is maintained in `supabase/operations/nexus_admin_anon_acl_hardening.sql`. It:
+- removes future `anon` table and sequence defaults for `supabase_admin` in `public`;
+- revokes current `anon` table privileges from `storage.objects`.
 
-```sql
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public
-  REVOKE ALL ON TABLES FROM anon;
-
--- storage.objects is owned by supabase_storage_admin; postgres has grants
--- but is not a member of its owner role, so the regular migration cannot revoke.
-REVOKE ALL ON TABLE storage.objects FROM anon;
-```
+Execute that file only through a secure connection authenticated as `supabase_admin` or another superuser. Do not run it as the ordinary `postgres` migration role.
 
 Then verify the default ACLs:
 
@@ -47,11 +42,11 @@ LEFT JOIN pg_roles grantee ON grantee.oid = a.grantee
 WHERE n.nspname = 'public'
   AND owner.rolname = 'supabase_admin'
   AND grantee.rolname = 'anon'
-  AND d.defaclobjtype = 'r';
+  AND d.defaclobjtype IN ('r', 'S');
 ```
 
 Expected result after the privileged operation:
-- no rows for `supabase_admin` table defaults granted to `anon`;
+- no rows for `supabase_admin` table or sequence defaults granted to `anon`;
 - `has_table_privilege('anon', 'storage.objects', 'SELECT')` returns false.
 
 ## Operational boundary
