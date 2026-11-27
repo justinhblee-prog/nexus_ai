@@ -34,6 +34,17 @@ class SignedSessionTests(unittest.TestCase):
         cls.env_patch.stop()
         sys.modules.pop("api_server", None)
 
+    def test_root_routes_hosted_mode_to_authenticated_workspace_studio(self):
+        with patch.dict(os.environ, {"NEXUS_HOSTED_AUTH_ENABLED": "true"}):
+            response = self.api.serve_home()
+        self.assertEqual(response.status_code, 307)
+        self.assertEqual(response.headers.get("location"), "/signup")
+
+    def test_root_keeps_legacy_dashboard_in_local_mode(self):
+        with patch.dict(os.environ, {"NEXUS_HOSTED_AUTH_ENABLED": "false"}):
+            response = self.api.serve_home()
+        self.assertEqual(response.path, "index.html")
+
     def test_signed_cookie_round_trip_and_expiry(self):
         now = 1_800_000_000
         cookie = self.api.create_session_cookie(now=now)
