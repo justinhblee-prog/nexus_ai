@@ -10,7 +10,7 @@
 - 작업 브랜치: `feat/nexus-user-onboarding-web-oauth-20261127`
 - PR #11 현재 상태: Draft / Open / Unmerged. [PR #11](https://github.com/justinhblee-prog/nexus_ai/pull/11)
 - 최신 app-code GitHub Actions [run 46044856683](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46044856683) 성공: **343 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, Playwright browser interaction smoke.
-- 최신 Supabase local migration validation [run 46044856669](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46044856669) 성공: **17개 migration 전체 적용**, privileged ACL operation을 격리 local stack의 `supabase_admin` 역할로 실행/검증, `supabase db lint --fail-on error` 통과, `No schema errors found`.
+- 이전 local validation [run 46044856669](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46044856669)은 legacy fixture 기반 17개 migration을 통과함. 이후 live migration metadata에서 누락된 5개 원본 ACS SQL을 read-only로 복원해 repository에 추가했으며, **22개 전체 migration의 fresh-stack replay 재검증을 진행 중**.
 - 기존 PR #1, #5, #6, #7, #8, #9, #10은 Draft/Open으로 보존. PR #5와 #7은 이후 통합 PR에서 기능이 이어진 과거 브랜치로 PR 대화에 상태를 기록함.
 - Supabase `ai_studio` (`lmdhgqfqvfyymfrovaty`)는 ACTIVE_HEALTHY, PostgreSQL 17.11, Seoul region, Free plan. Live migration history는 14개이며 아래 8개 후속 migration은 아직 적용하지 않음.
 - Live Supabase에는 Auth 사용자/workspace/Shorts tenant 데이터가 없고, `public.shorts_topic_queue`, `public.public_trend_signals`, `public.public_trend_scans` 테이블도 아직 없음. 합성 사용자/데이터는 생성하지 않음.
@@ -34,11 +34,11 @@
 
 ### Supabase local migration validation
 
-- `.github/workflows/supabase-local-migrations.yml`이 GitHub Actions의 격리된 Supabase stack에서 migration 전체를 재생하고 lint함.
-- 기존 저장소 migration은 첫 migration 이전에 만들어진 legacy `workspaces` 및 AI Creator Studio 테이블을 전제로 하며, 그 원본 baseline migration은 저장소에 없음. 이를 감추거나 기존 migration timestamp를 재작성하지 않음.
-- 대신 `supabase/fixtures/legacy_workspace_baseline.sql`을 **CI 전용 test fixture**로 적용한 뒤, CLI가 읽는 실제 migration 파일 17개를 `supabase migration up`으로 실행함. 이 fixture는 운영 migration이 아니며 live DB에 적용하지 않음.
-- 최신 local validation은 17개 migration을 모두 적용하고 `supabase db lint --fail-on error`에서 schema error 0건을 확인함.
-- 따라서 CI migration chain 검증은 통과했지만, repo의 역사적 baseline이 migration으로 관리되지 않는 구조적 문제는 남음. 새 환경의 표준 `supabase db reset` 재현성을 위해서는 별도 baseline 전략이 필요하며 기존 migration 이력 재작성 없이 설계해야 함.
+- Live `supabase_migrations.schema_migrations` read-only metadata contained five historical ACS migrations missing from the repository: `20261106082748`, `20261106082803`, `20261106082842`, `20261106082905`, and `20261106083604`.
+- Restored the exact original SQL statements stored in those live migration records as five version-matched files under `supabase/migrations/`. These are original historical migrations, not no-op placeholders or reconstructed guesses; no live migration history was modified.
+- The repository now contains 22 migration files: 5 historical ACS + 9 already-applied NEXUS foundation + 8 pending NEXUS follow-ups.
+- The local workflow starts an empty isolated Supabase stack and applies the actual 22-file repository migration chain directly. It no longer relies on a test-only legacy schema fixture.
+- The previous 17-file fixture-based run passed, but the new 22-file full-history replay and lint must pass before this migration-history reconciliation is considered verified.
 
 ### Vercel Preview 및 OAuth 설정
 
@@ -77,7 +77,7 @@
 4. **Tenant isolation E2E** — 실제 두 사용자 계정으로 같은 workspace/서로 다른 workspace의 read/write/delete 격리 검증 필요. 현재 live Auth user count 0.
 5. **Private upload E2E** — 실제 테스트 YouTube 채널 연결 후 명시적 Human approval를 거쳐 private upload 및 video ID/privacyStatus 확인 필요. 공개 게시/자동 공개 전환 금지.
 6. **Windows local runtime** — 사용자 Windows Docker/Streamlit/FFmpeg 실제 시작·재시작·render·backup/recovery 검증은 이 세션에서 사용자 PC에 직접 접근할 수 없어 미완료.
-7. **Baseline reproducibility** — CI fixture는 local replay를 검증하지만 표준 migration history에는 legacy pre-NEXUS baseline이 없음. 기존 migration timestamp/history를 재작성하지 않는 방식으로 신규 환경 bootstrap 전략 필요.
+7. **Migration history parity** — live에 이미 적용된 5개 ACS 원본 migration SQL을 repository에 복원함. 새 22-file fresh-stack replay/lint 결과 확인 중이며, 기존 live migration history는 수정하지 않음.
 8. **Hosted runtime E2E** — READY Preview와 static Playwright smoke는 확인했지만 실제 signup/login, Supabase API, tenant isolation, OAuth, worker, upload runtime E2E는 별도 검증 필요.
 
 ### 안전 경계 및 Git 정합성

@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - "supabase/migrations/**"
-      - "supabase/fixtures/**"
       - "supabase/operations/**"
       - "docs/SHARED_PUBLIC_TREND_STORE_MIGRATION.md"
       - "docs/SUPABASE_ADMIN_DEFAULT_PRIVILEGES.md"
@@ -35,27 +34,16 @@ jobs:
       - name: Initialize local Supabase config
         run: supabase init
 
-      - name: Hold migration files until the legacy baseline is installed
-        run: |
-          mv supabase/migrations supabase/migrations_pending
-          mkdir -p supabase/migrations
-
       - name: Start the isolated local Supabase stack
         run: supabase start --exclude studio,mailpit,logflare,realtime,edge-runtime,postgrest,vector,imgproxy
 
-      - name: Install the pre-NEXUS legacy schema fixture
+      - name: Install PostgreSQL client
         run: |
           sudo apt-get update
           sudo apt-get install --yes postgresql-client
-          PGPASSWORD=postgres psql \
-            --host 127.0.0.1 --port 54322 --username postgres --dbname postgres \
-            --set ON_ERROR_STOP=1 --file supabase/fixtures/legacy_workspace_baseline.sql
 
-      - name: Replay every migration against the legacy baseline
-        run: |
-          rmdir supabase/migrations
-          mv supabase/migrations_pending supabase/migrations
-          supabase migration up
+      - name: Replay all repository migrations from an empty local database
+        run: supabase migration up
 
       - name: Validate privileged admin ACL operation in the isolated database
         run: |
