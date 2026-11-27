@@ -43,10 +43,10 @@ class AccountDeletionSafetyMigrationTests(unittest.TestCase):
 
     def test_tombstoned_owner_workspaces_are_excluded_from_new_worker_claims(self):
         render_start = self.sql.index("create or replace function public.claim_next_shorts_job")
-        render_end = self.sql.index("create or replace function public.heartbeat_shorts_job", render_start)
+        render_end = self.sql.index("create or replace function public.claim_next_approved_shorts_job", render_start)
         render_claim = self.sql[render_start:render_end]
         upload_start = self.sql.index("create or replace function public.claim_next_approved_shorts_job")
-        upload_end = self.sql.index("create or replace function public.heartbeat_shorts_upload_job", upload_start)
+        upload_end = self.sql.index("create table if not exists private.account_deletion_requests", upload_start)
         upload_claim = self.sql[upload_start:upload_end]
         for claim in (render_claim, upload_claim):
             self.assertIn("not exists", claim)
