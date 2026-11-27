@@ -936,7 +936,7 @@ def set_radar_interval(minutes: int):
     if minutes < 1 or minutes > 1440:
         raise HTTPException(status_code=400, detail="minutes must be between 1 and 1440")
     RADAR_INTERVAL_SEC = minutes * 60
-    return {"ok": True, "msg": f"자동 수집 주기가 {minutes}분위로 변경되었습니다."}
+    return {"ok": True, "msg": f"자동 수집 주기가 {minutes}분으로 변경되었습니다."}
 
 @app.post("/api/create")
 def create_single(req: CreateReq):
