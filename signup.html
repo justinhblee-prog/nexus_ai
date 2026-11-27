@@ -83,6 +83,7 @@
     const authForms = document.getElementById("auth-forms");
     let supabase = null;
     let activeWorkspaceId = null;
+    let activeWorkspaceRole = null;
     let activeAccessToken = null;
 
     function showMessage(text, kind = "info") {
@@ -114,9 +115,15 @@
       if (!response.ok) throw new Error("YouTube 연결 정보를 불러오지 못했습니다.");
       const result = await response.json();
       const items = result.items || [];
+      const channelResponse = await fetch(
+        "/api/hosted/workspaces/" + encodeURIComponent(activeWorkspaceId) + "/channels",
+        { headers: { Authorization: "Bearer " + activeAccessToken } }
+      );
+      if (!channelResponse.ok) throw new Error("YouTube 채널 목록을 불러오지 못했습니다.");
+      const channelResult = await channelResponse.json();
+      const channels = channelResult.items || [];
       if (!items.length) {
-        node.textContent = "연결된 YouTube 채널이 없습니다.";
-        return;
+        node.textContent = "연결된 Google 계정이 없습니다.";
       }
       for (const item of items) {
         const row = document.createElement("div");
@@ -124,7 +131,8 @@
         const detail = document.createElement("span");
         detail.textContent = item.display_name + " · " + item.status;
         row.appendChild(detail);
-        if (item.status !== "disconnected") {
+        if (activeWorkspaceRole === "owner" || activeWorkspaceRole === "admin") {
+          if (item.status !== "disconnected") {
           const disconnect = document.createElement("button");
           disconnect.type = "button";
           disconnect.textContent = "연결 해제";
@@ -144,8 +152,17 @@
               disconnect.disabled = false;
             }
           });
-          row.appendChild(disconnect);
+            row.appendChild(disconnect);
+          }
         }
+        node.appendChild(row);
+      }
+      for (const channel of channels) {
+        const row = document.createElement("div");
+        row.className = "connection-row";
+        const detail = document.createElement("span");
+        detail.textContent = channel.display_name + " · " + (channel.is_active ? "활성" : "비활성");
+        row.appendChild(detail);
         node.appendChild(row);
       }
     }
@@ -176,6 +193,9 @@
       const workspaces = workspaceResult.items || [];
       activeAccessToken = session.access_token;
       activeWorkspaceId = workspaces[0]?.workspace_id || null;
+      activeWorkspaceRole = workspaces[0]?.member_role || null;
+      document.getElementById("connect-youtube").hidden =
+        !(activeWorkspaceRole === "owner" || activeWorkspaceRole === "admin");
       document.getElementById("session-email").textContent = user.email || "인증된 계정";
       const workspaceNode = document.getElementById("workspace");
       workspaceNode.textContent = workspaces.length
@@ -203,6 +223,10 @@
     document.getElementById("connect-youtube").addEventListener("click", async () => {
       if (!activeWorkspaceId || !activeAccessToken) {
         showMessage("먼저 로그인하고 개인 워크스페이스를 확인하세요.", "error");
+        return;
+      }
+      if (activeWorkspaceRole !== "owner" && activeWorkspaceRole !== "admin") {
+        showMessage("YouTube 계정 연결은 워크스페이스 소유자 또는 관리자만 할 수 있습니다.", "error");
         return;
       }
       const button = document.getElementById("connect-youtube");
