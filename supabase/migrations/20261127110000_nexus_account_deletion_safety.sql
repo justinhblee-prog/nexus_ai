@@ -330,7 +330,7 @@ ALTER TABLE private.account_deletion_requests ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE private.account_deletion_requests FROM PUBLIC, anon, authenticated;
 
 CREATE OR REPLACE FUNCTION public.enqueue_account_deletion(p_user_id uuid,p_preflight_snapshot jsonb)
-RETURNS TABLE(status text,phase text,attempt_count integer)
+RETURNS TABLE(status text,phase text,attempt_count integer,sessions_revoked boolean)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
 AS $function$
 BEGIN
@@ -343,7 +343,7 @@ BEGIN
   INSERT INTO private.account_deletion_tombstones(user_id) VALUES (p_user_id) ON CONFLICT (user_id) DO NOTHING;
   INSERT INTO private.account_deletion_requests(user_id,preflight_snapshot) VALUES (p_user_id,p_preflight_snapshot)
   ON CONFLICT (user_id) DO NOTHING;
-  RETURN QUERY SELECT r.status,r.phase,r.attempt_count FROM private.account_deletion_requests r WHERE r.user_id=p_user_id;
+  RETURN QUERY SELECT r.status,r.phase,r.attempt_count,r.sessions_revoked FROM private.account_deletion_requests r WHERE r.user_id=p_user_id;
 END;
 $function$;
 
