@@ -73,6 +73,26 @@ def extract_bearer_token(authorization: str | None) -> str:
     return token.strip()
 
 
+def _verified_amr_entries(value):
+    """Return only well-formed signed authentication-method timestamps."""
+    if not isinstance(value, list):
+        return []
+    entries = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        method = item.get("method")
+        timestamp = item.get("timestamp")
+        if (
+            isinstance(method, str)
+            and 1 <= len(method) <= 64
+            and isinstance(timestamp, (int, float))
+            and not isinstance(timestamp, bool)
+        ):
+            entries.append({"method": method, "timestamp": int(timestamp)})
+    return entries
+
+
 def verify_access_token(
     token: str,
     env: Mapping[str, str] | None = None,
@@ -140,9 +160,9 @@ def verify_access_token(
             ):
                 raise HostedAuthError("Supabase access token claims do not match the verified user")
             verified_user = {"user_id": user_id, "email": user.get("email"), "role": "authenticated"}
-            auth_time = unverified_claims.get("auth_time")
-            if isinstance(auth_time, (int, float)) and not isinstance(auth_time, bool):
-                verified_user["auth_time"] = int(auth_time)
+            amr = _verified_amr_entries(unverified_claims.get("amr"))
+            if amr:
+                verified_user["amr"] = amr
             return verified_user
         except HostedAuthError:
             raise
@@ -178,7 +198,7 @@ def verify_access_token(
     # Return only verified identity fields needed by application code. The
     # auth_time claim is used solely to enforce fresh reauthentication for deletion.
     verified_user = {"user_id": user_id, "email": claims.get("email"), "role": "authenticated"}
-    auth_time = claims.get("auth_time")
-    if isinstance(auth_time, (int, float)) and not isinstance(auth_time, bool):
-        verified_user["auth_time"] = int(auth_time)
+    amr = _verified_amr_entries(claims.get("amr"))
+    if amr:
+        verified_user["amr"] = amr
     return verified_user
