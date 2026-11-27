@@ -27,6 +27,8 @@ class GoogleOAuthTests(unittest.TestCase):
             GoogleOAuthConfig.from_env({**ENV, "NEXUS_HOSTED_APP_URL": "http://app.example.test"})
         with self.assertRaises(GoogleOAuthError):
             GoogleOAuthConfig.from_env({**ENV, "NEXUS_HOSTED_APP_URL": "https://app.example.test/path"})
+        with self.assertRaises(GoogleOAuthError):
+            GoogleOAuthConfig.from_env({**ENV, "NEXUS_GOOGLE_OAUTH_REDIRECT_URI": "https://attacker.example/callback"})
 
     def test_pkce_and_state_are_unpredictable_and_hashed(self):
         verifier, challenge = create_pkce_pair()
