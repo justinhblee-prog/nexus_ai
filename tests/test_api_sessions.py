@@ -324,12 +324,17 @@ class SignedSessionTests(unittest.TestCase):
         self.assertNotIn("stage", inserted)
         self.assertEqual(result["job"]["privacy_status"], "private")
 
-    def test_hosted_job_approval_is_attributed_to_verified_user(self):
+    def test_hosted_job_approval_is_attributed_to_verified_workspace_admin(self):
         request = types.SimpleNamespace(state=types.SimpleNamespace(
             hosted_user={"user_id": "11111111-1111-4111-8111-111111111111", "role": "authenticated"},
             hosted_access_token="verified.user.jwt",
         ))
+        workspace_id = "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
         with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.side_effect = [
+                [{"job_id": "job-1", "workspace_id": workspace_id, "stage": "review_pending", "approval_status": "pending"}],
+                [{"role": "admin"}],
+            ]
             client_type.return_value.update.return_value = [{"job_id": "job-1", "approval_status": "approved"}]
             result = self.api.hosted_approve_job(
                 self.api.UUID("22222222-2222-4222-8222-222222222222"), request
@@ -337,9 +342,55 @@ class SignedSessionTests(unittest.TestCase):
         params, payload = client_type.return_value.update.call_args.args[1:]
         self.assertEqual(client_type.call_args.args[0], "verified.user.jwt")
         self.assertEqual(params["job_id"], "eq.22222222-2222-4222-8222-222222222222")
+        self.assertEqual(params["stage"], "eq.review_pending")
+        self.assertEqual(params["approval_status"], "eq.pending")
         self.assertEqual(payload["approved_by"], "11111111-1111-4111-8111-111111111111")
         self.assertEqual(payload["approval_status"], "approved")
         self.assertEqual(result["job"]["approval_status"], "approved")
+
+    def test_hosted_job_approval_rejects_non_admin_and_non_review_jobs(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111", "role": "authenticated"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        workspace_id = "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        job_id = self.api.UUID("22222222-2222-4222-8222-222222222222")
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.side_effect = [
+                [{"job_id": "job-1", "workspace_id": workspace_id, "stage": "review_pending", "approval_status": "pending"}],
+                [{"role": "viewer"}],
+            ]
+            with self.assertRaises(self.api.HTTPException) as denied:
+                self.api.hosted_approve_job(job_id, request)
+            self.assertEqual(denied.exception.status_code, 403)
+            client_type.return_value.update.assert_not_called()
+
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.return_value = [
+                {"job_id": "job-1", "workspace_id": workspace_id, "stage": "queued", "approval_status": "pending"}
+            ]
+            with self.assertRaises(self.api.HTTPException) as wrong_stage:
+                self.api.hosted_approve_job(job_id, request)
+            self.assertEqual(wrong_stage.exception.status_code, 409)
+            self.assertEqual(client_type.return_value.select.call_count, 1)
+            client_type.return_value.update.assert_not_called()
+
+    def test_hosted_job_approval_rejects_state_race(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111", "role": "authenticated"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.side_effect = [
+                [{"job_id": "job-1", "workspace_id": "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "stage": "review_pending", "approval_status": "pending"}],
+                [{"role": "owner"}],
+            ]
+            client_type.return_value.update.return_value = []
+            with self.assertRaises(self.api.HTTPException) as raced:
+                self.api.hosted_approve_job(
+                    self.api.UUID("22222222-2222-4222-8222-222222222222"), request
+                )
+            self.assertEqual(raced.exception.status_code, 409)
 
     def test_hosted_workspace_ids_are_validated_before_data_access(self):
         request = types.SimpleNamespace(state=types.SimpleNamespace(
