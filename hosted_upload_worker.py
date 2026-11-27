@@ -12,7 +12,7 @@ import threading
 import time
 
 from supabase_admin import SupabaseAdminError, SupabaseAdminRestClient
-from token_vault import TokenVaultError, decrypt_refresh_token
+from token_vault import TokenVaultError, decrypt_refresh_token, validate_token_vault_config
 from youtube_oauth import GoogleOAuthConfig, GoogleOAuthError
 
 
@@ -132,7 +132,13 @@ def run_worker():
     if os.getenv("NEXUS_HOSTED_UPLOAD_ENABLED", "false").strip().lower() not in {"1", "true", "yes", "on"}:
         logger.info("Hosted YouTube upload worker is disabled; no uploads will be attempted.")
         return
-    admin = SupabaseAdminRestClient()
+    try:
+        admin = SupabaseAdminRestClient()
+        GoogleOAuthConfig.from_env()
+        validate_token_vault_config()
+    except (SupabaseAdminError, GoogleOAuthError, TokenVaultError) as exc:
+        logger.error("Hosted upload worker configuration is invalid (%s)", type(exc).__name__)
+        return
     worker_id = os.getenv("NEXUS_HOSTED_UPLOAD_WORKER_ID", "").strip() or f"{socket.gethostname()}-upload-{os.getpid()}"
     try:
         poll_seconds = max(5, min(120, int(os.getenv("NEXUS_HOSTED_UPLOAD_POLL_SECONDS", "15"))))
