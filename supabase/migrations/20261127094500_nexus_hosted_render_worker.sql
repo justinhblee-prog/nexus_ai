@@ -91,7 +91,7 @@ BEGIN
     v_job.job_id, v_job.workspace_id, p_worker_id, v_token,
     now() + make_interval(secs => p_lease_seconds), v_attempts, NULL, now()
   )
-  ON CONFLICT (job_id) DO UPDATE SET
+  ON CONFLICT ON CONSTRAINT shorts_worker_leases_pkey DO UPDATE SET
     worker_id = EXCLUDED.worker_id,
     lease_token = EXCLUDED.lease_token,
     lease_until = EXCLUDED.lease_until,
