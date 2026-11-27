@@ -104,6 +104,11 @@ class SupabaseAdminClientTests(unittest.TestCase):
             "storage_unavailable", 120,
         ))
         self.assertIn("/rpc/update_account_deletion_request", http.call_args.args[1])
+        response.json.return_value = True
+        self.assertTrue(client.mark_account_deletion_sessions_revoked("11111111-1111-4111-8111-111111111111"))
+        self.assertIn("/rpc/mark_account_deletion_sessions_revoked", http.call_args.args[1])
+        self.assertTrue(client.heartbeat_account_deletion_request("11111111-1111-4111-8111-111111111111", "worker-1"))
+        self.assertIn("/rpc/heartbeat_account_deletion_request", http.call_args.args[1])
         with self.assertRaises(ValueError):
             client.enqueue_account_deletion("../../user", {})
         with self.assertRaises(ValueError):
