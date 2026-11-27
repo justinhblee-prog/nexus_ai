@@ -79,7 +79,7 @@ async def enforce_local_origin_and_session(request, call_next):
         return JSONResponse(status_code=403, content={"detail": "Cross-origin mutation rejected"})
     path = request.url.path
     if is_hosted_auth_enabled():
-        if path == "/api/hosted/auth-config" and request.method == "GET":
+        if path in {"/api/hosted/auth-config", "/api/session/status"} and request.method == "GET":
             return await call_next(request)
         if path == "/api/hosted/session" and request.method == "GET":
             try:
