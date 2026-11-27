@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - "feat/backend-followup-orchestration"
+      - "integration/nexus-full-stack-20261127"
   push:
     branches:
       - "feat/nexus-workspace-ui-four-layouts"
