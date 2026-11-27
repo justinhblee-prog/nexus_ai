@@ -1006,9 +1006,12 @@ def hosted_approve_job(job_id: UUID, request: Request):
         _hosted_rest_error(exc)
 
 
-os.makedirs("export", exist_ok=True)
-os.makedirs("output", exist_ok=True)
-app.mount("/output", StaticFiles(directory="output"), name="output")
+# Local filesystem output is used only by the desktop/loopback studio.
+# Hosted Vercel requests use Supabase Storage and must not write to the read-only bundle.
+if not is_hosted_auth_enabled():
+    os.makedirs("export", exist_ok=True)
+    os.makedirs("output", exist_ok=True)
+    app.mount("/output", StaticFiles(directory="output"), name="output")
 
 RADAR_INTERVAL_SEC = 300
 AUTO_PRODUCE_ENABLED = True
@@ -1676,10 +1679,10 @@ def auto_radar_and_scheduler_loop():
 
 @app.on_event("startup")
 def startup_event():
-    init_app_db()
     if is_hosted_auth_enabled():
-        logger.warning("Hosted auth is enabled; legacy SQLite queue workers and local radar scheduler are disabled.")
+        logger.warning("Hosted auth is enabled; local SQLite initialization, queue workers, and radar scheduler are disabled.")
         return
+    init_app_db()
     radar_db = trend_radar.init_radar_db()
     radar_db.close()
     threading.Thread(
