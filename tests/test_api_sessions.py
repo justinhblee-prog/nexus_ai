@@ -747,5 +747,44 @@ class SignedSessionTests(unittest.TestCase):
 
 
 
+    def test_hosted_jobs_uses_workspace_scoped_lookahead_pagination(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        workspace_id = "wsp_11111111-1111-4111-8111-111111111111"
+        rows = [
+            {"job_id": "job-1", "output_storage_key": None},
+            {"job_id": "job-2", "output_storage_key": "private/job-2.mp4"},
+            {"job_id": "job-3", "output_storage_key": "private/job-3.mp4"},
+        ]
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.return_value = rows
+            result = self.api.hosted_workspace_jobs(workspace_id, request, limit=2, offset=4)
+        params = client_type.return_value.select.call_args.args[1]
+        self.assertEqual(params["workspace_id"], f"eq.{workspace_id}")
+        self.assertEqual(params["limit"], "3")
+        self.assertEqual(params["offset"], "4")
+        self.assertEqual([item["job_id"] for item in result["items"]], ["job-1", "job-2"])
+        self.assertFalse(result["items"][0]["has_preview"])
+        self.assertTrue(result["items"][1]["has_preview"])
+        self.assertTrue(result["has_more"])
+        self.assertEqual(result["next_offset"], 6)
+
+    def test_hosted_jobs_marks_last_page_without_next_offset(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.return_value = [{"job_id": "job-1", "output_storage_key": None}]
+            result = self.api.hosted_workspace_jobs(
+                "wsp_11111111-1111-4111-8111-111111111111", request, limit=50, offset=0
+            )
+        self.assertFalse(result["has_more"])
+        self.assertIsNone(result["next_offset"])
+
+
+
 if __name__ == "__main__":
     unittest.main()
