@@ -273,5 +273,119 @@ class SignedSessionTests(unittest.TestCase):
         self.assertEqual(foreign.status_code, 403)
 
 
+    def test_youtube_connect_requires_workspace_admin_and_stores_one_time_pkce_state(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        config = types.SimpleNamespace(
+            redirect_uri="https://api.example.test/api/hosted/youtube/callback",
+            app_url="https://app.example.test",
+            authorization_url=Mock(return_value="https://accounts.google.com/oauth"),
+        )
+        with patch.object(self.api, "SupabaseRestClient") as client_type, \
+             patch.object(self.api, "SupabaseAdminRestClient") as admin_type, \
+             patch.object(self.api.GoogleOAuthConfig, "from_env", return_value=config), \
+             patch.object(self.api, "create_oauth_state", return_value=("raw-state", "a" * 64)), \
+             patch.object(self.api, "create_pkce_pair", return_value=("verifier-value", "challenge-value")):
+            client_type.return_value.select.return_value = [{"role": "owner"}]
+            result = self.api.hosted_youtube_connect(
+                "wsp_11111111-1111-4111-8111-111111111111", request
+            )
+        self.assertEqual(result["authorization_url"], "https://accounts.google.com/oauth")
+        stored = admin_type.return_value.store_oauth_state.call_args.args
+        self.assertEqual(stored[0], "a" * 64)
+        self.assertEqual(stored[1], "11111111-1111-4111-8111-111111111111")
+        self.assertEqual(stored[2], "wsp_11111111-1111-4111-8111-111111111111")
+        self.assertEqual(stored[5], "verifier-value")
+
+    def test_youtube_connect_rejects_editor_role(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.return_value = [{"role": "editor"}]
+            with self.assertRaises(self.api.HTTPException) as raised:
+                self.api.hosted_youtube_connect(
+                    "wsp_11111111-1111-4111-8111-111111111111", request
+                )
+        self.assertEqual(raised.exception.status_code, 403)
+
+    def test_youtube_callback_consumes_state_and_encrypts_refresh_token(self):
+        admin_state = {
+            "user_id": "11111111-1111-4111-8111-111111111111",
+            "workspace_id": "wsp_11111111-1111-4111-8111-111111111111",
+            "provider": "youtube",
+            "redirect_uri": "https://api.example.test/api/hosted/youtube/callback",
+            "return_uri": "https://app.example.test/signup",
+            "code_verifier": "pkce-verifier",
+        }
+        config = types.SimpleNamespace(
+            redirect_uri=admin_state["redirect_uri"],
+            app_url="https://app.example.test",
+            exchange_code=Mock(return_value={
+                "access_token": "temporary-access",
+                "refresh_token": "refresh-secret",
+                "scope": "youtube.upload youtube.readonly",
+                "expires_in": 3600,
+            }),
+            fetch_channel=Mock(return_value={"channel_id": "UC123", "title": "NEXUS"}),
+        )
+        with patch.object(self.api, "SupabaseAdminRestClient") as admin_type, \
+             patch.object(self.api.GoogleOAuthConfig, "from_env", return_value=config), \
+             patch.object(self.api, "encrypt_refresh_token", return_value={"ciphertext_hex": "aabb", "key_version": "v1"}):
+            admin_type.return_value.consume_oauth_state.return_value = admin_state
+            admin_type.return_value.upsert_connection.return_value = [{"connection_id": "33333333-3333-4333-8333-333333333333"}]
+            response = self.api.hosted_youtube_callback(code="google-code", state="raw-state")
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("youtube=connected", response.headers["location"])
+        config.exchange_code.assert_called_once_with("google-code", "pkce-verifier")
+        admin_type.return_value.upsert_credential.assert_called_once()
+
+    def test_youtube_callback_rejects_replayed_or_unknown_state(self):
+        with patch.object(self.api, "SupabaseAdminRestClient") as admin_type:
+            admin_type.return_value.consume_oauth_state.return_value = None
+            with self.assertRaises(self.api.HTTPException) as raised:
+                self.api.hosted_youtube_callback(code="code", state="unknown")
+        self.assertEqual(raised.exception.status_code, 400)
+
+    def test_youtube_disconnect_revokes_provider_token_before_deleting_credential(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        config = types.SimpleNamespace(revoke_refresh_token=Mock())
+        with patch.object(self.api, "SupabaseRestClient") as client_type, \
+             patch.object(self.api, "SupabaseAdminRestClient") as admin_type, \
+             patch.object(self.api.GoogleOAuthConfig, "from_env", return_value=config), \
+             patch.object(self.api, "decrypt_refresh_token", return_value="refresh-secret"):
+            client_type.return_value.select.side_effect = [
+                [{"role": "owner"}],
+                [{"connection_id": "33333333-3333-4333-8333-333333333333", "status": "connected"}],
+            ]
+            admin_type.return_value.get_credential.return_value = {
+                "encrypted_refresh_token_hex": "aabb", "encryption_key_version": "v1"
+            }
+            admin_type.return_value.update_connection.return_value = [{"status": "disconnected"}]
+            result = self.api.hosted_youtube_disconnect(
+                "wsp_11111111-1111-4111-8111-111111111111",
+                self.api.UUID("33333333-3333-4333-8333-333333333333"),
+                request,
+            )
+        config.revoke_refresh_token.assert_called_once_with("refresh-secret")
+        admin_type.return_value.delete_credential.assert_called_once()
+        self.assertEqual(result["status"], "disconnected")
+
+    def test_youtube_callback_is_public_but_state_protected_in_hosted_mode(self):
+        async def next_response(_request):
+            return Response(status_code=204)
+        with patch.dict(os.environ, {"NEXUS_HOSTED_AUTH_ENABLED": "true"}):
+            response = asyncio.run(self.api.enforce_local_origin_and_session(
+                self._request("/api/hosted/youtube/callback", method="GET"), next_response
+            ))
+        self.assertEqual(response.status_code, 204)
+
+
 if __name__ == "__main__":
     unittest.main()
