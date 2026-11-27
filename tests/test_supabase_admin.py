@@ -18,11 +18,38 @@ ENV = {
 
 
 class SupabaseAdminClientTests(unittest.TestCase):
-    def test_requires_server_side_service_role_jwt(self):
+    def test_requires_server_side_admin_key_and_accepts_legacy_or_opaque_secret(self):
         with self.assertRaises(SupabaseAdminError):
             SupabaseAdminRestClient({"NEXUS_SUPABASE_URL": ENV["NEXUS_SUPABASE_URL"]})
         with self.assertRaises(SupabaseAdminError):
             SupabaseAdminRestClient({**ENV, "NEXUS_SUPABASE_SERVICE_ROLE_KEY": "sb_publishable_not_admin"})
+        with self.assertRaises(SupabaseAdminError):
+            SupabaseAdminRestClient({
+                "NEXUS_SUPABASE_URL": ENV["NEXUS_SUPABASE_URL"],
+                "NEXUS_SUPABASE_SECRET_KEY": "sb_publishable_not_admin",
+            })
+        opaque = SupabaseAdminRestClient({
+            "NEXUS_SUPABASE_URL": ENV["NEXUS_SUPABASE_URL"],
+            "NEXUS_SUPABASE_SECRET_KEY": "sb_secret_exampleopaquevalue",
+        }, http_request=Mock())
+        self.assertTrue(opaque.uses_opaque_secret_key)
+        legacy = SupabaseAdminRestClient(ENV, http_request=Mock())
+        self.assertFalse(legacy.uses_opaque_secret_key)
+
+    def test_opaque_secret_key_is_sent_in_apikey_header_only(self):
+        http = Mock()
+        response = Mock(status_code=200)
+        response.json.return_value = [{"user_id": "user-1"}]
+        http.return_value = response
+        secret = "sb_secret_exampleopaquevalue"
+        client = SupabaseAdminRestClient({
+            "NEXUS_SUPABASE_URL": ENV["NEXUS_SUPABASE_URL"],
+            "NEXUS_SUPABASE_SECRET_KEY": secret,
+        }, http_request=http)
+        self.assertEqual(client.consume_oauth_state("a" * 64)["user_id"], "user-1")
+        headers = http.call_args.kwargs["headers"]
+        self.assertEqual(headers["apikey"], secret)
+        self.assertNotIn("Authorization", headers)
 
     def test_rpc_uses_service_role_and_only_allowlisted_functions(self):
         http = Mock()
