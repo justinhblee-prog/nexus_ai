@@ -95,6 +95,69 @@ class SharedTrendPersistenceTests(unittest.TestCase):
                 self.assertEqual(persist.call_args_list[0].args, (admin, "daily", path))
                 self.assertTrue(Path(path).parent.is_dir())
 
+    def test_run_once_publishes_failed_scan_health_and_continues_other_period(self):
+        import hosted_trend_worker as worker
+
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "radar.db"
+            conn = sqlite3.connect(path)
+            conn.executescript("""
+                CREATE TABLE trend_recommendations (
+                    period_type TEXT, region TEXT, rank_no INTEGER, topic TEXT,
+                    source_name TEXT, source_url TEXT, source_score INTEGER,
+                    source_score_label TEXT, growth_pct INTEGER, viral_score INTEGER,
+                    ai_reason TEXT, created_at TEXT
+                );
+                CREATE TABLE radar_scans (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, period_type TEXT,
+                    status TEXT, started_at TEXT, completed_at TEXT, item_count INTEGER,
+                    successful_sources INTEGER, failed_sources INTEGER, source_summary_json TEXT
+                );
+            """)
+            conn.execute(
+                "INSERT INTO radar_scans (period_type,status,started_at,source_summary_json) VALUES (?,?,?,?)",
+                ("daily", "running", "2026-11-28T00:00:00", "{}"),
+            )
+            conn.commit()
+            conn.close()
+
+            def scanner(period):
+                conn = sqlite3.connect(path)
+                try:
+                    if period == "daily":
+                        conn.execute(
+                            """INSERT INTO radar_scans
+                               (period_type,status,started_at,completed_at,item_count,
+                                successful_sources,failed_sources,source_summary_json)
+                               VALUES (?,?,?,?,?,?,?,?)""",
+                            ("daily", "failed", "2026-11-28T00:00:00", "2026-11-28T00:01:00",
+                             0, 0, 5, json.dumps({"scan_error": "TimeoutError"})),
+                        )
+                        conn.commit()
+                        raise TimeoutError("temporary feed failure")
+                    conn.execute(
+                        """INSERT INTO radar_scans
+                           (period_type,status,started_at,completed_at,item_count,
+                            successful_sources,failed_sources,source_summary_json)
+                           VALUES (?,?,?,?,?,?,?,?)""",
+                        ("weekly", "success", "2026-11-28T00:02:00", "2026-11-28T00:03:00",
+                         2, 5, 0, "{}"),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+
+            admin = Mock()
+            with patch.object(worker.trend_radar, "DB_PATH", str(path)):
+                result = worker.run_once(admin=admin, scanner=scanner, db_path=str(path))
+
+            self.assertEqual(result, {"daily": 0, "weekly": 0})
+            self.assertEqual(
+                [call.args[0]["status"] for call in admin.upsert_public_trend_scan.call_args_list],
+                ["failed", "success"],
+            )
+            self.assertEqual(admin.upsert_public_trend_scan.call_args_list[0].args[0]["failed_sources"], 5)
+
     def test_persist_period_rejects_unknown_period(self):
         with self.assertRaises(ValueError):
             persist_period(Mock(), "monthly", "unused.db")
