@@ -115,7 +115,10 @@ class GoogleOAuthTests(unittest.TestCase):
 
     def test_private_resumable_upload_verifies_exact_channel_and_visibility(self):
         config = GoogleOAuthConfig.from_env(ENV)
-        with patch.object(GoogleOAuthConfig, "fetch_channels", return_value=[{"channel_id": "UC123", "title": "NEXUS"}]):
+        with patch.object(GoogleOAuthConfig, "fetch_channels", return_value=[
+            {"channel_id": "UC456", "title": "Other Brand"},
+            {"channel_id": "UC123", "title": "NEXUS selected"},
+        ]):
             init = Mock(status_code=200)
             init.headers = {"Location": "https://upload.youtube.example/session"}
             upload = Mock(status_code=200)
@@ -141,6 +144,12 @@ class GoogleOAuthTests(unittest.TestCase):
         with patch.object(GoogleOAuthConfig, "fetch_channels", return_value=[
             {"channel_id": "UC123", "title": "One"},
             {"channel_id": "UC456", "title": "Two"},
+        ]):
+            with self.assertRaises(GoogleOAuthError):
+                config.upload_private_video("token", b"video", "title", "desc", "UC789")
+        with patch.object(GoogleOAuthConfig, "fetch_channels", return_value=[
+            {"channel_id": "UC123", "title": "One"},
+            {"channel_id": "UC123", "title": "Duplicate identity"},
         ]):
             with self.assertRaises(GoogleOAuthError):
                 config.upload_private_video("token", b"video", "title", "desc", "UC123")
