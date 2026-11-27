@@ -616,8 +616,20 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
     function closeModal() { document.getElementById("radar-modal").classList.remove("open"); }
     async function produceFromModal() {
       if (!selectedModalItem) return;
-      const r = await fetch("/api/create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ channel_name: selectedModalItem.matched_channel, topic: selectedModalItem.topic }) });
-      closeModal(); alert((await r.json()).msg); setTimeout(loadOverview, 3000);
+      try {
+        const response = await fetch("/api/create", {
+          method: "POST", credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ channel_name: selectedModalItem.matched_channel, topic: selectedModalItem.topic })
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.detail || "제작 요청을 등록하지 못했습니다.");
+        closeModal();
+        alert(result.msg || "제작 요청을 등록했습니다.");
+        await loadOverview();
+      } catch (error) {
+        alert(error.message || "제작 요청 중 오류가 발생했습니다.");
+      }
     }
     async function loadOpsMetrics() {
       const metricsNode = document.getElementById("ops-metrics");
