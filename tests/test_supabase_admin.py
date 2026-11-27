@@ -47,5 +47,34 @@ class SupabaseAdminClientTests(unittest.TestCase):
         self.assertEqual(payload["p_encrypted_refresh_token"], "\\xaabbcc")
 
 
+    def test_render_worker_rpc_and_private_storage_upload_use_service_role(self):
+        http = Mock()
+        response = Mock(status_code=200)
+        response.json.return_value = [{
+            "job_id": "22222222-2222-4222-8222-222222222222",
+            "workspace_id": "wsp_11111111-1111-4111-8111-111111111111",
+            "lease_token": "lease-token",
+        }]
+        http.return_value = response
+        client = SupabaseAdminRestClient(ENV, http_request=http)
+        job = client.claim_next_shorts_job("worker-1")
+        self.assertEqual(job["lease_token"], "lease-token")
+        self.assertIn("/rpc/claim_next_shorts_job", http.call_args.args[1])
+        media_response = Mock(status_code=200)
+        http.return_value = media_response
+        key = "wsp_11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/" + "a" * 32 + ".mp4"
+        client.upload_storage_object(key, b"video-bytes")
+        self.assertIn("/storage/v1/object/nexus-shorts/", http.call_args.args[1])
+        self.assertEqual(http.call_args.kwargs["data"], b"video-bytes")
+        self.assertEqual(http.call_args.kwargs["headers"]["Authorization"], "Bearer " + ENV["NEXUS_SUPABASE_SERVICE_ROLE_KEY"])
+
+    def test_storage_object_paths_are_tenant_scoped_and_canonical(self):
+        client = SupabaseAdminRestClient(ENV, http_request=Mock())
+        with self.assertRaises(ValueError):
+            client.upload_storage_object("../../other-workspace/video.mp4", b"bad")
+        with self.assertRaises(ValueError):
+            client.create_signed_url("wsp_11111111-1111-4111-8111-111111111111/other/video.mp4")
+
+
 if __name__ == "__main__":
     unittest.main()
