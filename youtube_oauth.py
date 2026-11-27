@@ -25,6 +25,10 @@ class GoogleOAuthError(RuntimeError):
     pass
 
 
+class GoogleOAuthReauthRequired(GoogleOAuthError):
+    pass
+
+
 @dataclass(frozen=True)
 class GoogleOAuthConfig:
     client_id: str
@@ -151,12 +155,14 @@ class GoogleOAuthConfig:
             )
         except requests.RequestException as exc:
             raise GoogleOAuthError("Google token refresh service is temporarily unavailable") from exc
-        if response.status_code != 200:
-            raise GoogleOAuthError("Google rejected the stored refresh token")
         try:
             payload = response.json()
         except ValueError as exc:
             raise GoogleOAuthError("Google returned an invalid refreshed token response") from exc
+        if response.status_code != 200:
+            if payload.get("error") == "invalid_grant":
+                raise GoogleOAuthReauthRequired("Google refresh token must be reauthorized")
+            raise GoogleOAuthError("Google rejected the stored refresh token")
         access_token = payload.get("access_token")
         if not access_token:
             raise GoogleOAuthError("Google did not return a refreshed access token")
