@@ -1,3 +1,4 @@
+import base64
 import json
 import unittest
 
@@ -6,6 +7,7 @@ from token_vault import (
     decrypt_refresh_token,
     encrypt_refresh_token,
     generate_encryption_key,
+    validate_token_vault_config,
 )
 
 
