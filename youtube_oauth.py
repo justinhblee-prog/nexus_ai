@@ -178,10 +178,16 @@ class GoogleOAuthConfig:
         http_post: Callable = requests.post,
         http_put: Callable = requests.put,
     ) -> dict:
-        # Fail closed when channel selection is ambiguous: never upload to an unknown Brand Account.
+        # The job is bound to a workspace channel selected from Google's verified
+        # channel inventory. Multiple Brand/managed channels are safe when the exact
+        # selected provider ID is present exactly once; never infer or substitute one.
         channels = self.fetch_channels(access_token)
-        if len(channels) != 1 or channels[0]["channel_id"] != expected_channel_id:
-            raise GoogleOAuthError("Google account must expose exactly the connected target YouTube channel")
+        matches = [
+            channel for channel in channels
+            if channel.get("channel_id") == expected_channel_id
+        ]
+        if not expected_channel_id or len(matches) != 1:
+            raise GoogleOAuthError("The selected YouTube channel is not uniquely available to this Google account")
         metadata = {
             "snippet": {
                 "title": (title or "NEXUS Shorts")[:100],
