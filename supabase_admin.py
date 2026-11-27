@@ -40,6 +40,8 @@ _ALLOWED_RPCS = {
     "enqueue_account_deletion",
     "claim_next_account_deletion_request",
     "update_account_deletion_request",
+    "delete_account_deletion_private_user_rows",
+    "count_account_deletion_private_user_rows",
 }
 
 
@@ -389,11 +391,24 @@ class SupabaseAdminRestClient:
             }, prefer="return=minimal")
         return True
 
+    def list_account_personal_gallery_images(self, user_id):
+        value = self._account_user_id(user_id)
+        return self._call("GET", "gallery_images", params={
+            "select": "image_id,storage_key,thumbnail_key",
+            "owner_id": f"eq.{value}",
+            "order": "created_at.asc",
+        }) or []
+
+    def count_account_private_user_rows(self, user_id):
+        value = self._account_user_id(user_id)
+        rows = self.rpc("count_account_deletion_private_user_rows", {"p_user_id": value}) or []
+        return rows[0] if rows else {"idempotency_rows": 0, "oauth_state_rows": 0}
+
     def delete_account_personal_rows(self, user_id):
         value = self._account_user_id(user_id)
         # Personal gallery and idempotency rows are not workspace-shared assets.
         self._call("DELETE", "gallery_images", params={"owner_id": f"eq.{value}"}, prefer="return=minimal")
-        self._call("DELETE", "generation_idempotency", params={"owner_id": f"eq.{value}"}, prefer="return=minimal")
+        self.rpc("delete_account_deletion_private_user_rows", {"p_user_id": value})
         return True
 
     def anonymize_account_authorship(self, user_id, deleting_workspace_ids):
@@ -420,7 +435,6 @@ class SupabaseAdminRestClient:
             ("generation_jobs", "owner_id"),
             ("character_bundle_imports", "user_id"),
             ("gallery_images", "owner_id"),
-            ("generation_idempotency", "owner_id"),
             ("profiles", "id"),
         )
         counts = {}
