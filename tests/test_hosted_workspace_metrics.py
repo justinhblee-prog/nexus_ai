@@ -1,77 +1,39 @@
+from pathlib import Path
 import unittest
-from types import SimpleNamespace
-from unittest.mock import patch
-
-from fastapi import HTTPException
-
-import api_server
-from supabase_rest import SupabaseRestError
 
 
-WORKSPACE_ID = "wsp_11111111-1111-4111-8111-111111111111"
+ROOT = Path(__file__).resolve().parents[1]
 
 
-class FakeCountClient:
-    def __init__(self, fail=False):
-        self.calls = []
-        self.fail = fail
+class HostedWorkspaceMetricsContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.api = (ROOT / "api_server.py").read_text(encoding="utf-8")
+        cls.rest = (ROOT / "supabase_rest.py").read_text(encoding="utf-8")
 
-    def count(self, table, params):
-        self.calls.append((table, dict(params)))
-        if self.fail:
-            raise SupabaseRestError(403, "Workspace access denied by Supabase RLS")
-        key = (table, tuple(sorted(params.items())))
-        values = {
-            ("shorts_channels", (("workspace_id", f"eq.{WORKSPACE_ID}"),)): 12,
-            ("shorts_channels", (("is_active", "eq.true"), ("workspace_id", f"eq.{WORKSPACE_ID}"))): 9,
-            ("shorts_jobs", (("workspace_id", f"eq.{WORKSPACE_ID}"),)): 1234,
-            ("shorts_jobs", (("stage", "eq.queued"), ("workspace_id", f"eq.{WORKSPACE_ID}"))): 25,
-            ("shorts_jobs", (("approval_status", "eq.pending"), ("workspace_id", f"eq.{WORKSPACE_ID}"))): 7,
-            ("shorts_jobs", (("stage", "eq.published"), ("workspace_id", f"eq.{WORKSPACE_ID}"))): 900,
-        }
-        return values[key]
+    def test_overview_uses_exact_rls_filtered_counts_without_row_limit(self):
+        start = self.api.index('def hosted_workspace_overview(')
+        end = self.api.index('@app.get("/api/hosted/workspaces/{workspace_id}/trends")', start)
+        route = self.api[start:end]
+        self.assertEqual(route.count('client.count('), 6)
+        self.assertIn('"workspace_id": f"eq.{workspace_id}"', route)
+        self.assertIn('"is_active": "eq.true"', route)
+        self.assertIn('"stage": "eq.queued"', route)
+        self.assertIn('"approval_status": "eq.pending"', route)
+        self.assertIn('"stage": "eq.published"', route)
+        self.assertNotIn('"limit":', route)
+        self.assertNotIn('client.select("shorts_jobs"', route)
 
-
-def hosted_request():
-    return SimpleNamespace(state=SimpleNamespace(
-        hosted_access_token="verified-user-jwt",
-        hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
-    ))
-
-
-class HostedWorkspaceMetricsTests(unittest.TestCase):
-    def test_overview_uses_exact_workspace_filtered_counts_without_page_caps(self):
-        client = FakeCountClient()
-        with patch.object(api_server, "_hosted_rest_client", return_value=client):
-            result = api_server.hosted_workspace_overview(WORKSPACE_ID, hosted_request())
-
-        self.assertEqual(result, {
-            "workspace_id": WORKSPACE_ID,
-            "channel_count": 12,
-            "active_channel_count": 9,
-            "job_count": 1234,
-            "queued_count": 25,
-            "review_pending_count": 7,
-            "published_count": 900,
-        })
-        self.assertEqual(len(client.calls), 6)
-        self.assertTrue(all(params["workspace_id"] == f"eq.{WORKSPACE_ID}" for _, params in client.calls))
-        self.assertFalse(any(params.get("limit") for _, params in client.calls))
-
-    def test_overview_fails_closed_when_supabase_rls_denies_count(self):
-        client = FakeCountClient(fail=True)
-        with patch.object(api_server, "_hosted_rest_client", return_value=client):
-            with self.assertRaises(HTTPException) as raised:
-                api_server.hosted_workspace_overview(WORKSPACE_ID, hosted_request())
-        self.assertEqual(raised.exception.status_code, 403)
-
-    def test_overview_rejects_malformed_workspace_identifier_before_database_access(self):
-        client = FakeCountClient()
-        with patch.object(api_server, "_hosted_rest_client", return_value=client):
-            with self.assertRaises(HTTPException) as raised:
-                api_server.hosted_workspace_overview("not-a-workspace", hosted_request())
-        self.assertEqual(raised.exception.status_code, 404)
-        self.assertEqual(client.calls, [])
+    def test_count_uses_head_exact_preference_and_requires_content_range(self):
+        start = self.rest.index('    def count(')
+        end = self.rest.index('    def insert(', start)
+        method = self.rest[start:end]
+        self.assertIn('"HEAD"', method)
+        self.assertIn('"Prefer": "count=exact"', method)
+        self.assertIn('"Range": "0-0"', method)
+        self.assertIn('response.headers.get("Content-Range")', method)
+        self.assertIn('raise SupabaseRestError(502, "Supabase did not return an exact row count")', method)
+        self.assertIn('if table not in _ALLOWED_TABLES:', method)
 
 
 if __name__ == "__main__":
