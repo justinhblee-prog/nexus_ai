@@ -203,6 +203,17 @@ class WorkspaceOwnershipTransferReq(BaseModel):
         extra = "forbid"
 
 
+class HostedTopicQueueCreateReq(BaseModel):
+    topic: str = Field(min_length=1, max_length=300)
+    source: str = Field(default="manual", max_length=40)
+    region: str = Field(default="", max_length=12)
+    source_name: str = Field(default="", max_length=120)
+    source_url: str | None = Field(default=None, max_length=2048)
+
+    class Config:
+        extra = "forbid"
+
+
 class HostedJobCreateReq(BaseModel):
     channel_id: UUID
     topic: str = Field(min_length=1, max_length=300)
@@ -670,6 +681,87 @@ def hosted_workspace_jobs(
             "next_offset": offset + len(items) if has_more else None,
         }
     except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+@app.get("/api/hosted/workspaces/{workspace_id}/topic-queue")
+def hosted_topic_queue_list(workspace_id: str, request: Request):
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    user_id = request.state.hosted_user["user_id"]
+    try:
+        items = client.select("shorts_topic_queue", {
+            "select": "topic_id,topic,source,region,source_name,source_url,created_at",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{user_id}",
+            "order": "created_at.desc,topic_id.desc",
+            "limit": "50",
+        }) or []
+        return {"items": items, "storage": "server"}
+    except SupabaseRestError as exc:
+        if exc.status_code == 404:
+            raise HTTPException(
+                status_code=503,
+                detail="서버 저장형 주제 큐의 데이터베이스 마이그레이션이 아직 적용되지 않았습니다.",
+            ) from exc
+        _hosted_rest_error(exc)
+
+
+@app.post("/api/hosted/workspaces/{workspace_id}/topic-queue")
+def hosted_topic_queue_add(
+    workspace_id: str, req: HostedTopicQueueCreateReq, request: Request
+):
+    _validate_workspace_id(workspace_id)
+    topic = " ".join(req.topic.split())
+    if not topic:
+        raise HTTPException(status_code=422, detail="Topic is required")
+    source_url = req.source_url.strip() if req.source_url else None
+    if source_url and not source_url.startswith("https://"):
+        raise HTTPException(status_code=422, detail="Only HTTPS source URLs are accepted")
+    user_id = request.state.hosted_user["user_id"]
+    client = _hosted_rest_client(request)
+    try:
+        rows = client.insert("shorts_topic_queue", {
+            "workspace_id": workspace_id,
+            "user_id": user_id,
+            "topic": topic,
+            "source": req.source.strip() or "manual",
+            "region": req.region.strip(),
+            "source_name": req.source_name.strip(),
+            "source_url": source_url,
+        }) or []
+        if not rows:
+            raise HTTPException(status_code=403, detail="Workspace topic queue write was denied")
+        return {"item": rows[0], "storage": "server"}
+    except SupabaseRestError as exc:
+        if exc.status_code == 404:
+            raise HTTPException(
+                status_code=503,
+                detail="서버 저장형 주제 큐의 데이터베이스 마이그레이션이 아직 적용되지 않았습니다.",
+            ) from exc
+        if exc.status_code == 409:
+            raise HTTPException(status_code=409, detail="이미 저장된 주제입니다.") from exc
+        _hosted_rest_error(exc)
+
+
+@app.delete("/api/hosted/workspaces/{workspace_id}/topic-queue/{topic_id}")
+def hosted_topic_queue_delete(workspace_id: str, topic_id: UUID, request: Request):
+    _validate_workspace_id(workspace_id)
+    user_id = request.state.hosted_user["user_id"]
+    client = _hosted_rest_client(request)
+    try:
+        client.delete("shorts_topic_queue", {
+            "topic_id": f"eq.{topic_id}",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{user_id}",
+        })
+        return {"deleted": True}
+    except SupabaseRestError as exc:
+        if exc.status_code == 404:
+            raise HTTPException(
+                status_code=503,
+                detail="서버 저장형 주제 큐의 데이터베이스 마이그레이션이 아직 적용되지 않았습니다.",
+            ) from exc
         _hosted_rest_error(exc)
 
 
