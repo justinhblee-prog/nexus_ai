@@ -484,12 +484,48 @@
         status.textContent = "로그인 후 서버 저장형 주제 큐를 사용할 수 있습니다.";
       }
       savedTopicQueueMode = serverAvailable ? "server" : "local";
-      const localItems = readSavedTopicQueue();
+      let localItems = readSavedTopicQueue();
+      if (serverAvailable && localItems.length) {
+        const remainingLocalItems = [];
+        for (const localItem of localItems) {
+          if (workspaceId !== activeWorkspaceId || token !== activeAccessToken) return;
+          try {
+            const migrationResponse = await fetch(
+              "/api/hosted/workspaces/" + encodeURIComponent(workspaceId) + "/topic-queue",
+              {
+                method: "POST",
+                headers: {
+                  Authorization: "Bearer " + token,
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                  topic: localItem.topic,
+                  source: "manual",
+                  region: localItem.region || "",
+                  source_name: localItem.source_name || ""
+                })
+              }
+            );
+            if (migrationResponse.ok) {
+              const migrated = await migrationResponse.json();
+              if (migrated.item) serverItems.push(migrated.item);
+            } else if (migrationResponse.status !== 409) {
+              remainingLocalItems.push(localItem);
+            }
+          } catch (_) {
+            remainingLocalItems.push(localItem);
+          }
+        }
+        if (remainingLocalItems.length !== localItems.length) {
+          writeSavedTopicQueue(remainingLocalItems);
+        }
+        localItems = remainingLocalItems;
+      }
       const seen = new Set(serverItems.map(item =>
-        String(item.topic || "").replace(/\\s+/g, " ").toLocaleLowerCase()
+        String(item.topic || "").replace(/\s+/g, " ").toLocaleLowerCase()
       ));
       const mergedItems = serverItems.concat(localItems.filter(item => {
-        const key = item.topic.replace(/\\s+/g, " ").toLocaleLowerCase();
+        const key = item.topic.replace(/\s+/g, " ").toLocaleLowerCase();
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
@@ -547,9 +583,9 @@
     async function saveTrendTopic(item) {
       const topic = String(item.topic || "").trim();
       if (!topic || !savedTopicQueueKey()) return;
-      const normalized = topic.replace(/\\s+/g, " ").toLocaleLowerCase();
+      const normalized = topic.replace(/\s+/g, " ").toLocaleLowerCase();
       if (savedTopicQueueItems.some(entry =>
-        entry.topic.replace(/\\s+/g, " ").toLocaleLowerCase() === normalized
+        entry.topic.replace(/\s+/g, " ").toLocaleLowerCase() === normalized
       )) {
         showMessage("이미 제작 주제 큐에 저장된 주제입니다.", "info");
         return;
@@ -970,12 +1006,16 @@
           item.topic.replace(/\s+/g, " ").toLocaleLowerCase() === normalizedTopic
         );
         if (queuedItem?.topic_id) {
-          const queueDelete = await fetch(
-            "/api/hosted/workspaces/" + encodeURIComponent(activeWorkspaceId) +
-              "/topic-queue/" + encodeURIComponent(queuedItem.topic_id),
-            { method: "DELETE", headers: { Authorization: "Bearer " + activeAccessToken } }
-          );
-          if (!queueDelete.ok) showMessage("제작 요청은 등록됐지만 저장 주제 큐 항목은 남아 있습니다.", "info");
+          try {
+            const queueDelete = await fetch(
+              "/api/hosted/workspaces/" + encodeURIComponent(activeWorkspaceId) +
+                "/topic-queue/" + encodeURIComponent(queuedItem.topic_id),
+              { method: "DELETE", headers: { Authorization: "Bearer " + activeAccessToken } }
+            );
+            if (!queueDelete.ok) showMessage("제작 요청은 등록됐지만 저장 주제 큐 항목은 남아 있습니다.", "info");
+          } catch (_) {
+            showMessage("제작 요청은 등록됐지만 저장 주제 큐 항목은 남아 있습니다.", "info");
+          }
         } else if (queuedItem) {
           const remainingQueue = readSavedTopicQueue().filter(item => item.id !== queuedItem.id);
           writeSavedTopicQueue(remainingQueue);
