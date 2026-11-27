@@ -52,6 +52,8 @@ class AccountDeletionSafetyMigrationTests(unittest.TestCase):
         self.assertIn("service_role required", self.sql)
         self.assertIn("where o.owner = p_user_id", self.sql)
         self.assertIn("or o.owner_id = p_user_id::text", self.sql)
+        self.assertIn("from public.gallery_images as gi", self.sql)
+        self.assertIn("o.name in (gi.storage_key, gi.thumbnail_key)", self.sql)
         self.assertIn("limit p_limit offset p_offset", self.sql)
         self.assertIn("where item.workspace_id !~ '^wsp_[0-9a-fA-F-]{36}
         self.assertIn("to service_role", self.sql)
