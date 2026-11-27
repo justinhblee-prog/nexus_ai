@@ -244,7 +244,7 @@ def process_one_account_deletion(
             user_id, worker_id, "completed", "complete", None, retry_seconds
         ):
             raise SupabaseAdminError("Account deletion queue lease was lost before completion")
-        logger.info("Account deletion completed for anonymized user reference %s", user_id)
+        logger.info("Account deletion completed after final verification.")
         return True
     except AccountDeletionBlocked as exc:
         admin.update_account_deletion_request(
