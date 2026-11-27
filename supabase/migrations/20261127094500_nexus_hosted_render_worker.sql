@@ -75,8 +75,8 @@ BEGIN
     AND (l.lease_until IS NULL OR l.lease_until <= now())
     AND COALESCE(l.attempts, 0) < p_max_attempts
   ORDER BY j.created_at ASC
-  FOR UPDATE OF j SKIP LOCKED
-  LIMIT 1;
+  LIMIT 1
+  FOR UPDATE OF j SKIP LOCKED;
 
   IF NOT FOUND THEN
     RETURN;
@@ -174,8 +174,9 @@ BEGIN
   END IF;
 
   IF p_success THEN
-    IF p_output_storage_key IS NULL OR p_title IS NULL OR p_script IS NULL THEN
-      RAISE EXCEPTION 'Successful render requires media, title, and script' USING ERRCODE = '22023';
+    IF p_output_storage_key IS NULL OR p_title IS NULL OR p_script IS NULL
+       OR left(p_output_storage_key, length(v_lease.workspace_id) + 1) <> v_lease.workspace_id || '/' THEN
+      RAISE EXCEPTION 'Successful render requires workspace-prefixed media, title, and script' USING ERRCODE = '22023';
     END IF;
     UPDATE public.shorts_jobs
     SET stage = 'review_pending',
