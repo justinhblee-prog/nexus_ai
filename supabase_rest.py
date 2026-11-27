@@ -1,0 +1,102 @@
+"""Minimal Supabase PostgREST client that always uses the verified end-user JWT.
+
+No service-role or secret key is loaded by this module. Database RLS remains the
+source of truth for workspace access and role permissions.
+"""
+from __future__ import annotations
+
+import os
+from typing import Mapping
+from urllib.parse import quote
+
+import requests
+
+from hosted_auth import public_auth_config
+
+
+class SupabaseRestError(RuntimeError):
+    def __init__(self, status_code: int, message: str):
+        super().__init__(message)
+        self.status_code = status_code
+        self.public_message = message
+
+
+_ALLOWED_TABLES = {
+    "workspaces",
+    "workspace_members",
+    "youtube_connections",
+    "shorts_channels",
+    "shorts_jobs",
+    "shorts_job_events",
+    "shorts_analytics_snapshots",
+    "shorts_assets",
+}
+
+
+class SupabaseRestClient:
+    def __init__(
+        self,
+        access_token: str,
+        env: Mapping[str, str] | None = None,
+        http_request=None,
+    ):
+        if not access_token or not access_token.strip():
+            raise ValueError("A verified user access token is required")
+        values = os.environ if env is None else env
+        config = public_auth_config(values)
+        self.base_url = config["supabase_url"].rstrip("/")
+        self.publishable_key = config["publishable_key"]
+        self.access_token = access_token.strip()
+        self.http_request = http_request or requests.request
+
+    def _request(self, method: str, table: str, params=None, payload=None):
+        if table not in _ALLOWED_TABLES:
+            raise ValueError("Unsupported Supabase table")
+        url = f"{self.base_url}/rest/v1/{quote(table, safe='')}"
+        headers = {
+            "apikey": self.publishable_key,
+            "Authorization": f"Bearer {self.access_token}",
+            "Accept": "application/json",
+        }
+        if payload is not None:
+            headers["Content-Type"] = "application/json"
+            headers["Prefer"] = "return=representation"
+        try:
+            response = self.http_request(
+                method,
+                url,
+                params=params,
+                json=payload,
+                headers=headers,
+                timeout=8,
+            )
+        except requests.RequestException as exc:
+            raise SupabaseRestError(502, "Supabase data service is temporarily unavailable") from exc
+
+        if response.status_code == 204:
+            return None
+        if not 200 <= response.status_code < 300:
+            if response.status_code in (401, 403):
+                message = "Workspace access denied by Supabase RLS"
+            elif response.status_code == 404:
+                message = "Requested workspace data was not found"
+            elif response.status_code == 409:
+                message = "Workspace data conflicts with an existing record"
+            elif 400 <= response.status_code < 500:
+                message = "Supabase rejected the workspace data request"
+            else:
+                message = "Supabase data service is temporarily unavailable"
+            raise SupabaseRestError(response.status_code, message)
+        try:
+            return response.json()
+        except ValueError:
+            return None
+
+    def select(self, table: str, params: dict):
+        return self._request("GET", table, params=params)
+
+    def insert(self, table: str, payload: dict):
+        return self._request("POST", table, payload=payload)
+
+    def update(self, table: str, params: dict, payload: dict):
+        return self._request("PATCH", table, params=params, payload=payload)
