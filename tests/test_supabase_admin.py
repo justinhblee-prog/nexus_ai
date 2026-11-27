@@ -100,6 +100,21 @@ class SupabaseAdminClientTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             client.list_account_deletion_active_leases(["../../other-workspace"])
 
+    def test_provider_grant_usage_is_checked_outside_all_deletion_workspaces(self):
+        http = Mock()
+        response = Mock(status_code=200)
+        response.json.return_value = [{"connection_id": "other-connection"}]
+        http.return_value = response
+        client = SupabaseAdminRestClient(ENV, http_request=http)
+        self.assertTrue(client.has_active_connection_outside_workspaces(
+            "google-account",
+            ["wsp_11111111-1111-4111-8111-111111111111"],
+        ))
+        params = http.call_args.kwargs["params"]
+        self.assertEqual(params["workspace_id"], "not.in.(wsp_11111111-1111-4111-8111-111111111111)")
+        with self.assertRaises(ValueError):
+            client.has_active_connection_outside_workspaces("google-account", ["bad-id"])
+
     def test_youtube_connection_inventory_is_workspace_scoped_and_excludes_tokens(self):
         http = Mock()
         response = Mock(status_code=200)
