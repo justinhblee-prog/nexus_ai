@@ -89,6 +89,20 @@ class NexusUiContractTests(unittest.TestCase):
         self.assertIn("Channel Production Volume", self.script)
         self.assertNotIn("Global Trend Momentum", self.script)
 
+    def test_workflow_actions_check_api_failures_before_reporting_success(self):
+        for marker in (
+            'if (!response.ok) throw new Error(result.detail || "업로드 승인을 처리하지 못했습니다.")',
+            'if (!response.ok) throw new Error(result.detail || "반려 요청을 처리하지 못했습니다.")',
+            'if (!response.ok || result.ok === false) throw new Error(result.detail || result.msg || "삭제 요청을 처리하지 못했습니다.")',
+            'if (!response.ok) throw new Error(result.detail || "재제작 요청을 처리하지 못했습니다.")',
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, self.script)
+
+    def test_youtube_upload_requires_an_explicit_confirmation_click(self):
+        self.assertIn('confirm("선택한 영상을 YouTube에 비공개로 업로드하도록 승인하시겠습니까?")', self.script)
+        self.assertIn('fetch("/api/approve/" + activeJobId', self.script)
+
     def test_untrusted_job_and_channel_labels_are_rendered_as_text(self):
         jobs = self.script.split("function renderJobs()", 1)[1].split("function selectJob(id)", 1)[0]
         self.assertIn("box.replaceChildren()", jobs)
