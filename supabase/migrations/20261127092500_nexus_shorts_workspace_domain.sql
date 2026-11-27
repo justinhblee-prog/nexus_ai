@@ -88,7 +88,9 @@ CREATE TABLE IF NOT EXISTS public.shorts_jobs (
   CHECK (
     (approval_status = 'approved' AND approved_by IS NOT NULL AND approved_at IS NOT NULL)
     OR (approval_status <> 'approved' AND approved_by IS NULL AND approved_at IS NULL)
-  )
+  ),
+  CHECK (stage NOT IN ('approved', 'uploading', 'published') OR approval_status = 'approved'),
+  CHECK (stage <> 'published' OR (provider_video_id IS NOT NULL AND uploaded_at IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS public.shorts_job_events (
