@@ -4,6 +4,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PAGE = ROOT / "signup.html"
+INDEX = ROOT / "index.html"
 
 
 class HostedSignupPageContractTests(unittest.TestCase):
@@ -35,6 +36,12 @@ class HostedSignupPageContractTests(unittest.TestCase):
         self.assertIn("storage: window.sessionStorage", self.html)
         self.assertIn("message.textContent = text", self.html)
         self.assertNotIn("innerHTML =", self.html)
+
+
+    def test_studio_header_links_to_hosted_account_access(self):
+        index = INDEX.read_text(encoding="utf-8")
+        self.assertIn('href="/signup"', index)
+        self.assertIn("회원가입 / 로그인", index)
 
 
 if __name__ == "__main__":
