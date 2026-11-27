@@ -324,6 +324,43 @@ class SignedSessionTests(unittest.TestCase):
         self.assertNotIn("stage", inserted)
         self.assertEqual(result["job"]["privacy_status"], "private")
 
+    def test_hosted_trends_are_public_signals_scoped_to_verified_workspace_membership(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        fake_conn = Mock()
+        fake_conn.execute.return_value.fetchall.return_value = [
+            {"region": "KR", "rank_no": 1, "topic": "AI 업무 자동화", "source_name": "News",
+             "source_url": "https://example.com/story", "viral_score": 88},
+            {"region": "US", "rank_no": 2, "topic": "AI 업무 자동화", "source_name": "HN",
+             "source_url": "javascript:alert(1)", "viral_score": 80},
+        ]
+        with patch.object(self.api, "SupabaseRestClient") as client_type, \
+             patch.object(self.api.trend_radar, "init_radar_db", return_value=fake_conn), \
+             patch.object(self.api.trend_radar, "get_scan_status", return_value={"status": "completed", "item_count": 2}):
+            client_type.return_value.select.return_value = [{"role": "viewer"}]
+            result = self.api.hosted_workspace_trends(
+                "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", request
+            )
+        self.assertEqual(len(result["items"]), 1)
+        self.assertEqual(result["items"][0]["source_url"], "https://example.com/story")
+        self.assertEqual(result["scope"], "shared_public_signals")
+        fake_conn.close.assert_called_once()
+
+    def test_hosted_trends_reject_non_members(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.return_value = []
+            with self.assertRaises(self.api.HTTPException) as denied:
+                self.api.hosted_workspace_trends(
+                    "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", request
+                )
+            self.assertEqual(denied.exception.status_code, 404)
+
     def test_hosted_job_approval_is_attributed_to_verified_workspace_admin(self):
         request = types.SimpleNamespace(state=types.SimpleNamespace(
             hosted_user={"user_id": "11111111-1111-4111-8111-111111111111", "role": "authenticated"},
