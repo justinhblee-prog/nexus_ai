@@ -633,7 +633,7 @@ class SignedSessionTests(unittest.TestCase):
              patch.object(self.api, "init_app_db") as init_db, \
              patch.object(self.api.threading, "Thread") as thread:
             self.api.startup_event()
-        init_db.assert_called_once()
+        init_db.assert_not_called()
         thread.assert_not_called()
 
 
