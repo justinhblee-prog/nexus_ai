@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import sqlite3, os
-from streamlit_auth import is_auth_configured, verify_streamlit_password
+from streamlit_auth import auth_enabled, is_auth_configured, verify_streamlit_password
 from audit_log import safe_record_event as record_event
 from review_workflow import claim_upload, upload_result_stage
 from datetime import datetime, timedelta
@@ -10,26 +10,26 @@ import yt_uploader
 
 st.set_page_config(page_title="NEXUS STUDIO PRO", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
 
-# The Streamlit app is a separate entry point from the FastAPI browser studio.
-# Fail closed before creating directories, opening the database, or starting workers.
-if not is_auth_configured():
-    st.error("Streamlit 인증 설정이 없습니다. NEXUS_API_PASSWORD를 12자 이상으로 설정해 주세요.")
-    st.stop()
-
-if not st.session_state.get("nexus_streamlit_authenticated", False):
-    st.title("⚡ NEXUS STUDIO PRO")
-    st.subheader("운영자 로그인")
-    st.caption("로컬 스튜디오 접근을 위해 API와 동일한 운영자 비밀번호가 필요합니다.")
-    with st.form("nexus_streamlit_login"):
-        password = st.text_input("운영자 비밀번호", type="password")
-        submitted = st.form_submit_button("로그인", type="primary", use_container_width=True)
-    if submitted:
-        if verify_streamlit_password(password):
-            st.session_state["nexus_streamlit_authenticated"] = True
-            st.rerun()
-        else:
-            st.error("비밀번호가 올바르지 않습니다.")
-    st.stop()
+# Authentication is optional for the loopback-only local deployment.
+# When explicitly enabled, fail closed before opening application data or starting workers.
+if auth_enabled():
+    if not is_auth_configured():
+        st.error("인증이 활성화되어 있지만 NEXUS_API_PASSWORD 설정이 유효하지 않습니다.")
+        st.stop()
+    if not st.session_state.get("nexus_streamlit_authenticated", False):
+        st.title("⚡ NEXUS STUDIO PRO")
+        st.subheader("운영자 로그인")
+        st.caption("선택적으로 활성화된 로컬 접근 보호입니다.")
+        with st.form("nexus_streamlit_login"):
+            password = st.text_input("운영자 비밀번호", type="password")
+            submitted = st.form_submit_button("로그인", type="primary", use_container_width=True)
+        if submitted:
+            if verify_streamlit_password(password):
+                st.session_state["nexus_streamlit_authenticated"] = True
+                st.rerun()
+            else:
+                st.error("비밀번호가 올바르지 않습니다.")
+        st.stop()
 
 # Reuse the FastAPI-owned durable queue; do not render inside Streamlit callbacks.
 from api_server import enqueue_topic, init_app_db
