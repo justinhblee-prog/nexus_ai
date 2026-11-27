@@ -139,8 +139,8 @@ def _cleanup_oauth(admin, user_id, deleting, oauth_config_factory, decrypt_token
             else:
                 # Persist intent before contacting Google. If the worker dies
                 # after Google revokes the grant but before recording success,
-                # the next attempt repeats the same revoke call. Google 400 for
-                # an already-invalid/revoked token is explicitly idempotent.
+                # the next attempt repeats the same revoke call. Only HTTP 200
+                # confirms revocation; HTTP 400 is an error and remains retryable.
                 if state is None:
                     recorded = admin.set_account_deletion_oauth_state(user_id, provider_hash, "revocation_started")
                     if recorded != "revocation_started":
