@@ -48,7 +48,7 @@ def _is_service_role_key(value: str) -> bool:
         payload = parts[1] + ("=" * (-len(parts[1]) % 4))
         claims = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
         return claims.get("role") == "service_role"
-    except (ValueError, UnicodeError, json.JSONDecodeError):
+    except (AttributeError, ValueError, UnicodeError, json.JSONDecodeError):
         return False
 
 
