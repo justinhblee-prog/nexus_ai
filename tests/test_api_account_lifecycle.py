@@ -29,6 +29,8 @@ class AccountLifecycleApiContractTests(unittest.TestCase):
         self.assertIn('"account_deletion_enabled": False', self.api)
         self.assertIn("list_account_deletion_storage_objects(user_id", self.api)
         self.assertIn("list_account_deletion_active_leases(deletion_workspace_ids)", self.api)
+        self.assertIn("list_youtube_connections_for_workspaces(deletion_workspace_ids)", self.api)
+        self.assertIn('"provider_grants_preserved_for_other_workspaces": shared_provider_grants_preserved', self.api)
         self.assertIn('"active_worker_lease_count": len(active_leases)', self.api)
         self.assertIn('"shared_workspace_object_blockers": shared_storage_count', self.api)
         self.assertIn('"storage_clear": shared_storage_count == 0', self.api)
