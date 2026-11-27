@@ -41,6 +41,18 @@ class AccountDeletionSafetyMigrationTests(unittest.TestCase):
         self.assertIn("v_user_id := (select auth.uid())", self.sql)
         self.assertIn("grant execute on function public.is_account_deletion_tombstoned() to authenticated", self.sql)
 
+    def test_tombstoned_owner_workspaces_are_excluded_from_new_worker_claims(self):
+        render_start = self.sql.index("create or replace function public.claim_next_shorts_job")
+        render_end = self.sql.index("create or replace function public.heartbeat_shorts_job", render_start)
+        render_claim = self.sql[render_start:render_end]
+        upload_start = self.sql.index("create or replace function public.claim_next_approved_shorts_job")
+        upload_end = self.sql.index("create or replace function public.heartbeat_shorts_upload_job", upload_start)
+        upload_claim = self.sql[upload_start:upload_end]
+        for claim in (render_claim, upload_claim):
+            self.assertIn("not exists", claim)
+            self.assertIn("join private.account_deletion_tombstones as t on t.user_id = w.owner_id", claim)
+            self.assertIn("where w.workspace_id", claim)
+
     def test_durable_queue_is_atomic_and_service_role_only(self):
         self.assertIn("create table if not exists private.account_deletion_requests", self.sql)
         self.assertIn("sessions_revoked boolean not null default false", self.sql)
