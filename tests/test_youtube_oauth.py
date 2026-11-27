@@ -99,5 +99,62 @@ class GoogleOAuthTests(unittest.TestCase):
         self.assertIn("openid", config.authorization_url("state", "challenge"))
 
 
+    def test_refresh_token_exchange_returns_only_access_token(self):
+        config = GoogleOAuthConfig.from_env(ENV)
+        http = Mock()
+        response = Mock(status_code=200)
+        response.json.return_value = {"access_token": "fresh-access", "expires_in": 3600}
+        http.return_value = response
+        token = config.refresh_access_token("refresh-token", http_post=http)
+        self.assertEqual(token, "fresh-access")
+        self.assertEqual(http.call_args.kwargs["data"]["grant_type"], "refresh_token")
+
+    def test_private_resumable_upload_verifies_exact_channel_and_visibility(self):
+        config = GoogleOAuthConfig.from_env(ENV)
+        config.fetch_channels = Mock(return_value=[{"channel_id": "UC123", "title": "NEXUS"}])
+        init = Mock(status_code=200)
+        init.headers = {"Location": "https://upload.youtube.example/session"}
+        upload = Mock(status_code=200)
+        upload.json.return_value = {
+            "id": "video-123",
+            "snippet": {"channelId": "UC123"},
+            "status": {"privacyStatus": "private"},
+        }
+        post = Mock(return_value=init)
+        put = Mock(return_value=upload)
+        result = config.upload_private_video(
+            "fresh-access", b"video-bytes", "NEXUS title", "script", "UC123",
+            http_post=post, http_put=put,
+        )
+        self.assertEqual(result, {
+            "video_id": "video-123", "channel_id": "UC123", "privacy_status": "private"
+        })
+        self.assertEqual(post.call_args.kwargs["json"]["status"]["privacyStatus"], "private")
+        self.assertEqual(put.call_args.kwargs["data"], b"video-bytes")
+
+    def test_private_upload_fails_closed_for_ambiguous_channel_or_public_response(self):
+        config = GoogleOAuthConfig.from_env(ENV)
+        config.fetch_channels = Mock(return_value=[
+            {"channel_id": "UC123", "title": "One"},
+            {"channel_id": "UC456", "title": "Two"},
+        ])
+        with self.assertRaises(GoogleOAuthError):
+            config.upload_private_video("token", b"video", "title", "desc", "UC123")
+        config.fetch_channels = Mock(return_value=[{"channel_id": "UC123", "title": "One"}])
+        init = Mock(status_code=200)
+        init.headers = {"Location": "https://upload.youtube.example/session"}
+        upload = Mock(status_code=200)
+        upload.json.return_value = {
+            "id": "video-123",
+            "snippet": {"channelId": "UC123"},
+            "status": {"privacyStatus": "public"},
+        }
+        with self.assertRaises(GoogleOAuthError):
+            config.upload_private_video(
+                "token", b"video", "title", "desc", "UC123",
+                http_post=Mock(return_value=init), http_put=Mock(return_value=upload),
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
