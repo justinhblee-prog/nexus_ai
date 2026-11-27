@@ -22,11 +22,13 @@ class AccountLifecycleApiContractTests(unittest.TestCase):
 
     def test_account_deletion_preflight_is_read_only_and_reports_shared_owner_blockers(self):
         self.assertIn('"/api/hosted/account/deletion/preflight"', self.api)
-        self.assertIn('"owner_id": f"eq.{user_id}"', self.api)
+        self.assertIn('"user_id": f"eq.{user_id}"', self.api)
         self.assertIn('"Transfer workspace ownership to an existing admin before account deletion."', self.api)
         self.assertIn('"account_deletion_enabled": False', self.api)
         self.assertIn("list_account_deletion_storage_objects(user_id", self.api)
         self.assertIn('"shared_workspace_object_blockers": shared_storage_count', self.api)
+        self.assertIn('"storage_clear": shared_storage_count == 0', self.api)
+        self.assertIn('"preflight_clear": not blockers', self.api)
         self.assertIn("Re-upload or safely transfer those files", self.api)
         self.assertIn('"/api/hosted/workspaces/{workspace_id}/members"', self.api)
         self.assertIn('"/api/hosted/workspaces/{workspace_id}/members/{member_id}/role"', self.api)
