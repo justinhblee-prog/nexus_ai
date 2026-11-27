@@ -983,6 +983,16 @@ def hosted_youtube_callback(code: str | None = None, state: str | None = None, e
         scopes = (token_data.get("scope") or "").split()
         expires_in = max(60, int(token_data.get("expires_in") or 3600))
         token_expires_at = (datetime.now(timezone.utc) + timedelta(seconds=expires_in)).isoformat()
+        # Re-check immediately before privileged persistence as the Google round
+        # trip may have outlived the initiator's workspace-admin membership.
+        memberships = admin.list_account_user_memberships(state_data["user_id"])
+        if not any(
+            row.get("workspace_id") == state_data["workspace_id"]
+            and row.get("role") in {"owner", "admin"}
+            for row in memberships
+        ):
+            raise HTTPException(status_code=403, detail="Workspace owner or admin permission is no longer available")
+
         connections = admin.upsert_connection({
             "workspace_id": state_data["workspace_id"],
             "provider": "youtube",
