@@ -55,8 +55,8 @@ class AccountDeletionSafetyMigrationTests(unittest.TestCase):
         self.assertIn("from public.gallery_images as gi", self.sql)
         self.assertIn("o.name in (gi.storage_key, gi.thumbnail_key)", self.sql)
         self.assertIn("limit p_limit offset p_offset", self.sql)
-        self.assertIn("where item.workspace_id !~ '^wsp_[0-9a-fA-F-]{36}
-
+        self.assertIn("where item.workspace_id !~ '^wsp_[0-9a-fA-F-]{36}$'", self.sql)
+        self.assertIn("to service_role", self.sql)
     def test_durable_deletion_queue_is_service_role_only_and_atomic_with_tombstone(self):
         self.assertIn("create table if not exists private.account_deletion_requests", self.sql)
         self.assertIn("create or replace function public.enqueue_account_deletion", self.sql)
