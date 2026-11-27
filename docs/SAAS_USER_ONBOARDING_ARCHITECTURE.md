@@ -1,6 +1,6 @@
 # NEXUS STUDIO PRO — SaaS User Registration & YouTube Account Linking
 
-Status: Phase A database identity bootstrap, hosted JWT verification, and responsive signup/login UI implemented; hosted Auth redirect configuration, tenant-scoped application APIs, and end-to-end signup verification remain in progress.
+Status: Phase A identity bootstrap and signup/login UI implemented. Phase B workspace-scoped Shorts schema and user-JWT APIs are implemented; real OAuth callbacks, tenant-bound worker execution, and end-to-end SaaS verification remain in progress.
 Target: `feat/nexus-user-onboarding-web-oauth-20261127`, based on the current full-stack integration branch.
 
 ## Phase A implementation delivered
@@ -20,13 +20,22 @@ Target: `feat/nexus-user-onboarding-web-oauth-20261127`, based on the current fu
 - No service-role key, Google client secret, or token is stored in browser-visible data.
 - No additional Supabase project, paid add-on, or paid resource is used.
 
+## Phase B implementation delivered
+
+- Added workspace-scoped `youtube_connections`, `shorts_channels`, `shorts_jobs`, `shorts_job_events`, `shorts_analytics_snapshots`, and `shorts_assets` tables.
+- Added private `youtube_oauth_credentials` and `youtube_oauth_states` tables with RLS enabled, no client grants, and no client policies (intentional deny-by-default). Refresh tokens must be encrypted by the application before storage.
+- Added role-aware RLS for owner/admin/editor/viewer access, restricted column-level mutation grants, and a trigger that permits approval-status changes only by workspace owners/admins.
+- Enforced private-only upload privacy and disallowed approved/uploading/published job stages until approval is recorded; published jobs also require provider video ID and upload timestamp.
+- Added a private workspace-role helper that derives identity from `auth.uid()`, not browser-supplied user IDs.
+- Verified two-user workspace isolation, editor job edits, owner approval, and private-by-default constraints inside rolled-back transactions.
+
 ## Remaining Phase A work
 
 - Configure Supabase Auth site URL and redirect allowlist for the actual hosted domain.
 - Configure the actual Supabase Auth Site URL and redirect allowlist for the hosted domain; verify signup/email confirmation/login/recovery against a real test mailbox.
 - Implement secure account deletion and credential revocation.
-- Add tenant-scoped application endpoints and bind every query/worker/media operation to the verified workspace membership.
-- Connect hosted signup/session to the production workspace experience only after tenant-safe APIs are ready.
+- Bind existing render workers, media storage, queue processing, analytics ingestion, and upload approvals to the verified workspace context; the new schema/API does not yet migrate the local SQLite pipeline.
+- Connect hosted workspace jobs to the production render/upload pipeline only after tenant-safe worker execution is implemented.
 - Verify cross-user access denial with two isolated test identities in the same project.
 
 ## Next phases
