@@ -15,14 +15,14 @@ class NexusUiContractTests(unittest.TestCase):
 
     def test_frontend_api_call_patterns_exist_in_backend_routes(self):
         api_source = Path("api_server.py").read_text(encoding="utf-8")
-        routes = re.findall(r'@app\\.(?:get|post|put|delete|patch)\\(["\\']([^"\\']+)', api_source)
-        calls = set(re.findall(r'["\\'](/api/[A-Za-z0-9_{}?=/&.-]+)', self.script))
+        routes = re.findall(r"@app\.(?:get|post|put|delete|patch)\(['\"]([^'\"]+)", api_source)
+        calls = set(re.findall(r"['\"](/api/[A-Za-z0-9_{}?=/&.-]+)", self.script))
         self.assertTrue(routes, "Backend route decorators are missing")
 
         def matches_route(path):
             path = path.split("?", 1)[0]
             for route in routes:
-                pattern = re.sub(r"\\{[^}]+\\}", r"[^/]+", route)
+                pattern = re.sub(r"\{[^}]+\}", r"[^/]+", route)
                 if re.fullmatch(pattern, path):
                     return True
                 if path.endswith("/") and route.startswith(path):
