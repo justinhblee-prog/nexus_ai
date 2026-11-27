@@ -118,7 +118,10 @@ async def enforce_local_origin_and_session(request, call_next):
                 request.state.hosted_access_token = token
                 tombstone_client = SupabaseRestClient(token)
                 if tombstone_client.rpc("is_account_deletion_tombstoned", {}):
-                    return JSONResponse(status_code=401, content={"detail": "This account is no longer active"})
+                    # Allow only the idempotent deletion-request retry path so a
+                    # tombstoned account can finish global session revocation.
+                    if not (path == "/api/hosted/account/deletion/request" and request.method == "POST"):
+                        return JSONResponse(status_code=401, content={"detail": "This account is no longer active"})
             except SupabaseRestError:
                 return JSONResponse(status_code=503, content={"detail": "Account status could not be verified safely"})
             except HostedAuthConfigurationError as exc:
@@ -165,6 +168,13 @@ def hosted_session(request: Request):
     if not user:
         raise HTTPException(status_code=401, detail="Valid Supabase bearer token required")
     return {"authenticated": True, "user": user}
+
+
+class HostedAccountDeletionReq(BaseModel):
+    confirmation: str = Field(pattern="^DELETE MY ACCOUNT$")
+
+    class Config:
+        extra = "forbid"
 
 
 class WorkspaceMemberRoleUpdateReq(BaseModel):
@@ -313,6 +323,14 @@ def hosted_workspace_members(workspace_id: str, request: Request):
         return {"items": items}
     except SupabaseRestError as exc:
         _hosted_rest_error(exc)
+
+
+def account_deletion_is_enabled():
+    return (
+        os.getenv("NEXUS_ACCOUNT_DELETION_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+        and os.getenv("NEXUS_ACCOUNT_DELETION_WORKER_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+        and is_hosted_auth_enabled()
+    )
 
 
 @app.get("/api/hosted/account/deletion/preflight")
@@ -470,13 +488,62 @@ def hosted_account_deletion_preflight(request: Request):
                 "shared_workspace_object_blockers": shared_storage_count,
             },
             "blockers": blockers,
-            "account_deletion_enabled": False,
-            "account_deletion_reason": "The resumable cleanup workflow and final Auth deletion verification are not yet complete.",
+            "account_deletion_enabled": account_deletion_is_enabled(),
+            "account_deletion_reason": None if account_deletion_is_enabled() else "Enable the hosted account deletion API and worker only after the reviewed migration is applied and all free-tier service configuration is verified.",
         }
     except SupabaseRestError as exc:
         _hosted_rest_error(exc)
     except SupabaseAdminError as exc:
         raise HTTPException(status_code=503, detail="Account deletion preflight could not verify Storage ownership safely") from exc
+
+@app.post("/api/hosted/account/deletion/request")
+def hosted_account_deletion_request(req: HostedAccountDeletionReq, request: Request):
+    """Queue an explicitly confirmed deletion only after fresh authentication."""
+    if not account_deletion_is_enabled():
+        raise HTTPException(status_code=503, detail="Account deletion is not enabled for this deployment")
+    user = request.state.hosted_user
+    auth_time = user.get("auth_time")
+    now = time.time()
+    if (
+        not isinstance(auth_time, (int, float))
+        or isinstance(auth_time, bool)
+        or auth_time > now + 30
+        or now - auth_time > 600
+    ):
+        raise HTTPException(status_code=403, detail="Fresh sign-in is required before account deletion")
+
+    preflight = hosted_account_deletion_preflight(request)
+    if not preflight.get("preflight_clear"):
+        raise HTTPException(status_code=409, detail={
+            "message": "Resolve account deletion blockers before confirming deletion",
+            "blockers": preflight.get("blockers", []),
+        })
+
+    user_id = user["user_id"]
+    try:
+        admin = SupabaseAdminRestClient()
+        queued = admin.enqueue_account_deletion(user_id, {
+            "preflight_clear": True,
+            "workspace_ids": [item["workspace_id"] for item in preflight.get("workspaces", [])],
+            "requested_at": datetime.now(timezone.utc).isoformat(),
+        })
+        if not queued:
+            raise SupabaseAdminError("Account deletion queue did not return a durable request")
+        if not queued.get("sessions_revoked"):
+            admin.revoke_user_sessions(request.state.hosted_access_token)
+            if not admin.mark_account_deletion_sessions_revoked(user_id):
+                raise SupabaseAdminError("Account deletion session revocation state could not be persisted")
+        return {
+            "status": queued.get("status", "pending"),
+            "phase": queued.get("phase", "queued"),
+            "message": "Deletion request is durably queued. Cleanup will run asynchronously and can be retried safely.",
+        }
+    except SupabaseAdminError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="The deletion request is safely retained, but session revocation or queue verification needs retry. Submit the same confirmation again.",
+        ) from exc
+
 
 @app.get("/api/hosted/workspaces/{workspace_id}/channels")
 def hosted_workspace_channels(workspace_id: str, request: Request):
