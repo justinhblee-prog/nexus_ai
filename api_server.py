@@ -404,15 +404,21 @@ def hosted_account_deletion_preflight(request: Request):
         credential_cleanup_count = len(connections)
         provider_grants_to_revoke = 0
         shared_provider_grants_preserved = 0
+        seen_provider_accounts = set()
         for connection in connections:
-            if connection.get("status") == "connected":
-                if admin.has_other_active_connections(
-                    connection.get("provider_account_id"),
-                    connection.get("connection_id"),
-                ):
-                    shared_provider_grants_preserved += 1
-                else:
-                    provider_grants_to_revoke += 1
+            if connection.get("status") != "connected":
+                continue
+            provider_account_id = connection.get("provider_account_id")
+            if not provider_account_id or provider_account_id in seen_provider_accounts:
+                continue
+            seen_provider_accounts.add(provider_account_id)
+            if admin.has_active_connection_outside_workspaces(
+                provider_account_id,
+                deletion_workspace_ids,
+            ):
+                shared_provider_grants_preserved += 1
+            else:
+                provider_grants_to_revoke += 1
         bucket_counts = {}
         shared_storage_count = 0
         for obj in storage_objects:
