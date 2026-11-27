@@ -37,6 +37,9 @@ _ALLOWED_RPCS = {
     "list_account_deletion_storage_objects",
     "list_account_deletion_active_leases",
     "mark_account_deletion_tombstone",
+    "enqueue_account_deletion",
+    "claim_next_account_deletion_request",
+    "update_account_deletion_request",
 }
 
 
@@ -333,6 +336,47 @@ class SupabaseAdminRestClient:
             raise ValueError("User ID is invalid")
         return self.rpc("mark_account_deletion_tombstone", {
             "p_user_id": value,
+        })
+
+    def enqueue_account_deletion(self, user_id, preflight_snapshot):
+        """Atomically persist the account tombstone and durable cleanup request."""
+        value = str(user_id)
+        if not re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", value):
+            raise ValueError("User ID is invalid")
+        if not isinstance(preflight_snapshot, dict):
+            raise ValueError("Account deletion snapshot must be an object")
+        rows = self.rpc("enqueue_account_deletion", {
+            "p_user_id": value,
+            "p_preflight_snapshot": preflight_snapshot,
+        }) or []
+        return rows[0] if rows else None
+
+    def claim_next_account_deletion_request(self, worker_id, lease_seconds=180):
+        if not isinstance(worker_id, str) or not 1 <= len(worker_id) <= 128:
+            raise ValueError("Account deletion worker ID is invalid")
+        rows = self.rpc("claim_next_account_deletion_request", {
+            "p_worker_id": worker_id,
+            "p_lease_seconds": max(30, min(int(lease_seconds), 900)),
+        }) or []
+        return rows[0] if rows else None
+
+    def update_account_deletion_request(self, user_id, worker_id, status, phase, error_code=None, retry_seconds=60):
+        value = str(user_id)
+        if not re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", value):
+            raise ValueError("User ID is invalid")
+        if status not in {"retry", "blocked", "completed", "failed"}:
+            raise ValueError("Account deletion status is invalid")
+        if not isinstance(phase, str) or not re.fullmatch(r"[a-z_]{1,64}", phase):
+            raise ValueError("Account deletion phase is invalid")
+        if error_code is not None and (not isinstance(error_code, str) or not re.fullmatch(r"[a-zA-Z0-9_]{1,64}", error_code)):
+            raise ValueError("Account deletion error code is invalid")
+        return self.rpc("update_account_deletion_request", {
+            "p_user_id": value,
+            "p_worker_id": worker_id,
+            "p_status": status,
+            "p_phase": phase,
+            "p_error_code": error_code,
+            "p_retry_seconds": max(5, min(int(retry_seconds), 86400)),
         })
 
     def list_account_deletion_storage_objects(self, user_id, limit=1000, offset=0, workspace_ids=None):
