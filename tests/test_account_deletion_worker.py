@@ -132,6 +132,57 @@ class AccountDeletionWorkerTests(unittest.TestCase):
         ])
         self.assertEqual(admin.delete_credential.call_count, 2)
 
+    def test_oauth_revocation_is_not_repeated_after_storage_failure_retry(self):
+        admin = Mock()
+        request = {"user_id": USER, "sessions_revoked": True}
+        admin.claim_next_account_deletion_request.side_effect = [request, request]
+        admin.list_account_user_memberships.return_value = [{"workspace_id": SOLE, "role": "owner"}]
+        admin.list_account_owned_workspaces.return_value = [{"workspace_id": SOLE, "owner_id": USER}]
+        admin.list_account_workspace_members.return_value = [{"user_id": USER, "role": "owner"}]
+        admin.list_account_deletion_active_leases.return_value = []
+        storage_object = {"bucket_id": "nexus-shorts", "name": f"{SOLE}/jobs/video.mp4"}
+        admin.list_account_deletion_storage_objects.side_effect = [[storage_object], [storage_object], []]
+        admin.list_account_personal_gallery_images.return_value = []
+        admin.list_youtube_connections_for_workspaces.return_value = [{
+            "connection_id": "55555555-5555-4555-8555-555555555555",
+            "provider_account_id": "google-account",
+            "status": "connected",
+        }]
+        admin.has_active_connection_outside_workspaces.return_value = False
+        admin.get_account_deletion_oauth_state.side_effect = [None, "revoked"]
+        admin.set_account_deletion_oauth_state.side_effect = ["revocation_started", "revoked"]
+        admin.get_credential.return_value = {
+            "encrypted_refresh_token_hex": "ciphertext",
+            "encryption_key_version": "v1",
+        }
+        admin.delete_storage_object_in_bucket.side_effect = [
+            SupabaseAdminError("temporary storage failure"),
+            True,
+        ]
+        admin.account_user_reference_counts.return_value = {}
+        admin.count_account_private_user_rows.return_value = {}
+        admin.update_account_deletion_request.return_value = True
+        oauth = Mock()
+        oauth_factory = Mock(return_value=oauth)
+        decrypt = Mock(return_value="refresh-token")
+
+        self.assertTrue(process_one_account_deletion(
+            admin, "worker-1", oauth_config_factory=oauth_factory, decrypt_token=decrypt
+        ))
+        self.assertTrue(process_one_account_deletion(
+            admin, "worker-1", oauth_config_factory=oauth_factory, decrypt_token=decrypt
+        ))
+
+        oauth.revoke_refresh_token.assert_called_once_with("refresh-token")
+        admin.get_credential.assert_called_once()
+        self.assertEqual(admin.delete_credential.call_count, 2)
+        admin.delete_account_workspace.assert_called_once_with(SOLE)
+        admin.delete_auth_user.assert_called_once_with(USER)
+        self.assertEqual(
+            [call.args[2:4] for call in admin.update_account_deletion_request.call_args_list],
+            [("retry", "storage_cleanup"), ("completed", "complete")],
+        )
+
     def test_oauth_cleanup_tries_another_credential_when_one_ciphertext_is_invalid(self):
         admin = Mock()
         admin.list_youtube_connections_for_workspaces.return_value = [
