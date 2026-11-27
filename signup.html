@@ -177,18 +177,28 @@
         const row = document.createElement("div");
         row.className = "connection-row";
         const detail = document.createElement("span");
-        const stageLabel = item.stage === "published" ? "YouTube 비공개 업로드 완료"
-          : item.stage === "uploading" ? "YouTube 비공개 업로드 중"
-          : item.stage === "approved" ? "최종 승인 · 비공개 업로드 대기"
-          : item.stage === "review_pending" ? "최종 검토 대기"
-          : item.stage;
-        detail.textContent = (item.title || item.topic) + " · " + stageLabel;
+        const stageLabels = {
+          queued: "제작 대기", drafting: "대본 작성", rendering: "영상 렌더링",
+          quality_review: "품질 검사", review_pending: "최종 검토 대기",
+          approved: "최종 승인 · 비공개 업로드 대기", uploading: "YouTube 비공개 업로드 중",
+          published: "YouTube 비공개 업로드 완료", failed: "제작 실패", cancelled: "취소됨"
+        };
+        const stageLabel = stageLabels[item.stage] || "상태 확인 필요";
+        const updatedLabel = item.updated_at
+          ? new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.updated_at))
+          : "";
+        detail.textContent = (item.title || item.topic) + " · " + stageLabel +
+          (updatedLabel ? " · 업데이트 " + updatedLabel : "");
         row.appendChild(detail);
         if (item.has_preview) {
           const preview = document.createElement("button");
           preview.type = "button";
           preview.textContent = "미리보기";
           preview.addEventListener("click", async () => {
+            if (row.querySelector("video")) {
+              row.querySelector("video").hidden = false;
+              return;
+            }
             preview.disabled = true;
             try {
               const previewResponse = await fetch(
@@ -197,7 +207,16 @@
               );
               const previewResult = await previewResponse.json();
               if (!previewResponse.ok) throw new Error(previewResult.detail || "미리보기를 열 수 없습니다.");
-              window.location.assign(previewResult.signed_url);
+              const player = document.createElement("video");
+              player.controls = true;
+              player.playsInline = true;
+              player.preload = "metadata";
+              player.src = previewResult.signed_url;
+              player.setAttribute("aria-label", (item.title || item.topic) + " 영상 미리보기");
+              player.style.cssText = "display:block;width:100%;max-height:420px;margin-top:12px;border-radius:12px;background:#000";
+              row.appendChild(player);
+              preview.textContent = "미리보기 숨기기";
+              preview.onclick = () => { player.hidden = !player.hidden; preview.textContent = player.hidden ? "미리보기" : "미리보기 숨기기"; };
             } catch (error) {
               showMessage(error.message || "미리보기를 열 수 없습니다.", "error");
               preview.disabled = false;
