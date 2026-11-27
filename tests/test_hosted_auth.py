@@ -91,5 +91,38 @@ class HostedAuthTokenTests(unittest.TestCase):
             verify_access_token("token", ENV, jwt_module=jwt_module)
 
 
+    def test_legacy_hs256_token_is_verified_by_supabase_auth_user_endpoint(self):
+        user_id = "11111111-1111-4111-8111-111111111111"
+        claims = {
+            "sub": user_id, "email": "member@example.test", "role": "authenticated",
+            "iss": "https://example-project.supabase.co/auth/v1", "aud": "authenticated",
+        }
+        jwt_module = Mock()
+        jwt_module.get_unverified_header.return_value = {"alg": "HS256"}
+        jwt_module.decode.return_value = claims
+        response = Mock(status_code=200)
+        response.json.return_value = {"id": user_id, "email": "member@example.test"}
+        with unittest.mock.patch("requests.get", return_value=response) as auth_get:
+            result = verify_access_token("legacy.hs256.token", ENV, jwt_module=jwt_module)
+        self.assertEqual(result, {"user_id": user_id, "email": "member@example.test", "role": "authenticated"})
+        self.assertEqual(auth_get.call_args.args[0], "https://example-project.supabase.co/auth/v1/user")
+        self.assertEqual(auth_get.call_args.kwargs["headers"]["apikey"], ENV["NEXUS_SUPABASE_PUBLISHABLE_KEY"])
+
+    def test_legacy_hs256_token_is_rejected_when_auth_server_rejects_it(self):
+        claims = {
+            "sub": "11111111-1111-4111-8111-111111111111",
+            "role": "authenticated",
+            "iss": "https://example-project.supabase.co/auth/v1",
+            "aud": "authenticated",
+        }
+        jwt_module = Mock()
+        jwt_module.get_unverified_header.return_value = {"alg": "HS256"}
+        jwt_module.decode.return_value = claims
+        response = Mock(status_code=401)
+        with unittest.mock.patch("requests.get", return_value=response):
+            with self.assertRaises(HostedAuthError):
+                verify_access_token("legacy.invalid.token", ENV, jwt_module=jwt_module)
+
+
 if __name__ == "__main__":
     unittest.main()
