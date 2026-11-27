@@ -679,11 +679,32 @@ function initNexusShell(){const old=document.querySelector("body > main");if(!ol
     }
     async function createSingleVideo() {
       const topic = document.getElementById("single-topic").value.trim(); if (!topic) return;
-      const r = await fetch("/api/create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ channel_name: document.getElementById("single-channel").value, topic }) });
-      alert((await r.json()).msg);
+      try {
+        const response = await fetch("/api/create", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ channel_name: document.getElementById("single-channel").value, topic }) });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "제작 요청을 등록하지 못했습니다.");
+        alert(result.msg || "제작 요청이 등록되었습니다.");
+        await loadOverview();
+      } catch (error) { alert(error.message || "제작 요청 중 오류가 발생했습니다."); }
     }
-    async function createAllVideos() { const r = await fetch("/api/create-all", { method: "POST" }); alert((await r.json()).msg); }
-    async function saveCloudQueue() { const r = await fetch("/api/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ topics_text: document.getElementById("queue-text").value }) }); alert((await r.json()).msg); }
+    async function createAllVideos() {
+      try {
+        const response = await fetch("/api/create-all", { method: "POST", credentials: "same-origin" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "일괄 제작 요청을 등록하지 못했습니다.");
+        alert(result.msg || "일괄 제작 요청이 등록되었습니다.");
+        await loadOverview();
+      } catch (error) { alert(error.message || "일괄 제작 요청 중 오류가 발생했습니다."); }
+    }
+    async function saveCloudQueue() {
+      try {
+        const response = await fetch("/api/queue", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ topics_text: document.getElementById("queue-text").value }) });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "제작 큐를 저장하지 못했습니다.");
+        alert(result.msg || "제작 큐를 저장했습니다.");
+        await loadOverview();
+      } catch (error) { alert(error.message || "제작 큐 저장 중 오류가 발생했습니다."); }
+    }
     async function forceScan() {
       setScanningState(true);
       try {
