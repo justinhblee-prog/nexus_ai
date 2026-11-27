@@ -32,6 +32,8 @@ Target: `feat/nexus-user-onboarding-web-oauth-20261127`, based on the current fu
 - Added a private worker lease table with `SKIP LOCKED` job claims, heartbeat renewal, attempt limits, and fencing tokens. Worker RPCs are service-role-only.
 - Added a private `nexus-shorts` Storage bucket (100 MB per object) with workspace-folder RLS policies. Rendered assets are private and previews use 5-minute signed URLs after user-JWT/RLS checks.
 - Added an opt-in Docker `hosted-render-worker` profile. It uses the existing Shorts renderer with an empty OpenAI key (free fallback only), runs ffprobe QA, stores tenant-prefixed MP4s, and stops at `review_pending` for human approval.
+- Verified the live database worker lifecycle in a rolled-back transaction: job claim, lease heartbeat, render completion, private media path enforcement, and owner approval moved the job to `approved`. Temporary user/job/lease rows were confirmed absent afterward.
+- The hosted worker remains disabled by default and was not started; no real media was uploaded to Storage and no YouTube upload was performed.
 - Added hosted account UI controls for channel connect/disconnect, Shorts job creation, rendered preview, and owner/admin final approval. Approval transitions the job to `approved`; public upload is not performed.
 - Added role-aware RLS for owner/admin/editor/viewer access, restricted column-level mutation grants, and a trigger that permits approval-status changes only by workspace owners/admins.
 - Enforced private-only upload privacy and disallowed approved/uploading/published job stages until approval is recorded; published jobs also require provider video ID and upload timestamp.
