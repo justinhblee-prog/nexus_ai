@@ -67,9 +67,15 @@ LOCAL_UI_ORIGINS = {
     "http://127.0.0.1:28502", "http://localhost:28502",
     "http://127.0.0.1:28503", "http://localhost:28503",
 }
+HOSTED_UI_ORIGINS = {
+    item.strip().rstrip("/")
+    for item in os.getenv("NEXUS_CORS_ALLOWED_ORIGINS", "").split(",")
+    if item.strip()
+}
+ALLOWED_UI_ORIGINS = LOCAL_UI_ORIGINS | HOSTED_UI_ORIGINS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=sorted(LOCAL_UI_ORIGINS),
+    allow_origins=sorted(ALLOWED_UI_ORIGINS),
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
@@ -77,7 +83,8 @@ app.add_middleware(
 @app.middleware("http")
 async def enforce_local_origin_and_session(request, call_next):
     origin = request.headers.get("origin")
-    if request.method not in ("GET", "HEAD", "OPTIONS") and origin and origin not in LOCAL_UI_ORIGINS:
+    request_origin = f"{request.url.scheme}://{request.url.netloc}"
+    if request.method not in ("GET", "HEAD", "OPTIONS") and origin and origin not in ALLOWED_UI_ORIGINS and origin != request_origin:
         return JSONResponse(status_code=403, content={"detail": "Cross-origin mutation rejected"})
     path = request.url.path
     if is_hosted_auth_enabled():
