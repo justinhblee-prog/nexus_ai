@@ -195,8 +195,10 @@
           preview.type = "button";
           preview.textContent = "미리보기";
           preview.addEventListener("click", async () => {
-            if (row.querySelector("video")) {
-              row.querySelector("video").hidden = false;
+            const existingPlayer = row.querySelector("video");
+            if (existingPlayer) {
+              existingPlayer.hidden = !existingPlayer.hidden;
+              preview.textContent = existingPlayer.hidden ? "미리보기" : "미리보기 숨기기";
               return;
             }
             preview.disabled = true;
@@ -216,7 +218,6 @@
               player.style.cssText = "display:block;width:100%;max-height:420px;margin-top:12px;border-radius:12px;background:#000";
               row.appendChild(player);
               preview.textContent = "미리보기 숨기기";
-              preview.onclick = () => { player.hidden = !player.hidden; preview.textContent = player.hidden ? "미리보기" : "미리보기 숨기기"; };
             } catch (error) {
               showMessage(error.message || "미리보기를 열 수 없습니다.", "error");
               preview.disabled = false;
