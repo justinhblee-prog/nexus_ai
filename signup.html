@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>NEXUS STUDIO PRO · 계정</title>
+  <style>
+    :root{color-scheme:dark;--bg:#050811;--panel:#0b101d;--line:#202a3d;--muted:#91a0b8;--text:#f4f7fb;--blue:#4d8dff;--green:#39d6a0;--amber:#f4c16b}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 20% 0%,#102044 0,transparent 42%),var(--bg);color:var(--text);font:15px/1.55 Pretendard,"Malgun Gothic",system-ui,sans-serif;display:grid;place-items:center;padding:24px}
+    .shell{width:min(100%,980px);display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:stretch}
+    .intro,.panel{background:rgba(11,16,29,.94);border:1px solid var(--line);border-radius:22px;padding:clamp(24px,4vw,40px);box-shadow:0 24px 80px #0005}
+    .brand{display:flex;align-items:center;gap:12px;font-weight:800;letter-spacing:.08em}.mark{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(135deg,#2563eb,#06b6d4);font-weight:900}
+    h1{font-size:clamp(30px,4vw,48px);line-height:1.12;letter-spacing:-.04em;margin:56px 0 18px}p{color:var(--muted);margin:0 0 18px}.features{display:grid;gap:12px;margin-top:32px}.feature{border:1px solid var(--line);border-radius:13px;padding:14px;background:#080e19}.feature b{display:block;font-size:14px;margin-bottom:3px}.feature span{font-size:13px;color:var(--muted)}
+    .panel{padding:clamp(22px,3vw,32px)}.eyebrow{font-size:11px;letter-spacing:.16em;color:#83aefb;font-weight:800}.panel h2{font-size:24px;margin:8px 0 5px}.tabs{display:flex;gap:6px;padding:5px;border-radius:12px;background:#060a14;margin:22px 0}.tabs button{flex:1;background:transparent;border:0;color:var(--muted);padding:10px;border-radius:9px;cursor:pointer;font:inherit}.tabs button[aria-selected=true]{background:#17243c;color:white}
+    label{display:block;font-size:13px;color:#c4cede;margin:14px 0 6px}input{width:100%;background:#060a14;border:1px solid #29364c;border-radius:10px;padding:12px 13px;color:white;font:inherit;outline:none}input:focus{border-color:var(--blue);box-shadow:0 0 0 3px #4d8dff22}
+    .primary,.secondary{width:100%;border:0;border-radius:10px;padding:12px 14px;margin-top:18px;font:700 14px inherit;cursor:pointer}.primary{background:linear-gradient(100deg,#2563eb,#397eea);color:white}.secondary{background:#111a2b;color:#dce7fa;border:1px solid #263650;margin-top:10px}.primary:disabled,.secondary:disabled{opacity:.55;cursor:wait}
+    .message{min-height:44px;margin-top:14px;padding:10px 12px;border:1px solid transparent;border-radius:10px;color:var(--muted);font-size:13px}.message[data-kind=success]{border-color:#1d654d;background:#0b241d;color:#8df0c7}.message[data-kind=error]{border-color:#713c43;background:#2a1419;color:#ffb3bd}.message[data-kind=info]{border-color:#344765;background:#111d31;color:#c6d9fb}
+    .session{display:none;margin-top:18px;padding:16px;border:1px solid #245d4b;background:#0a201a;border-radius:12px}.session strong{color:#8df0c7}.workspace{margin-top:12px;padding-top:12px;border-top:1px solid #245d4b;color:#d6e9e1;font-size:13px}.muted{font-size:12px;color:var(--muted);margin-top:18px}.hidden{display:none!important}
+    @media(max-width:760px){body{padding:12px}.shell{grid-template-columns:1fr;gap:12px}.intro{padding:22px}.intro h1{margin:30px 0 14px}.features{grid-template-columns:1fr 1fr;margin-top:20px}.panel{padding:22px}}
+    @media(max-width:420px){.features{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="intro">
+      <div class="brand"><span class="mark">N</span><span>NEXUS STUDIO PRO</span></div>
+      <h1>나만의 AI<br>콘텐츠 스튜디오</h1>
+      <p>계정을 만들고 워크스페이스를 시작하세요. YouTube 채널 연결은 계정 로그인과 별도의 권한 승인 단계에서 진행됩니다.</p>
+      <div class="features">
+        <div class="feature"><b>개인 워크스페이스</b><span>가입 시 안전하게 자동 생성</span></div>
+        <div class="feature"><b>계정별 데이터 분리</b><span>사용자별 RLS 정책 적용</span></div>
+        <div class="feature"><b>채널 권한은 별도 승인</b><span>YouTube 업로드 권한을 따로 요청</span></div>
+        <div class="feature"><b>최종 업로드 승인</b><span>사람의 확인 후 게시</span></div>
+      </div>
+    </section>
+    <section class="panel">
+      <div class="eyebrow">ACCOUNT ACCESS</div>
+      <h2>계정 시작하기</h2>
+      <p>이메일로 가입하거나 기존 계정에 로그인하세요.</p>
+      <div id="auth-forms">
+        <div class="tabs" role="tablist" aria-label="계정 작업">
+          <button type="button" id="tab-signup" role="tab" aria-selected="true">회원가입</button>
+          <button type="button" id="tab-login" role="tab" aria-selected="false">로그인</button>
+        </div>
+        <form id="signup-form">
+          <label for="signup-name">이름</label><input id="signup-name" name="name" maxlength="80" autocomplete="name" required>
+          <label for="signup-email">이메일</label><input id="signup-email" name="email" type="email" autocomplete="email" required>
+          <label for="signup-password">비밀번호</label><input id="signup-password" name="password" type="password" minlength="8" autocomplete="new-password" required>
+          <button class="primary" type="submit">무료 계정 만들기</button>
+        </form>
+        <form id="login-form" class="hidden">
+          <label for="login-email">이메일</label><input id="login-email" name="email" type="email" autocomplete="email" required>
+          <label for="login-password">비밀번호</label><input id="login-password" name="password" type="password" autocomplete="current-password" required>
+          <button class="primary" type="submit">로그인</button>
+          <button class="secondary" type="button" id="reset-request">비밀번호 재설정 메일 보내기</button>
+        </form>
+        <form id="password-form" class="hidden">
+          <label for="new-password">새 비밀번호</label><input id="new-password" type="password" minlength="8" autocomplete="new-password" required>
+          <button class="primary" type="submit">비밀번호 변경</button>
+        </form>
+      </div>
+      <div id="message" class="message" role="status" aria-live="polite">서비스 계정 설정을 확인하고 있습니다.</div>
+      <div id="session" class="session">
+        <strong>로그인 확인 완료</strong>
+        <div id="session-email"></div>
+        <div id="workspace" class="workspace">워크스페이스 정보를 확인하고 있습니다.</div>
+        <button class="secondary" type="button" id="signout">로그아웃</button>
+      </div>
+      <div class="muted">현재는 계정·개인 워크스페이스 기반을 연결하는 단계입니다. 기존 단일 사용자 제작 API는 SaaS 테넌트 격리가 끝날 때까지 호스팅 모드에서 차단됩니다.</div>
+    </section>
+  </main>
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2.119.2";
+
+    const message = document.getElementById("message");
+    const signupForm = document.getElementById("signup-form");
+    const loginForm = document.getElementById("login-form");
+    const passwordForm = document.getElementById("password-form");
+    const sessionPanel = document.getElementById("session");
+    const authForms = document.getElementById("auth-forms");
+    let supabase = null;
+
+    function showMessage(text, kind = "info") {
+      message.textContent = text;
+      message.dataset.kind = kind;
+    }
+    function setBusy(form, busy) {
+      form.querySelectorAll("button").forEach(button => { button.disabled = busy; });
+    }
+    function selectTab(mode) {
+      const signup = mode === "signup";
+      document.getElementById("tab-signup").setAttribute("aria-selected", String(signup));
+      document.getElementById("tab-login").setAttribute("aria-selected", String(!signup));
+      signupForm.classList.toggle("hidden", !signup);
+      loginForm.classList.toggle("hidden", signup);
+      passwordForm.classList.add("hidden");
+    }
+    async function loadSession() {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) throw error;
+      if (!session) {
+        sessionPanel.style.display = "none";
+        authForms.classList.remove("hidden");
+        return;
+      }
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      const response = await fetch("/api/hosted/session", {
+        headers: { Authorization: "Bearer " + session.access_token }
+      });
+      if (!response.ok) throw new Error("서버 세션 확인 실패 (" + response.status + ")");
+      const verified = await response.json();
+      if (!verified.authenticated || verified.user.user_id !== user.id) {
+        throw new Error("서버가 확인한 사용자와 로그인 계정이 일치하지 않습니다.");
+      }
+      const { data: workspaces, error: workspaceError } = await supabase
+        .from("workspaces")
+        .select("workspace_id,workspace_name,created_at")
+        .order("created_at", { ascending: true });
+      if (workspaceError) throw workspaceError;
+      document.getElementById("session-email").textContent = user.email || "인증된 계정";
+      const workspaceNode = document.getElementById("workspace");
+      workspaceNode.textContent = workspaces?.length
+        ? workspaces.map(item => item.workspace_name + " · " + item.workspace_id).join("\n")
+        : "워크스페이스를 찾지 못했습니다. 계정 부트스트랩 상태를 확인하세요.";
+      workspaceNode.style.whiteSpace = "pre-line";
+      sessionPanel.style.display = "block";
+      authForms.classList.add("hidden");
+      showMessage("Supabase Auth와 NEXUS 서버 세션 검증이 완료되었습니다.", "success");
+    }
+
+    document.getElementById("tab-signup").addEventListener("click", () => selectTab("signup"));
+    document.getElementById("tab-login").addEventListener("click", () => selectTab("login"));
+
+    try {
+      const configResponse = await fetch("/api/hosted/auth-config", { cache: "no-store" });
+      const config = await configResponse.json();
+      if (!configResponse.ok) throw new Error(config.detail || "호스팅 인증 설정을 불러오지 못했습니다.");
+      supabase = createClient(config.supabase_url, config.publishable_key, {
+        auth: {
+          persistSession: true,
+          storage: window.sessionStorage,
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+          flowType: "pkce"
+        }
+      });
+      await loadSession();
+      if (new URLSearchParams(window.location.search).get("reset") === "1") {
+        passwordForm.classList.remove("hidden");
+        signupForm.classList.add("hidden");
+        loginForm.classList.add("hidden");
+        showMessage("새 비밀번호를 입력하세요.", "info");
+      }
+    } catch (error) {
+      showMessage(error.message || "계정 서비스를 초기화하지 못했습니다.", "error");
+      signupForm.querySelector("button").disabled = true;
+      loginForm.querySelectorAll("button").forEach(button => { button.disabled = true; });
+    }
+
+    signupForm.addEventListener("submit", async event => {
+      event.preventDefault();
+      if (!supabase) return;
+      setBusy(signupForm, true);
+      try {
+        const { data, error } = await supabase.auth.signUp({
+          email: document.getElementById("signup-email").value.trim(),
+          password: document.getElementById("signup-password").value,
+          options: {
+            data: { full_name: document.getElementById("signup-name").value.trim() },
+            emailRedirectTo: window.location.origin + "/signup"
+          }
+        });
+        if (error) throw error;
+        if (!data.session) {
+          showMessage("가입 요청이 접수되었습니다. 이메일 인증 링크를 확인한 뒤 다시 로그인하세요.", "success");
+        } else {
+          showMessage("계정이 생성되었습니다. 개인 워크스페이스를 확인합니다.", "success");
+          await loadSession();
+        }
+      } catch (error) {
+        showMessage(error.message || "회원가입에 실패했습니다.", "error");
+      } finally { setBusy(signupForm, false); }
+    });
+
+    loginForm.addEventListener("submit", async event => {
+      event.preventDefault();
+      if (!supabase) return;
+      setBusy(loginForm, true);
+      try {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: document.getElementById("login-email").value.trim(),
+          password: document.getElementById("login-password").value
+        });
+        if (error) throw error;
+        await loadSession();
+      } catch (error) {
+        showMessage(error.message || "로그인에 실패했습니다.", "error");
+      } finally { setBusy(loginForm, false); }
+    });
+
+    document.getElementById("reset-request").addEventListener("click", async () => {
+      if (!supabase) return;
+      const email = document.getElementById("login-email").value.trim();
+      if (!email) return showMessage("비밀번호 재설정 메일을 받을 이메일을 입력하세요.", "error");
+      try {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin + "/signup?reset=1"
+        });
+        if (error) throw error;
+        showMessage("비밀번호 재설정 메일을 발송했습니다. 받은편지함을 확인하세요.", "success");
+      } catch (error) {
+        showMessage(error.message || "재설정 메일 발송에 실패했습니다.", "error");
+      }
+    });
+
+    passwordForm.addEventListener("submit", async event => {
+      event.preventDefault();
+      if (!supabase) return;
+      setBusy(passwordForm, true);
+      try {
+        const { error } = await supabase.auth.updateUser({
+          password: document.getElementById("new-password").value
+        });
+        if (error) throw error;
+        window.history.replaceState({}, "", "/signup");
+        passwordForm.classList.add("hidden");
+        selectTab("login");
+        showMessage("비밀번호가 변경되었습니다. 새 비밀번호로 로그인할 수 있습니다.", "success");
+      } catch (error) {
+        showMessage(error.message || "비밀번호 변경에 실패했습니다.", "error");
+      } finally { setBusy(passwordForm, false); }
+    });
+
+    document.getElementById("signout").addEventListener("click", async () => {
+      if (!supabase) return;
+      const { error } = await supabase.auth.signOut();
+      if (error) return showMessage(error.message || "로그아웃에 실패했습니다.", "error");
+      sessionPanel.style.display = "none";
+      authForms.classList.remove("hidden");
+      selectTab("login");
+      showMessage("로그아웃했습니다.", "success");
+    });
+
+    if (supabase) {
+      supabase.auth.onAuthStateChange((_event, session) => {
+        if (!session) {
+          sessionPanel.style.display = "none";
+          authForms.classList.remove("hidden");
+        }
+      });
+    }
+  </script>
+</body>
+</html>
