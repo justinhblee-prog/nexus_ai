@@ -65,6 +65,16 @@ def process_one_job(
     lease_token = str(job["lease_token"])
     stop_event = threading.Event()
     lost_event = threading.Event()
+    try:
+        if not admin.heartbeat_shorts_job(job_id, lease_token, lease_seconds):
+            raise LeaseLostError("worker lease was not accepted")
+    except Exception as exc:
+        try:
+            admin.finish_shorts_job(job_id, lease_token, False, error=type(exc).__name__, max_attempts=max_attempts)
+        except Exception:
+            pass
+        logger.warning("Hosted Shorts job %s lost its lease before rendering", job_id)
+        return True
     heartbeat = threading.Thread(
         target=_heartbeat_loop,
         args=(admin, job_id, lease_token, stop_event, lost_event, lease_seconds),
