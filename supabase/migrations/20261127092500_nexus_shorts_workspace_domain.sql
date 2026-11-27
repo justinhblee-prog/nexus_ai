@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS public.shorts_channels (
   UNIQUE (workspace_id, platform, provider_channel_id),
   FOREIGN KEY (workspace_id, connection_id)
     REFERENCES public.youtube_connections(workspace_id, connection_id)
-    ON DELETE SET NULL
+    ON DELETE SET NULL (connection_id)
 );
 
 CREATE TABLE IF NOT EXISTS public.shorts_jobs (
