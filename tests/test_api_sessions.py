@@ -787,5 +787,87 @@ class SignedSessionTests(unittest.TestCase):
 
 
 
+    def test_hosted_topic_queue_list_is_scoped_to_user_and_workspace(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        workspace_id = "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.return_value = [{"topic_id": "22222222-2222-4222-8222-222222222222", "topic": "AI"}]
+            result = self.api.hosted_topic_queue_list(workspace_id, request)
+        params = client_type.return_value.select.call_args.args[1]
+        self.assertEqual(client_type.return_value.select.call_args.args[0], "shorts_topic_queue")
+        self.assertEqual(params["workspace_id"], f"eq.{workspace_id}")
+        self.assertEqual(params["user_id"], "eq.11111111-1111-4111-8111-111111111111")
+        self.assertEqual(result["storage"], "server")
+        self.assertEqual(len(result["items"]), 1)
+
+    def test_hosted_topic_queue_add_normalizes_and_validates_https_source(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        req = self.api.HostedTopicQueueCreateReq(
+            topic="  AI   workflow  ", source="trend_radar",
+            region="KR", source_name="Example", source_url="https://example.test/story",
+        )
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.insert.return_value = [{"topic_id": "33333333-3333-4333-8333-333333333333", "topic": "AI workflow"}]
+            result = self.api.hosted_topic_queue_add(
+                "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", req, request
+            )
+        payload = client_type.return_value.insert.call_args.args[1]
+        self.assertEqual(payload["topic"], "AI workflow")
+        self.assertEqual(payload["user_id"], "11111111-1111-4111-8111-111111111111")
+        self.assertEqual(payload["workspace_id"], "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        self.assertEqual(payload["source_url"], "https://example.test/story")
+        self.assertEqual(result["storage"], "server")
+
+    def test_hosted_topic_queue_rejects_non_https_sources_before_database_write(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        req = self.api.HostedTopicQueueCreateReq(topic="AI", source_url="http://example.test")
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            with self.assertRaises(self.api.HTTPException) as raised:
+                self.api.hosted_topic_queue_add(
+                    "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", req, request
+                )
+        self.assertEqual(raised.exception.status_code, 422)
+        client_type.assert_not_called()
+
+    def test_hosted_topic_queue_maps_missing_migration_to_safe_pending_state(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.side_effect = self.api.SupabaseRestError(404, "Requested workspace data was not found")
+            with self.assertRaises(self.api.HTTPException) as raised:
+                self.api.hosted_topic_queue_list(
+                    "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", request
+                )
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertIn("마이그레이션", raised.exception.detail)
+
+    def test_hosted_topic_queue_delete_filters_user_workspace_and_topic(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        workspace_id = "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        topic_id = self.api.UUID("22222222-2222-4222-8222-222222222222")
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            result = self.api.hosted_topic_queue_delete(workspace_id, topic_id, request)
+        self.assertEqual(result, {"deleted": True})
+        params = client_type.return_value.delete.call_args.args[1]
+        self.assertEqual(params["topic_id"], f"eq.{topic_id}")
+        self.assertEqual(params["workspace_id"], f"eq.{workspace_id}")
+        self.assertEqual(params["user_id"], "eq.11111111-1111-4111-8111-111111111111")
+
+
+
 if __name__ == "__main__":
     unittest.main()
