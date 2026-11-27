@@ -30,3 +30,17 @@ jobs:
           node --check /tmp/nexus-studio.js
       - name: Run radar, queue, authentication, and audit-log tests
         run: python -m unittest discover -s tests -v
+
+  render-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the production runtime image
+        run: docker build --tag nexus-studio-ci .
+      - name: Render and inspect a real MP4 inside the production image
+        run: |
+          docker run --rm \
+            --volume "${{ github.workspace }}:/app" \
+            --workdir /app \
+            nexus-studio-ci \
+            python -m unittest discover -s integration_tests -p "test_video_render_integration.py" -v
