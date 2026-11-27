@@ -130,6 +130,21 @@ class SupabaseAdminRestClient:
             prefer="return=representation",
         ) or []
 
+    def has_other_active_connections(self, provider_account_id, connection_id):
+        rows = self._call(
+            "GET",
+            "youtube_connections",
+            params={
+                "select": "connection_id",
+                "provider": "eq.youtube",
+                "provider_account_id": f"eq.{provider_account_id}",
+                "status": "eq.connected",
+                "connection_id": f"neq.{connection_id}",
+                "limit": "1",
+            },
+        ) or []
+        return bool(rows)
+
     def update_connection(self, connection_id, workspace_id, payload):
         return self._call(
             "PATCH",
