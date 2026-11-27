@@ -56,5 +56,15 @@ class TokenVaultTests(unittest.TestCase):
             })
 
 
+    def test_token_vault_configuration_preflight_validates_keyring(self):
+        key = base64.urlsafe_b64encode(b"k" * 32).decode().rstrip("=")
+        self.assertEqual(validate_token_vault_config({
+            "NEXUS_TOKEN_ENCRYPTION_KEYS_JSON": json.dumps({"v1": key}),
+            "NEXUS_TOKEN_ENCRYPTION_KEY_VERSION": "v1",
+        }), "v1")
+        with self.assertRaises(TokenVaultError):
+            validate_token_vault_config({})
+
+
 if __name__ == "__main__":
     unittest.main()
