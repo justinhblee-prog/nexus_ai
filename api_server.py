@@ -675,6 +675,62 @@ def hosted_workspace_overview(workspace_id: str, request: Request):
         _hosted_rest_error(exc)
 
 
+@app.get("/api/hosted/workspaces/{workspace_id}/trends")
+def hosted_workspace_trends(workspace_id: str, request: Request):
+    """Read shared public trend signals; never import local channel or job data into a tenant."""
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    try:
+        memberships = client.select("workspace_members", {
+            "select": "role",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{request.state.hosted_user['user_id']}",
+            "limit": "1",
+        }) or []
+        if not memberships:
+            raise HTTPException(status_code=404, detail="Workspace not found")
+        conn = trend_radar.init_radar_db()
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute(
+                """SELECT region, rank_no, topic, source_name, source_url,
+                          source_score, source_score_label, growth_pct, viral_score,
+                          ai_reason, created_at
+                   FROM trend_recommendations
+                   WHERE period_type='daily'
+                   ORDER BY rank_no ASC, viral_score DESC, created_at DESC
+                   LIMIT 30"""
+            ).fetchall()
+            items = []
+            seen = set()
+            for row in rows:
+                item = dict(row)
+                topic = str(item.get("topic") or "").strip()
+                if not topic or topic.casefold() in seen:
+                    continue
+                seen.add(topic.casefold())
+                source_url = str(item.get("source_url") or "")
+                item["source_url"] = source_url if source_url.startswith("https://") else None
+                items.append(item)
+            scan = trend_radar.get_scan_status("daily")
+            return {
+                "items": items,
+                "scan": {
+                    "status": scan.get("status") if scan else "not_scanned",
+                    "completed_at": scan.get("completed_at") if scan else None,
+                    "item_count": scan.get("item_count", 0) if scan else 0,
+                },
+                "scope": "shared_public_signals",
+            }
+        finally:
+            conn.close()
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+    except sqlite3.Error as exc:
+        logger.exception("Hosted trend radar read failed")
+        raise HTTPException(status_code=503, detail="Trend radar data is temporarily unavailable") from exc
+
+
 @app.post("/api/hosted/workspaces/{workspace_id}/jobs")
 def hosted_create_job(workspace_id: str, req: HostedJobCreateReq, request: Request):
     _validate_workspace_id(workspace_id)
