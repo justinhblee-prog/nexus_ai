@@ -1152,6 +1152,9 @@ def auto_radar_and_scheduler_loop():
 @app.on_event("startup")
 def startup_event():
     init_app_db()
+    if is_hosted_auth_enabled():
+        logger.warning("Hosted auth is enabled; legacy SQLite queue workers and local radar scheduler are disabled.")
+        return
     radar_db = trend_radar.init_radar_db()
     radar_db.close()
     threading.Thread(
