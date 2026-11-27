@@ -1,6 +1,6 @@
 import unittest
 
-from script_templates import fallback_script, normalize_script_payload
+from script_templates import fallback_script, normalize_script_payload, split_manual_script
 
 
 class ScriptTemplateTests(unittest.TestCase):
@@ -17,6 +17,16 @@ class ScriptTemplateTests(unittest.TestCase):
             normalize_script_payload({"title": "", "sentences": []}, "Future Leak", "양자 컴퓨팅"),
             fallback_script("Future Leak", "양자 컴퓨팅"),
         )
+
+    def test_manual_script_is_split_into_four_to_eight_sentences(self):
+        script = "첫째 문장입니다. 둘째 문장입니다. 셋째 문장입니다. 넷째 문장입니다."
+        self.assertEqual(len(split_manual_script(script)), 4)
+
+    def test_manual_script_rejects_too_few_sentences_and_oversized_text(self):
+        with self.assertRaises(ValueError):
+            split_manual_script("한 문장입니다.")
+        with self.assertRaises(ValueError):
+            split_manual_script("가" * 20001)
 
     def test_valid_model_payload_is_bounded_and_normalized(self):
         data = {"title": "  Topic title  ", "sentences": [" one ", "two", "three", "four"], "image_prompt": " scene "}

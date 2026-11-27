@@ -40,8 +40,10 @@ class AuditLogTests(unittest.TestCase):
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         conn = sqlite3.connect(self.db_path)
         conn.executescript("""
-            CREATE TABLE topic_queue(status TEXT);
-            INSERT INTO topic_queue VALUES ('pending'), ('running'), ('pending');
+            CREATE TABLE topic_queue(status TEXT, created_at TEXT);
+            INSERT INTO topic_queue VALUES
+                ('pending', '2026-11-26T10:00:00'), ('running', '2026-11-26T11:00:00'),
+                ('pending', '2026-11-26T12:00:00');
             CREATE TABLE scheduler_runs(status TEXT);
             INSERT INTO scheduler_runs VALUES ('completed');
             CREATE TABLE pipeline_jobs(stage TEXT);
@@ -53,6 +55,13 @@ class AuditLogTests(unittest.TestCase):
                 '2026-11-26T12:00:00', 'success', 8, 0, NULL);
             INSERT INTO source_health VALUES ('BBC News', 'GB', '2026-11-26T12:00:00',
                 NULL, 'failed', 0, 2, 'timeout');
+            CREATE TABLE radar_scans (
+                id INTEGER PRIMARY KEY, period_type TEXT, started_at TEXT, completed_at TEXT,
+                status TEXT, item_count INTEGER, successful_sources INTEGER, failed_sources INTEGER
+            );
+            INSERT INTO radar_scans VALUES
+                (1, 'daily', '2026-11-26T12:00:00', '2026-11-26T12:01:00', 'partial', 18, 5, 1),
+                (2, 'weekly', '2026-11-26T11:00:00', '2026-11-26T11:01:00', 'success', 30, 6, 0);
         """)
         conn.commit()
         conn.close()
@@ -65,6 +74,9 @@ class AuditLogTests(unittest.TestCase):
         self.assertEqual(metrics["latest_event"]["event_type"], "scheduler.completed")
         self.assertEqual(metrics["source_health_summary"], {"success": 1, "failed": 1})
         self.assertEqual(len(metrics["sources"]), 2)
+        self.assertEqual(metrics["radar_scans"]["daily"]["status"], "partial")
+        self.assertEqual(metrics["radar_scans"]["weekly"]["item_count"], 30)
+        self.assertEqual(metrics["oldest_pending_queue_created_at"], "2026-11-26T10:00:00")
 
     def test_invalid_event_type_is_rejected(self):
         with self.assertRaises(ValueError):

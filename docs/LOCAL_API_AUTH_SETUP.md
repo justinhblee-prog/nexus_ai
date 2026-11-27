@@ -4,6 +4,14 @@ The FastAPI browser studio and the separate Streamlit interface both require the
 
 ## Configure local secrets
 
+Windows PowerShell 7 setup can create missing local secrets without printing them:
+
+```powershell
+pwsh -File .\scripts\setup-local-nexus.ps1
+# Optional: build and start the isolated localhost services
+pwsh -File .\scripts\setup-local-nexus.ps1 -Start
+```
+
 1. Create or update `.env` in the repository root.
 2. Set `NEXUS_API_PASSWORD` to a unique password of at least 12 characters. This password is shared by both local UI entry points.
 3. Set `NEXUS_SESSION_SECRET` to a separate random secret of at least 32 characters. Generate it with:
@@ -19,6 +27,8 @@ The FastAPI browser studio and the separate Streamlit interface both require the
 The repository ignores `.env`. Never commit it or paste its values into an issue, PR, or chat.
 
 ## FastAPI browser session
+
+- `NEXUS_AUTH_ENABLED=true` is the secure default in Docker Compose. Set it to `false` only for a strictly loopback-only development instance; do not disable it on a network-accessible host.
 
 - Successful login issues a 12-hour HMAC-signed cookie with `HttpOnly`, `SameSite=Strict`, and path `/`.
 - The browser does not store the password or a bearer token in local/session storage.
@@ -36,6 +46,14 @@ The repository ignores `.env`. Never commit it or paste its values into an issue
 - Streamlit's session is separate from the FastAPI signed cookie; signing in to one interface does not sign in to the other.
 
 ## Network and verification boundaries
+
+Run the local verification script after startup:
+
+```powershell
+pwsh -File .\scripts\verify-local-nexus.ps1
+```
+
+It checks configured authentication, unauthenticated API/media rejection, Streamlit health, the unit suite, and the real MP4 render integration test inside the container.
 
 - Docker Compose binds isolated host ports `28502` and `28503` to `127.0.0.1` by default (container ports remain `8502` and `8503`). Do not expose them publicly.
 - Automated unit tests cover the password helper and FastAPI session enforcement.

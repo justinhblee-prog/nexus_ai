@@ -49,12 +49,40 @@ class DurableTopicQueueTests(unittest.TestCase):
         finally:
             db.close()
 
+    def test_queue_worker_count_defaults_and_is_bounded(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(self.api.configured_queue_worker_count(), 1)
+        with patch.dict(os.environ, {"NEXUS_QUEUE_WORKERS": "3"}, clear=True):
+            self.assertEqual(self.api.configured_queue_worker_count(), 3)
+        with patch.dict(os.environ, {"NEXUS_QUEUE_WORKERS": "99"}, clear=True):
+            self.assertEqual(self.api.configured_queue_worker_count(), 4)
+        with patch.dict(os.environ, {"NEXUS_QUEUE_WORKERS": "0"}, clear=True):
+            self.assertEqual(self.api.configured_queue_worker_count(), 1)
+        with patch.dict(os.environ, {"NEXUS_QUEUE_WORKERS": "invalid"}, clear=True):
+            self.assertEqual(self.api.configured_queue_worker_count(), 1)
+
+    def test_startup_starts_one_legacy_bridge_and_configured_render_workers(self):
+        radar_db = types.SimpleNamespace(close=lambda: None)
+        with patch.dict(os.environ, {"NEXUS_QUEUE_WORKERS": "2"}, clear=True), \
+             patch.object(self.api, "init_app_db"), \
+             patch.object(self.api.trend_radar, "init_radar_db", return_value=radar_db, create=True), \
+             patch.object(self.api.threading, "Thread") as thread_factory:
+            self.api.startup_event()
+        names = [call.kwargs.get("name") for call in thread_factory.call_args_list]
+        self.assertEqual(names.count("nexus-legacy-topics-bridge"), 1)
+        self.assertEqual(names.count("nexus-queue-worker-1"), 1)
+        self.assertEqual(names.count("nexus-queue-worker-2"), 1)
+        self.assertEqual(names.count("nexus-radar-scheduler"), 1)
+        self.assertEqual(thread_factory.call_count, 4)
+        self.assertTrue(all(call.return_value.start.called for call in thread_factory.call_args_list))
+
     def test_plain_topic_expands_to_channel_scoped_jobs(self):
         added = self.api.enqueue_topic("A test topic", source="test")
         self.assertEqual(added, 10)
         rows = self._rows()
         self.assertEqual(len(rows), 10)
         self.assertEqual({row["status"] for row in rows}, {"pending"})
+        self.assertIn("lease_token", rows[0].keys())
         self.assertEqual(len({row["channel_name"] for row in rows}), 10)
 
     def test_claim_lease_and_retry_limit(self):
@@ -73,7 +101,9 @@ class DurableTopicQueueTests(unittest.TestCase):
         second = self.api.claim_next_topic(lease_seconds=1)
         self.assertEqual(second["id"], first["id"])
         self.assertEqual(second["attempts"], 2)
-        self.api.finish_topic(second["id"], "temporary failure")
+        self.assertNotEqual(first["lease_token"], second["lease_token"])
+        self.assertFalse(self.api.finish_topic(first["id"], first["lease_token"]))
+        self.assertTrue(self.api.finish_topic(second["id"], second["lease_token"], "temporary failure"))
 
         db = self.api.get_db()
         try:
@@ -84,13 +114,211 @@ class DurableTopicQueueTests(unittest.TestCase):
 
         third = self.api.claim_next_topic(lease_seconds=1)
         self.assertEqual(third["attempts"], 3)
-        self.api.finish_topic(third["id"], "permanent failure")
+        self.assertTrue(self.api.finish_topic(third["id"], third["lease_token"], "permanent failure"))
         self.assertIsNone(self.api.claim_next_topic())
 
         row = self._rows()[0]
         self.assertEqual(row["status"], "failed")
         self.assertEqual(row["attempts"], 3)
 
+
+    def test_render_job_and_queue_completion_commit_atomically(self):
+        self.api.enqueue_topic("Future Leak | atomic render", source="daily_radar")
+        item = self.api.claim_next_topic(lease_seconds=60)
+        with patch.object(self.api.video_maker, "render_pro_short",
+                          return_value=("output/atomic.mp4", "Atomic title", "Atomic script"), create=True), \
+             patch.object(self.api, "validate_video", return_value={"ok": True, "checks": {}, "errors": []}):
+            job_id = self.api.run_make_video(
+                "Future Leak", "persona", "atomic render",
+                queue_id=item["id"], lease_token=item["lease_token"],
+            )
+        db = self.api.get_db()
+        try:
+            job = db.execute("SELECT id, stage FROM pipeline_jobs WHERE id=?", (job_id,)).fetchone()
+            queue = db.execute("SELECT status, lease_token FROM topic_queue WHERE id=?", (item["id"],)).fetchone()
+            produced = db.execute(
+                "SELECT topic FROM auto_produced_topics WHERE topic='atomic render'"
+            ).fetchone()
+        finally:
+            db.close()
+        self.assertEqual(job["stage"], "최종컨펌 대기")
+        self.assertEqual(queue["status"], "completed")
+        self.assertIsNone(queue["lease_token"])
+        self.assertIsNotNone(produced)
+
+    def test_edited_job_regenerates_in_place_before_final_review(self):
+        db = self.api.get_db()
+        try:
+            db.execute(
+                "INSERT INTO pipeline_jobs (channel_name,title,script,video_path,stage,created_at) VALUES (?,?,?,?,?,?)",
+                ("Future Leak", "Old title", "Old script", "output/old.mp4", "반려(수정 필요)", "now"),
+            )
+            db.commit()
+        finally:
+            db.close()
+        revised_title = "Revised title"
+        revised_script = "첫째 문장입니다. 둘째 문장입니다. 셋째 문장입니다. 넷째 문장입니다."
+        queue_id = self.api.enqueue_job_regeneration(1, revised_title, revised_script)
+        self.assertEqual(self._stage_for_test(1), "재제작 대기")
+        item = self.api.claim_next_topic(lease_seconds=60)
+        self.assertEqual(item["id"], queue_id)
+        with patch.object(self.api.video_maker, "render_pro_short",
+                          return_value=("output/revised.mp4", revised_title, revised_script), create=True) as render, \
+             patch.object(self.api, "validate_video", return_value={"ok": True, "checks": {}, "errors": []}):
+            job_id = self.api.run_make_video(
+                "Future Leak", "persona", item["topic"],
+                queue_id=item["id"], lease_token=item["lease_token"],
+                script_override=item["script_override"], title_override=item["title_override"],
+                target_job_id=item["target_job_id"],
+            )
+        self.assertEqual(job_id, 1)
+        self.assertEqual(render.call_args.kwargs["script_override"], revised_script)
+        self.assertEqual(render.call_args.kwargs["title_override"], revised_title)
+        db = self.api.get_db()
+        try:
+            job = db.execute("SELECT title, script, video_path, stage FROM pipeline_jobs WHERE id=1").fetchone()
+            queue = db.execute("SELECT status FROM topic_queue WHERE id=?", (queue_id,)).fetchone()
+        finally:
+            db.close()
+        self.assertEqual(tuple(job), (revised_title, revised_script, "output/revised.mp4", "최종컨펌 대기"))
+        self.assertEqual(queue["status"], "completed")
+
+    def _stage_for_test(self, job_id):
+        db = self.api.get_db()
+        try:
+            return db.execute("SELECT stage FROM pipeline_jobs WHERE id=?", (job_id,)).fetchone()[0]
+        finally:
+            db.close()
+
+    def test_expired_max_attempt_regeneration_lease_marks_job_failed(self):
+        db = self.api.get_db()
+        try:
+            db.execute(
+                "INSERT INTO pipeline_jobs (channel_name,title,script,video_path,stage,created_at) VALUES (?,?,?,?,?,?)",
+                ("Future Leak", "Old title", "Old script", "output/old.mp4", "반려(수정 필요)", "now"),
+            )
+            db.commit()
+        finally:
+            db.close()
+        queue_id = self.api.enqueue_job_regeneration(
+            1, "Revised title",
+            "첫째 문장입니다. 둘째 문장입니다. 셋째 문장입니다. 넷째 문장입니다.",
+        )
+        item = self.api.claim_next_topic(lease_seconds=60)
+        db = self.api.get_db()
+        try:
+            db.execute("UPDATE topic_queue SET lease_until=0, attempts=3 WHERE id=?", (queue_id,))
+            db.commit()
+        finally:
+            db.close()
+        self.assertIsNone(self.api.claim_next_topic())
+        self.assertEqual(self._stage_for_test(1), "재제작 실패")
+
+    def test_failed_regeneration_moves_job_to_retryable_failure_state(self):
+        db = self.api.get_db()
+        try:
+            db.execute(
+                "INSERT INTO pipeline_jobs (channel_name,title,script,video_path,stage,created_at) VALUES (?,?,?,?,?,?)",
+                ("Future Leak", "Old title", "Old script", "output/old.mp4", "반려(수정 필요)", "now"),
+            )
+            db.commit()
+        finally:
+            db.close()
+        queue_id = self.api.enqueue_job_regeneration(
+            1, "Revised title",
+            "첫째 문장입니다. 둘째 문장입니다. 셋째 문장입니다. 넷째 문장입니다.",
+        )
+        item = self.api.claim_next_topic(lease_seconds=60)
+        db = self.api.get_db()
+        try:
+            db.execute("UPDATE topic_queue SET attempts=3 WHERE id=?", (queue_id,))
+            db.commit()
+        finally:
+            db.close()
+        self.assertTrue(self.api.finish_topic(queue_id, item["lease_token"], "render failed"))
+        self.assertEqual(self._stage_for_test(1), "재제작 실패")
+
+    def test_stale_render_cannot_commit_pipeline_job(self):
+        self.api.enqueue_topic("Future Leak | stale render", source="test")
+        item = self.api.claim_next_topic(lease_seconds=60)
+        with patch.object(self.api.video_maker, "render_pro_short",
+                          return_value=("output/stale.mp4", "Stale title", "Stale script"), create=True), \
+             patch.object(self.api, "validate_video", return_value={"ok": True, "checks": {}, "errors": []}):
+            with self.assertRaisesRegex(RuntimeError, "lease was lost"):
+                self.api.run_make_video(
+                    "Future Leak", "persona", "stale render",
+                    queue_id=item["id"], lease_token="not-the-current-token",
+                )
+        db = self.api.get_db()
+        try:
+            count = db.execute("SELECT COUNT(*) FROM pipeline_jobs").fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(count, 0)
+
+    def test_stale_worker_cannot_finish_or_renew_reclaimed_lease(self):
+        self.api.enqueue_topic("Future Leak | fenced lease", source="test")
+        first = self.api.claim_next_topic(lease_seconds=60)
+        db = self.api.get_db()
+        try:
+            db.execute("UPDATE topic_queue SET lease_until=0 WHERE id=?", (first["id"],))
+            db.commit()
+        finally:
+            db.close()
+        second = self.api.claim_next_topic(lease_seconds=60)
+        self.assertNotEqual(first["lease_token"], second["lease_token"])
+        self.assertFalse(self.api.renew_topic_lease(first["id"], first["lease_token"]))
+        self.assertFalse(self.api.finish_topic(first["id"], first["lease_token"], "late failure"))
+        self.assertTrue(self.api.renew_topic_lease(second["id"], second["lease_token"], lease_seconds=120))
+        self.assertTrue(self.api.finish_topic(second["id"], second["lease_token"]))
+
+    def test_existing_queue_schema_is_migrated_with_lease_token(self):
+        db = self.api.get_db()
+        try:
+            db.execute("DROP TABLE topic_queue")
+            db.execute("""CREATE TABLE topic_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                idempotency_key TEXT NOT NULL UNIQUE,
+                channel_name TEXT, topic TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'api',
+                status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
+                available_at INTEGER NOT NULL, lease_until INTEGER, last_error TEXT,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            )""")
+            db.commit()
+        finally:
+            db.close()
+        self.api.init_app_db()
+        db = self.api.get_db()
+        try:
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(topic_queue)")}
+        finally:
+            db.close()
+        self.assertIn("lease_token", columns)
+        self.assertIn("title_override", columns)
+        self.assertIn("script_override", columns)
+        self.assertIn("target_job_id", columns)
+
+    def test_existing_pipeline_schema_migrates_upload_metadata_columns(self):
+        db = self.api.get_db()
+        try:
+            db.execute("DROP TABLE pipeline_jobs")
+            db.execute("""CREATE TABLE pipeline_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_name TEXT NOT NULL, title TEXT NOT NULL, script TEXT NOT NULL DEFAULT '',
+                video_path TEXT NOT NULL DEFAULT '', stage TEXT NOT NULL DEFAULT '최종컨펌 대기',
+                created_at TEXT NOT NULL
+            )""")
+            db.commit()
+        finally:
+            db.close()
+        self.api.init_app_db()
+        db = self.api.get_db()
+        try:
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(pipeline_jobs)")}
+        finally:
+            db.close()
+        self.assertIn("youtube_video_id", columns)
+        self.assertIn("privacy_status", columns)
 
     def test_concurrent_connections_cannot_claim_the_same_queue_item(self):
         self.api.enqueue_topic("Future Leak | one shared queue item", source="test")
@@ -109,27 +337,72 @@ class DurableTopicQueueTests(unittest.TestCase):
         self.assertEqual(sum(bool(result) for result in results), 1)
 
     def test_daily_scheduler_claim_is_idempotent_and_recovers_failed_run(self):
-        self.assertTrue(self.api.claim_daily_schedule("2026-11-26", lease_seconds=1))
+        first_token = self.api.claim_daily_schedule("2026-11-26", lease_seconds=60)
+        self.assertTrue(first_token)
         self.assertFalse(self.api.claim_daily_schedule("2026-11-26"))
-        self.api.finish_daily_schedule("2026-11-26", "temporary failure")
-        self.assertTrue(self.api.claim_daily_schedule("2026-11-26"))
-        self.api.finish_daily_schedule("2026-11-26")
+        self.assertTrue(self.api.finish_daily_schedule("2026-11-26", first_token, "temporary failure"))
+        second_token = self.api.claim_daily_schedule("2026-11-26")
+        self.assertTrue(second_token)
+        self.assertTrue(self.api.finish_daily_schedule("2026-11-26", second_token))
         self.assertFalse(self.api.claim_daily_schedule("2026-11-26"))
+
+    def test_stale_scheduler_owner_cannot_finish_reclaimed_run(self):
+        first_token = self.api.claim_daily_schedule("fenced-day", lease_seconds=60)
+        db = self.api.get_db()
+        try:
+            db.execute("UPDATE scheduler_runs SET lease_until=0 WHERE schedule_key='fenced-day'")
+            db.commit()
+        finally:
+            db.close()
+        second_token = self.api.claim_daily_schedule("fenced-day", lease_seconds=60)
+        self.assertNotEqual(first_token, second_token)
+        self.assertFalse(self.api.finish_daily_schedule("fenced-day", first_token))
+        self.assertTrue(self.api.finish_daily_schedule("fenced-day", second_token))
+
+    def test_existing_scheduler_schema_is_migrated_with_lease_token(self):
+        db = self.api.get_db()
+        try:
+            db.execute("DROP TABLE scheduler_runs")
+            db.execute("""CREATE TABLE scheduler_runs (
+                schedule_key TEXT PRIMARY KEY, status TEXT NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0, lease_until INTEGER,
+                last_error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            )""")
+            db.commit()
+        finally:
+            db.close()
+        self.api.init_app_db()
+        db = self.api.get_db()
+        try:
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(scheduler_runs)")}
+        finally:
+            db.close()
+        self.assertIn("lease_token", columns)
 
     def test_daily_radar_picks_enter_durable_queue_before_rendering(self):
         db = self.api.get_db()
         try:
             db.execute("""CREATE TABLE trend_recommendations (
-                period_type TEXT, is_global_top10 INTEGER, topic TEXT, matched_channel TEXT
+                period_type TEXT, region TEXT, rank_no INTEGER, source_rank INTEGER,
+                is_global_top10 INTEGER, topic TEXT, matched_channel TEXT, source_name TEXT,
+                source_url TEXT, source_score INTEGER, source_score_label TEXT,
+                est_views INTEGER, avg_cat_views INTEGER, growth_pct INTEGER, viral_score INTEGER,
+                ai_reason TEXT, created_at TEXT
             )""")
             db.execute(
-                "INSERT INTO trend_recommendations VALUES ('daily', 1, 'durable radar topic', 'Future Leak')"
+                """INSERT INTO trend_recommendations
+                   (period_type, region, rank_no, source_rank, is_global_top10, topic, matched_channel, source_name)
+                   VALUES ('daily', 'KR', 1, 1, 0, 'durable radar topic', 'Future Leak', 'Google News KR')"""
             )
             db.commit()
         finally:
             db.close()
 
         with patch.object(self.api.trend_radar, "init_radar_db", self.api.get_db, create=True), \
+             patch.object(self.api.trend_radar, "get_scan_status", return_value={
+                 "status": "partial",
+                 "source_summary": {"Google News KR": {"status": "success"}},
+             }, create=True), \
              patch.object(self.api, "run_make_video", side_effect=AssertionError("must use durable queue")):
             self.assertEqual(self.api.auto_produce_top_trends(count=3), 1)
             self.assertEqual(self.api.auto_produce_top_trends(count=3), 0)
@@ -139,7 +412,7 @@ class DurableTopicQueueTests(unittest.TestCase):
         self.assertEqual(row["status"], "pending")
         claimed = self.api.claim_next_topic()
         self.assertEqual(claimed["topic"], "durable radar topic")
-        self.api.finish_topic(claimed["id"])
+        self.assertTrue(self.api.finish_topic(claimed["id"], claimed["lease_token"]))
         db = self.api.get_db()
         try:
             produced = db.execute(
@@ -148,6 +421,27 @@ class DurableTopicQueueTests(unittest.TestCase):
         finally:
             db.close()
         self.assertIsNotNone(produced)
+
+    def test_auto_produce_skips_stale_sources_after_partial_scan(self):
+        db = self.api.get_db()
+        try:
+            db.execute("""CREATE TABLE trend_recommendations (
+                period_type TEXT, region TEXT, rank_no INTEGER, source_rank INTEGER,
+                is_global_top10 INTEGER, topic TEXT, matched_channel TEXT, source_name TEXT
+            )""")
+            db.execute(
+                """INSERT INTO trend_recommendations
+                   VALUES ('daily', 'US', 1, 1, 0, 'stale topic', 'Future Leak', 'Hacker News')"""
+            )
+            db.commit()
+        finally:
+            db.close()
+        with patch.object(self.api.trend_radar, "get_scan_status", return_value={
+            "status": "partial",
+            "source_summary": {"Hacker News": {"status": "failed"}},
+        }, create=True), patch.object(self.api.trend_radar, "init_radar_db", self.api.get_db, create=True):
+            self.assertEqual(self.api.auto_produce_top_trends(count=3), 0)
+        self.assertEqual(self._rows(), [])
 
     def test_duplicate_active_channel_topic_is_not_enqueued_twice(self):
         first = self.api.enqueue_topic("Future Leak | active topic", source="manual")
@@ -166,6 +460,90 @@ class DurableTopicQueueTests(unittest.TestCase):
             ))
         self.assertEqual(sum(results), 1)
         self.assertEqual(len(self._rows()), 1)
+
+    def test_batch_queue_rejects_unknown_channels_and_malformed_lines(self):
+        with self.assertRaises(Exception) as unknown:
+            self.api.save_queue(self.api.QueueReq(topics_text="Missing Channel | topic"))
+        self.assertEqual(getattr(unknown.exception, "status_code", None), 400)
+        with self.assertRaises(Exception) as malformed:
+            self.api.save_queue(self.api.QueueReq(topics_text="Future Leak | "))
+        self.assertEqual(getattr(malformed.exception, "status_code", None), 400)
+        self.assertEqual(len(self._rows()), 0)
+
+    def test_batch_queue_enforces_payload_and_item_limits(self):
+        with self.assertRaises(Exception) as oversized:
+            self.api.save_queue(self.api.QueueReq(topics_text="x" * 20001))
+        self.assertEqual(getattr(oversized.exception, "status_code", None), 413)
+        with self.assertRaises(Exception) as too_many:
+            self.api.save_queue(self.api.QueueReq(topics_text="\n".join(f"topic {i}" for i in range(101))))
+        self.assertEqual(getattr(too_many.exception, "status_code", None), 400)
+        self.assertEqual(len(self._rows()), 0)
+
+    def test_radar_scan_endpoint_reports_actual_partial_results(self):
+        scan_meta = {"status": "partial", "successful_sources": 4, "failed_sources": 2}
+        with patch.object(self.api.trend_radar, "scan_global_trends",
+                          return_value=[{"topic": "source item"}], create=True), \
+             patch.object(self.api.trend_radar, "get_scan_status",
+                          return_value=scan_meta, create=True):
+            result = self.api.run_radar_scan("daily")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["fetched_count"], 1)
+        self.assertEqual(result["scan"]["status"], "partial")
+
+    def test_analytics_summary_never_invents_platform_performance(self):
+        db = self.api.get_db()
+        try:
+            db.execute(
+                "INSERT INTO pipeline_jobs (channel_name,title,script,video_path,stage,created_at,youtube_video_id,privacy_status) VALUES (?,?,?,?,?,?,?,?)",
+                ("Future Leak", "Reviewed", "script", "", "업로드 완료(비공개)", "now", "abc123", "private"),
+            )
+            db.execute(
+                "INSERT INTO pipeline_jobs (channel_name,title,script,video_path,stage,created_at) VALUES (?,?,?,?,?,?)",
+                ("Money Glitch", "Pending", "script", "", "최종컨펌 대기", "now"),
+            )
+            db.commit()
+        finally:
+            db.close()
+        with patch.object(self.api.trend_radar, "get_scan_status", return_value=None, create=True), \
+             patch.object(self.api.trend_radar, "get_source_health", return_value=[], create=True):
+            summary = self.api.analytics_summary()
+        self.assertEqual(summary["production"]["jobs_total"], 2)
+        self.assertEqual(summary["production"]["by_stage"]["업로드 완료(비공개)"], 1)
+        self.assertEqual(summary["publishing"]["private_uploads"], 1)
+        self.assertEqual(summary["production"]["by_channel"][0]["provider_video_ids"], 1)
+        self.assertEqual(summary["platform_metrics"]["status"], "not_connected")
+        for key in ("subscribers", "views", "engagement_rate", "revenue", "updated_at"):
+            self.assertIsNone(summary["platform_metrics"][key])
+
+    def test_radar_get_serves_cached_results_without_triggering_network_scan(self):
+        db = self.api.get_db()
+        try:
+            db.execute("""CREATE TABLE trend_recommendations (
+                period_type TEXT, region TEXT, source_name TEXT, source_rank INTEGER,
+                viral_score INTEGER, is_global_top10 INTEGER, topic TEXT
+            )""")
+            db.execute(
+                """INSERT INTO trend_recommendations VALUES
+                   ('daily', 'KR', 'Google News KR', 1, NULL, 0, 'cached source topic')"""
+            )
+            db.commit()
+        finally:
+            db.close()
+        scan_meta = {
+            "status": "failed", "item_count": 0,
+            "source_summary": {"Google News KR": {"status": "failed", "error": "timeout"}},
+        }
+        with patch.object(self.api.trend_radar, "init_radar_db", self.api.get_db, create=True), \
+             patch.object(self.api.trend_radar, "get_scan_status", return_value=scan_meta, create=True), \
+             patch.object(self.api.trend_radar, "get_source_health", return_value=[], create=True), \
+             patch.object(self.api.trend_radar, "scan_global_trends",
+                          side_effect=AssertionError("GET must not scan feeds"), create=True):
+            result = self.api.get_radar("daily")
+        self.assertEqual(result["data_status"], "stale")
+        self.assertFalse(result["global_ranking_available"])
+        self.assertEqual(result["items"][0]["topic"], "cached source topic")
+        self.assertEqual(result["items"][0]["source_status"], "failed")
+        self.assertTrue(result["items"][0]["source_is_stale"])
 
     def test_manual_api_create_routes_through_durable_queue(self):
         request = self.api.CreateReq(channel_name="Future Leak", topic="API queued topic")

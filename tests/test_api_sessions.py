@@ -64,13 +64,36 @@ class SignedSessionTests(unittest.TestCase):
         async def next_response(_request):
             return Response(status_code=204)
         cookie = self.api.create_session_cookie(now=1_800_000_000)
-        with patch.object(self.api.time, 'time', return_value=1_800_000_001):
-            denied_api = asyncio.run(self.api.enforce_local_origin_and_session(self._request('/api/overview'), next_response))
-            denied_output = asyncio.run(self.api.enforce_local_origin_and_session(self._request('/output/preview.mp4'), next_response))
-            allowed_api = asyncio.run(self.api.enforce_local_origin_and_session(self._request('/api/overview', cookie=cookie), next_response))
+        with patch.dict(os.environ, {"NEXUS_AUTH_ENABLED": "true"}):
+            with patch.object(self.api.time, 'time', return_value=1_800_000_001):
+                denied_api = asyncio.run(self.api.enforce_local_origin_and_session(self._request('/api/overview'), next_response))
+                denied_output = asyncio.run(self.api.enforce_local_origin_and_session(self._request('/output/preview.mp4'), next_response))
+                allowed_api = asyncio.run(self.api.enforce_local_origin_and_session(self._request('/api/overview', cookie=cookie), next_response))
         self.assertEqual(denied_api.status_code, 401)
         self.assertEqual(denied_output.status_code, 401)
         self.assertEqual(allowed_api.status_code, 204)
+
+    def test_api_and_output_are_available_without_session_when_auth_is_disabled(self):
+        async def next_response(_request):
+            return Response(status_code=204)
+        with patch.dict(os.environ, {"NEXUS_AUTH_ENABLED": "false"}):
+            api_response = asyncio.run(self.api.enforce_local_origin_and_session(self._request('/api/overview'), next_response))
+            output_response = asyncio.run(self.api.enforce_local_origin_and_session(self._request('/output/preview.mp4'), next_response))
+        self.assertEqual(api_response.status_code, 204)
+        self.assertEqual(output_response.status_code, 204)
+
+    def test_auth_is_required_by_default_and_missing_secrets_fail_closed(self):
+        async def next_response(_request):
+            return Response(status_code=204)
+        with patch.dict(os.environ, {"NEXUS_AUTH_ENABLED": ""}):
+            with patch.object(self.api, "API_PASSWORD", ""), patch.object(self.api, "SESSION_SECRET", ""):
+                response = asyncio.run(self.api.enforce_local_origin_and_session(self._request('/api/overview'), next_response))
+                self.assertEqual(response.status_code, 503)
+                self.assertTrue(self.api.auth_is_required())
+
+    def test_explicit_local_opt_out_is_supported(self):
+        with patch.dict(os.environ, {"NEXUS_AUTH_ENABLED": "false"}):
+            self.assertFalse(self.api.auth_is_required())
 
     def test_session_status_is_public_and_foreign_mutations_are_blocked(self):
         async def next_response(_request):

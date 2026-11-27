@@ -8,6 +8,16 @@
 
 ---
 
+## 2026-11-27 검증 갱신
+
+- FastAPI 브라우저 인증은 기본 필수이며 비밀값 누락 시 fail-closed합니다. Browser Studio는 세션 상태 확인 → 운영자 로그인 → HttpOnly/SameSite 세션 → 만료 시 재로그인 흐름을 사용합니다.
+- Docker 운영 이미지에서 실제 Uvicorn API 서버를 띄워 미인증 API/미디어 차단, 비밀번호 오류, 로그인 쿠키 발급, 인증 후 API 접근, 로그아웃 후 차단을 검증했습니다.
+- Docker 운영 이미지에서 실제 세로형 H.264/AAC MP4를 생성하고 ffprobe QA까지 수행했습니다. FFmpeg/MoviePy 리소스 경고 없이 임시 파일을 정리합니다.
+- Playwright Chromium으로 네 가지 디자인 테마의 실제 레이아웃 차이, 색상 스킨 독립성, 샘플 토글, 워크스페이스 이동, 모바일 전환, 운영자 로그인과 세션 만료를 검사했습니다.
+- Windows 운영자용 scripts/setup-local-nexus.ps1 및 scripts/verify-local-nexus.ps1를 추가했고 PowerShell parser CI를 통과했습니다. Windows 호스트에서의 실제 실행은 아직 대기입니다.
+- Durable queue consumers can run as a bounded local worker pool (`NEXUS_QUEUE_WORKERS=1..4`); the legacy `topics.txt` importer is isolated in one bridge thread. Startup/configuration tests cover worker count bounds and thread registration. Multi-host/shared-network-filesystem execution remains unsupported and unverified.
+- Vercel Preview는 정적 UI 전용이며 FastAPI/SQLite 운영 백엔드와 연결되지 않습니다. Vercel 일일 배포 제한으로 최신 커밋 배포가 차단될 수 있습니다.
+- Google/YouTube OAuth, Private 업로드, YouTube Analytics 읽기 권한은 실계정 연결 및 Windows 호스트에서 검증해야 합니다. 성과 데이터는 권한 연결 전까지 계속 null/미수집으로 둡니다.
 ## 1. 운영 목표와 자동화 경계
 
 ### 1.1 목표
@@ -246,7 +256,9 @@ flowchart TD
 - [x] DB 기반 제작 큐·채널별 작업·lease·재시도·실패 격리 및 legacy 파일 브리지 구현
 - [x] 일일 08:00 제작 실행의 DB 기반 고유 일정 키·lease·실패 재시도 및 재시작 후 복구. 선정된 트렌드는 직접 렌더링하지 않고 `daily_radar` 소스로 영속 큐에 등록하며, 실제 렌더 성공 후에만 제작 완료 이력에 반영한다.
 - [x] GitHub Actions 실제 실행 및 테스트 통과 (최신 브랜치 검증 40개 테스트 통과 (모든 제작 진입점의 영속 큐 통합, 동시 중복 등록 단일 승자, 격리 포트 Origin 허용 포함))
-- [ ] 로컬 Docker·렌더링·OAuth end-to-end 확인
+- [x] Docker 운영 이미지 빌드 및 실제 MP4 렌더링/ffprobe smoke test in CI
+- [x] Browser Studio 디자인/샘플/내비게이션 Chromium smoke test
+- [ ] Windows 로컬 Docker·브라우저 로그인·실제 피드·OAuth/Private 업로드 end-to-end 확인
 
 **완료 기준:** 브라우저 API 인증, 큐·일일 스케줄 idempotency, 별도 Streamlit 보호, 로컬 Docker·렌더링·OAuth 런타임 검증까지 확보. Streamlit 인증 코드는 구현됐으며, 로컬 Docker·브라우저 로그인·렌더링·OAuth 비공개 업로드 실환경 검증이 남아 있어 Phase 0 전체는 아직 미완료.
 
@@ -272,6 +284,9 @@ flowchart TD
 **완료 기준:** 재시작·네트워크 오류 후에도 작업 유실 없이 중복 없이 복구.
 
 ### Phase 3 — 제작 파이프라인 자동화
+
+- [x] 단일 큐 소비자를 `NEXUS_QUEUE_WORKERS` 설정 기반의 1~4개 bounded local render worker pool로 분리하고, legacy `topics.txt` importer는 단일 전용 bridge thread로 격리한다. SQLite lease/fencing token으로 동시 작업 claim을 보호하며 기본 worker 수는 1이다.
+- [ ] 대본·TTS·렌더링·QA를 독립 재시작 가능한 stage worker로 분리하고 단계별 산출물·버전·재시작 지점을 저장한다.
 
 - [x] 렌더 결과를 검수 대기열에 넣기 전 ffprobe로 파일 존재·크기·H.264/AAC·1080x1920·오디오 트랙·1~180초 길이를 자동 검사한다. 실패 결과는 `qa.failed` 이벤트로 남기고 검수 대기열 진입을 차단한다.
 - [x] 모델 응답이 비어 있거나 형식이 잘못된 경우 검증된 한국어 6문장 fallback을 사용하고, 모델 대본은 제목·문장 수·길이를 검증한 뒤 렌더링한다.

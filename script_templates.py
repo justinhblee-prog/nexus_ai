@@ -1,4 +1,18 @@
-"""Validated Korean fallback scripts for short-form video production."""
+"""Validated Korean scripts and sentence segmentation for Shorts production."""
+import re
+
+
+def split_manual_script(script):
+    """Split an explicitly edited script into a bounded set of renderable sentences."""
+    if not isinstance(script, str):
+        raise ValueError("script must be text")
+    cleaned = script.strip()
+    if not cleaned or len(cleaned) > 20000:
+        raise ValueError("script must contain 1 to 20,000 characters")
+    sentences = [part.strip() for part in re.split(r"(?<=[.!?。！？])\s+|\n+", cleaned) if part.strip()]
+    if not 4 <= len(sentences) <= 8:
+        raise ValueError("edited script must contain between 4 and 8 sentences")
+    return sentences
 
 
 def fallback_script(channel_name, topic):

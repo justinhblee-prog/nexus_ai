@@ -6,24 +6,38 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from upload_safety import classify_upload_response
+from oauth_config import SCOPES, UPLOAD_SCOPES, ANALYTICS_SCOPES, get_channel_token_path
 
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 SECRET_PATH = "tokens/client_secret.json"
 
 
 def _token_path(channel_name):
-    # Keep channel names from escaping the tokens directory.
-    safe_name = "".join(ch for ch in channel_name if ch.isalnum() or ch in ("-", "_"))
-    if not safe_name:
-        raise ValueError("Invalid channel name")
-    return os.path.join("tokens", f"yt_token_{safe_name}.json")
+    return get_channel_token_path(channel_name)
+
+
+def get_channel_token_status(channel_name):
+    token_file = _token_path(channel_name)
+    if not os.path.exists(token_file):
+        return {"exists": False, "upload": False, "analytics": False, "expired": False, "refreshable": False, "error": None}
+    try:
+        creds = Credentials.from_authorized_user_file(token_file)
+        return {
+            "exists": True,
+            "upload": creds.has_scopes(UPLOAD_SCOPES),
+            "analytics": creds.has_scopes(ANALYTICS_SCOPES),
+            "expired": bool(creds.expired),
+            "refreshable": bool(creds.refresh_token),
+            "error": None,
+        }
+    except Exception as exc:
+        return {"exists": True, "upload": False, "analytics": False, "expired": False, "refreshable": False, "error": type(exc).__name__}
 
 
 def get_auth_url(channel_name):
     if not os.path.exists(SECRET_PATH):
         return None, f"파일을 찾을 수 없습니다: {os.path.abspath(SECRET_PATH)}"
     flow = InstalledAppFlow.from_client_secrets_file(SECRET_PATH, SCOPES, redirect_uri="http://localhost")
-    auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
+    auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline", include_granted_scopes="true")
     return flow, auth_url
 
 
@@ -51,7 +65,16 @@ def upload_to_youtube(channel_name, video_path, title, description="AI 자동 �
 
     upload_started = False
     try:
-        creds = Credentials.from_authorized_user_file(token_file, SCOPES)
+        creds = Credentials.from_authorized_user_file(token_file)
+        if not creds.has_scopes(UPLOAD_SCOPES):
+            return False, "NEED_AUTH"
+        if creds.expired:
+            if not creds.refresh_token:
+                return False, "NEED_AUTH"
+            from google.auth.transport.requests import Request
+            creds.refresh(Request())
+            with open(token_file, "w", encoding="utf-8") as token_file_handle:
+                token_file_handle.write(creds.to_json())
         youtube = build("youtube", "v3", credentials=creds, cache_discovery=False)
         body = {
             "snippet": {

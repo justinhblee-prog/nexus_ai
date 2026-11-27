@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -23,6 +24,7 @@ class TrendRadarSmokeTests(unittest.TestCase):
                     self.assertIn("trend_recommendations", tables)
                     self.assertIn("auto_produced_topics", tables)
                     self.assertIn("source_health", tables)
+                    self.assertIn("radar_scans", tables)
                 finally:
                     connection.close()
             finally:
@@ -91,6 +93,7 @@ class TrendRadarSmokeTests(unittest.TestCase):
                             "SELECT source_name, last_status, item_count, consecutive_failures FROM source_health"
                         )
                     }
+                    scan = trend_radar.get_scan_status("daily")
                 finally:
                     connection.close()
             finally:
@@ -100,6 +103,131 @@ class TrendRadarSmokeTests(unittest.TestCase):
         self.assertEqual(health["Google News JP"], ("failed", 0, 1))
         self.assertEqual(health["Google News KR"], ("success", 1, 0))
         self.assertEqual(health["Hacker News"], ("success", 1, 0))
+        self.assertEqual(scan["status"], "partial")
+        self.assertEqual(scan["successful_sources"], 5)
+        self.assertEqual(scan["failed_sources"], 1)
+
+    def test_source_scores_keep_native_units_and_never_create_global_viral_rank(self):
+        with tempfile.TemporaryDirectory() as directory:
+            previous_path = trend_radar.DB_PATH
+            trend_radar.DB_PATH = os.path.join(directory, "studio_data.db")
+            try:
+                with patch.object(trend_radar, "_fetch_hn", return_value=(
+                    [("US", "HN story", "Hacker News", "https://news.ycombinator.com/item?id=1", 37)], None
+                )), patch.object(trend_radar, "_parse_rss_safe", return_value=(
+                    [("KR", "RSS story", "Google News KR", "https://example.test/rss", None)], None
+                )):
+                    trend_radar.scan_global_trends("daily")
+                conn = trend_radar.init_radar_db()
+                conn.row_factory = sqlite3.Row
+                try:
+                    rows = [dict(row) for row in conn.execute(
+                        """SELECT source_name, source_score, source_score_label, viral_score,
+                                  is_global_top10, source_rank
+                           FROM trend_recommendations WHERE period_type='daily'"""
+                    )]
+                finally:
+                    conn.close()
+            finally:
+                trend_radar.DB_PATH = previous_path
+        hn = next(row for row in rows if row["source_name"] == "Hacker News")
+        rss = next(row for row in rows if row["source_name"] == "Google News KR")
+        self.assertEqual(hn["source_score"], 37)
+        self.assertEqual(hn["source_score_label"], "Hacker News points")
+        self.assertIsNone(hn["viral_score"])
+        self.assertIsNone(rss["source_score"])
+        self.assertIsNone(rss["source_score_label"])
+        self.assertTrue(all(row["viral_score"] is None for row in rows))
+        self.assertTrue(all(row["is_global_top10"] == 0 for row in rows))
+
+    def test_empty_failed_scan_keeps_last_good_data_and_marks_it_stale(self):
+        with tempfile.TemporaryDirectory() as directory:
+            previous_path = trend_radar.DB_PATH
+            trend_radar.DB_PATH = os.path.join(directory, "studio_data.db")
+            try:
+                with patch.object(trend_radar, "_fetch_hn", return_value=(
+                    [("US", "Existing HN story", "Hacker News", "https://news.ycombinator.com/item?id=2", 12)], None
+                )), patch.object(trend_radar, "_parse_rss_safe", return_value=([], None)):
+                    trend_radar.scan_global_trends("daily")
+                with patch.object(trend_radar, "_fetch_hn", return_value=([], "network unavailable")), \
+                     patch.object(trend_radar, "_parse_rss_safe", return_value=([], "feed unavailable")):
+                    result = trend_radar.scan_global_trends("daily")
+                conn = trend_radar.init_radar_db()
+                try:
+                    rows = conn.execute(
+                        "SELECT topic FROM trend_recommendations WHERE period_type='daily'"
+                    ).fetchall()
+                finally:
+                    conn.close()
+                scan = trend_radar.get_scan_status("daily")
+            finally:
+                trend_radar.DB_PATH = previous_path
+        self.assertEqual(result, [])
+        self.assertEqual([row[0] for row in rows], ["Existing HN story"])
+        self.assertEqual(scan["status"], "failed")
+        self.assertEqual(scan["item_count"], 0)
+
+    def test_partial_scan_updates_successful_sources_and_preserves_failed_source_rows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            previous_path = trend_radar.DB_PATH
+            trend_radar.DB_PATH = os.path.join(directory, "studio_data.db")
+            try:
+                with patch.object(trend_radar, "_fetch_hn", return_value=(
+                    [("US", "Old HN story", "Hacker News", "https://news.ycombinator.com/item?id=3", 10)], None
+                )), patch.object(trend_radar, "_parse_rss_safe", side_effect=lambda geo, label, url: (
+                    [(geo, f"Old {label}", label, f"https://example.test/{geo}", None)], None
+                )):
+                    trend_radar.scan_global_trends("daily")
+                def second_parse(geo, label, url):
+                    if label == "Google News KR":
+                        return [(geo, "New KR story", label, "https://example.test/new-kr", None)], None
+                    return [], "feed timeout"
+                with patch.object(trend_radar, "_fetch_hn", return_value=([], "HN timeout")), \
+                     patch.object(trend_radar, "_parse_rss_safe", side_effect=second_parse):
+                    items = trend_radar.scan_global_trends("daily")
+                conn = trend_radar.init_radar_db()
+                try:
+                    topics = {
+                        row[0] for row in conn.execute(
+                            "SELECT topic FROM trend_recommendations WHERE period_type='daily'"
+                        )
+                    }
+                finally:
+                    conn.close()
+                scan = trend_radar.get_scan_status("daily")
+            finally:
+                trend_radar.DB_PATH = previous_path
+        self.assertEqual([item["topic"] for item in items], ["New KR story"])
+        self.assertIn("New KR story", topics)
+        self.assertIn("Old HN story", topics)
+        self.assertIn("Old Google News US", topics)
+        self.assertEqual(scan["status"], "partial")
+
+    def test_legacy_recommendation_table_migrates_source_score_columns(self):
+        with tempfile.TemporaryDirectory() as directory:
+            previous_path = trend_radar.DB_PATH
+            trend_radar.DB_PATH = os.path.join(directory, "studio_data.db")
+            try:
+                os.makedirs(directory, exist_ok=True)
+                conn = sqlite3.connect(trend_radar.DB_PATH)
+                conn.execute("""CREATE TABLE trend_recommendations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, period_type TEXT, region TEXT,
+                    rank_no INTEGER, is_global_top10 INTEGER, topic TEXT, matched_channel TEXT,
+                    source_name TEXT, source_url TEXT, est_views INTEGER, avg_cat_views INTEGER,
+                    growth_pct INTEGER, viral_score INTEGER, ai_reason TEXT, created_at TEXT
+                )""")
+                conn.commit()
+                conn.close()
+                conn = trend_radar.init_radar_db()
+                try:
+                    columns = {row[1] for row in conn.execute("PRAGMA table_info(trend_recommendations)")}
+                finally:
+                    conn.close()
+            finally:
+                trend_radar.DB_PATH = previous_path
+        self.assertIn("source_rank", columns)
+        self.assertIn("source_score", columns)
+        self.assertIn("source_score_label", columns)
 
     def test_unknown_period_is_rejected(self):
         with self.assertRaises(ValueError):

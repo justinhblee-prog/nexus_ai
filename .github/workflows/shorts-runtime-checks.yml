@@ -2,10 +2,11 @@ name: Shorts runtime checks
 
 on:
   pull_request:
-    branches: [main, fix/shorts-runtime-security-bootstrap]
+    branches: [main, fix/shorts-runtime-security-bootstrap, feat/backend-followup-orchestration]
   push:
     branches:
       - "fix/shorts-runtime-security-bootstrap"
+      - "feat/backend-followup-orchestration"
 
 jobs:
   python-checks:
@@ -23,9 +24,41 @@ jobs:
         run: python -m compileall -q api_server.py app.py streamlit_auth.py audit_log.py video_qa.py upload_safety.py review_workflow.py script_templates.py trend_radar.py video_maker.py yt_uploader.py
       - name: Verify local authentication setup files
         run: test -f .env.example && test -f docs/LOCAL_API_AUTH_SETUP.md
+      - name: Parse Windows local setup scripts
+        shell: pwsh
+        run: |
+          $files = @("scripts/setup-local-nexus.ps1", "scripts/verify-local-nexus.ps1")
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file), [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) { throw ("PowerShell parse failed for " + $file + ": " + ($errors -join "; ")) }
+          }
       - name: Validate browser studio JavaScript syntax
         run: |
           python -c "from pathlib import Path; import re; html=Path('index.html').read_text(encoding='utf-8'); scripts=re.findall(r'<script>(.*?)</script>', html, re.S); assert scripts; Path('/tmp/nexus-studio.js').write_text(scripts[-1], encoding='utf-8')"
           node --check /tmp/nexus-studio.js
       - name: Run radar, queue, authentication, and audit-log tests
         run: python -m unittest discover -s tests -v
+
+  render-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the production runtime image
+        run: docker build --tag nexus-studio-ci .
+      - name: Render and inspect a real MP4 inside the production image
+        run: |
+          docker run --rm \
+            --volume "${{ github.workspace }}:/app" \
+            --workdir /app \
+            nexus-studio-ci \
+            python -m unittest discover -s integration_tests -p "test_*_integration.py" -v
+      - name: Diagnose live Discovery feed connectivity (non-blocking)
+        continue-on-error: true
+        run: |
+          docker run --rm \
+            --volume "${{ github.workspace }}:/app" \
+            --workdir /app \
+            nexus-studio-ci \
+            python scripts/check-feed-connectivity.py

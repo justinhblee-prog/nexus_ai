@@ -5,8 +5,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
-import video_maker, yt_uploader, trend_radar
+import video_maker, trend_radar, youtube_analytics, yt_uploader
 from audit_log import safe_record_event as record_event, list_events, get_ops_metrics
+from video_qa import validate_video
+from script_templates import split_manual_script
+from review_workflow import claim_upload, upload_result_stage
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("nexus.api")
@@ -20,6 +23,12 @@ SESSION_TTL_SECONDS = 12 * 60 * 60
 
 def auth_is_configured() -> bool:
     return len(API_PASSWORD) >= 12 and len(SESSION_SECRET) >= 32
+
+
+def auth_is_required() -> bool:
+    """Require browser API authentication by default; only an explicit false opts out."""
+    configured = os.getenv("NEXUS_AUTH_ENABLED")
+    return configured is None or configured.strip().lower() not in ("0", "false", "no", "off")
 
 def create_session_cookie(now: int | None = None) -> str:
     if not auth_is_configured():
@@ -67,7 +76,7 @@ async def enforce_local_origin_and_session(request, call_next):
     path = request.url.path
     public_paths = {"/api/session/status", "/api/session/login", "/api/session/logout"}
     protected = (path.startswith("/api/") and path not in public_paths) or path.startswith("/output/")
-    if protected:
+    if protected and auth_is_required():
         if not auth_is_configured():
             return JSONResponse(status_code=503, content={"detail": "Set NEXUS_API_PASSWORD and NEXUS_SESSION_SECRET to enable API authentication."})
         if not verify_session_cookie(request.cookies.get(SESSION_COOKIE_NAME)):
@@ -113,6 +122,8 @@ def init_app_db():
             script TEXT NOT NULL DEFAULT '',
             video_path TEXT NOT NULL DEFAULT '',
             stage TEXT NOT NULL DEFAULT '최종컨펌 대기',
+            youtube_video_id TEXT,
+            privacy_status TEXT,
             created_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_pipeline_jobs_created
@@ -128,6 +139,10 @@ def init_app_db():
             attempts INTEGER NOT NULL DEFAULT 0,
             available_at INTEGER NOT NULL,
             lease_until INTEGER,
+            lease_token TEXT,
+            title_override TEXT,
+            script_override TEXT,
+            target_job_id INTEGER,
             last_error TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
@@ -139,6 +154,7 @@ def init_app_db():
             status TEXT NOT NULL,
             attempts INTEGER NOT NULL DEFAULT 0,
             lease_until INTEGER,
+            lease_token TEXT,
             last_error TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
@@ -148,6 +164,23 @@ def init_app_db():
             created_at TEXT NOT NULL
         );
     """)
+    queue_columns = {row["name"] for row in db.execute("PRAGMA table_info(topic_queue)")}
+    if "lease_token" not in queue_columns:
+        db.execute("ALTER TABLE topic_queue ADD COLUMN lease_token TEXT")
+    if "title_override" not in queue_columns:
+        db.execute("ALTER TABLE topic_queue ADD COLUMN title_override TEXT")
+    if "script_override" not in queue_columns:
+        db.execute("ALTER TABLE topic_queue ADD COLUMN script_override TEXT")
+    if "target_job_id" not in queue_columns:
+        db.execute("ALTER TABLE topic_queue ADD COLUMN target_job_id INTEGER")
+    scheduler_columns = {row["name"] for row in db.execute("PRAGMA table_info(scheduler_runs)")}
+    if "lease_token" not in scheduler_columns:
+        db.execute("ALTER TABLE scheduler_runs ADD COLUMN lease_token TEXT")
+    pipeline_columns = {row["name"] for row in db.execute("PRAGMA table_info(pipeline_jobs)")}
+    if "youtube_video_id" not in pipeline_columns:
+        db.execute("ALTER TABLE pipeline_jobs ADD COLUMN youtube_video_id TEXT")
+    if "privacy_status" not in pipeline_columns:
+        db.execute("ALTER TABLE pipeline_jobs ADD COLUMN privacy_status TEXT")
     db.executescript("INSERT OR IGNORE INTO channels (name, platform, yt_id, persona) VALUES\n        ('Brain Glitch', 'YouTube', '', '심리 전문가 톤'),\n        ('Silent Signals', 'YouTube', '', '인간관계 전문가 톤'),\n        ('Unseen Truth', 'YouTube', '', '팩트체크 전문가 톤'),\n        ('Dark Files Global', 'YouTube', '', '미스터리 다큐 톤'),\n        ('99% Missed', 'YouTube', '', '생활 정보 전문가 톤'),\n        ('Money Glitch', 'YouTube', '', '경제 분석가 톤'),\n        ('Secret Vault 24', 'YouTube', '', '자산·습관 전문가 톤'),\n        ('Future Leak', 'YouTube', '', 'AI·기술 분석가 톤'),\n        ('30Sec Shift', 'YouTube', '', '건강 정보 전문가 톤'),\n        ('Why Nobody Tells', 'YouTube', '', '지식 큐레이터 톤');")
     db.commit()
     db.close()
@@ -160,13 +193,23 @@ def get_oa_key():
     finally:
         db.close()
 
-def run_make_video(ch_name: str, persona: str, topic: str):
+def run_make_video(ch_name: str, persona: str, topic: str, queue_id: int | None = None,
+                   lease_token: str | None = None, script_override: str | None = None,
+                   title_override: str | None = None, target_job_id: int | None = None):
     if not topic or not topic.strip():
         raise ValueError("topic must not be empty")
+    if target_job_id is not None and queue_id is None:
+        raise ValueError("target_job_id requires a claimed queue item")
     started = time.monotonic()
     record_event("render.started", entity_type="render", payload={"channel": ch_name, "topic_length": len(topic)})
     try:
-        mp4, title, script = video_maker.render_pro_short(ch_name, persona, topic, get_oa_key())
+        if script_override is None:
+            mp4, title, script = video_maker.render_pro_short(ch_name, persona, topic, get_oa_key())
+        else:
+            mp4, title, script = video_maker.render_pro_short(
+                ch_name, persona, topic, get_oa_key(),
+                script_override=script_override, title_override=title_override,
+            )
         qa = validate_video(mp4)
         record_event("qa.passed" if qa["ok"] else "qa.failed", entity_type="render",
                      payload={"channel": ch_name, "checks": qa["checks"], "errors": qa["errors"]})
@@ -174,14 +217,62 @@ def run_make_video(ch_name: str, persona: str, topic: str):
             raise RuntimeError("Video QA failed: " + ", ".join(qa["errors"]))
         db = get_db()
         try:
-            cur = db.execute("INSERT INTO pipeline_jobs (channel_name, title, script, video_path, stage, created_at) VALUES (?,?,?,?,?,?)",
-                             (ch_name, title, script, mp4, "최종컨펌 대기", datetime.now().strftime("%Y-%m-%d %H:%M")))
+            if queue_id is not None:
+                if not lease_token:
+                    raise RuntimeError("Queue lease token is required to commit a queued render")
+                db.execute("BEGIN IMMEDIATE")
+                lease = db.execute(
+                    """SELECT topic, source, target_job_id FROM topic_queue
+                       WHERE id=? AND status='running' AND lease_token=? AND lease_until>?""",
+                    (queue_id, lease_token, int(time.time())),
+                ).fetchone()
+                if not lease:
+                    db.rollback()
+                    raise RuntimeError("Queue lease was lost before the render result could be committed")
+            if target_job_id is not None:
+                if lease["target_job_id"] != target_job_id:
+                    db.rollback()
+                    raise RuntimeError("Regeneration target does not match the claimed queue item")
+                updated = db.execute(
+                    """UPDATE pipeline_jobs SET title=?, script=?, video_path=?, stage='최종컨펌 대기',
+                       youtube_video_id=NULL, privacy_status=NULL
+                       WHERE id=? AND channel_name=? AND stage='재제작 대기'""",
+                    (title, script, mp4, target_job_id, ch_name),
+                )
+                if updated.rowcount != 1:
+                    db.rollback()
+                    raise RuntimeError("Regeneration target is no longer awaiting a replacement render")
+                job_id = target_job_id
+            else:
+                if queue_id is not None and lease["target_job_id"] is not None:
+                    db.rollback()
+                    raise RuntimeError("Queued regeneration target was not supplied to the renderer")
+                cur = db.execute("INSERT INTO pipeline_jobs (channel_name, title, script, video_path, stage, created_at) VALUES (?,?,?,?,?,?)",
+                                 (ch_name, title, script, mp4, "최종컨펌 대기", datetime.now().strftime("%Y-%m-%d %H:%M")))
+                job_id = cur.lastrowid
+            if queue_id is not None:
+                finished = db.execute(
+                    """UPDATE topic_queue SET status='completed', lease_until=NULL, lease_token=NULL,
+                       last_error=NULL, updated_at=?
+                       WHERE id=? AND status='running' AND lease_token=? AND lease_until>?""",
+                    (datetime.now().isoformat(timespec="seconds"), queue_id, lease_token, int(time.time())),
+                )
+                if finished.rowcount != 1:
+                    db.rollback()
+                    raise RuntimeError("Queue lease ownership changed before render commit")
+                if lease["source"] == "daily_radar":
+                    db.execute(
+                        "INSERT OR IGNORE INTO auto_produced_topics (topic, created_at) VALUES (?, ?)",
+                        (lease["topic"], datetime.now().isoformat(timespec="seconds")),
+                    )
             db.commit()
-            job_id = cur.lastrowid
         finally:
             db.close()
         record_event("render.completed", entity_type="pipeline_job", entity_id=job_id,
                      payload={"channel": ch_name, "elapsed_seconds": round(time.monotonic() - started, 3)})
+        if queue_id is not None:
+            record_event("queue.completed", entity_type="topic_queue", entity_id=queue_id,
+                         payload={"status": "completed", "pipeline_job_id": job_id})
         return job_id
     except Exception as exc:
         record_event("render.failed", entity_type="render",
@@ -190,13 +281,19 @@ def run_make_video(ch_name: str, persona: str, topic: str):
         raise
 
 def auto_produce_top_trends(count=3):
-    """Queue daily radar picks durably; the queue worker performs the actual renders."""
+    """Queue fresh daily source-ranked picks durably; the queue worker performs the renders."""
+    daily_scan = trend_radar.get_scan_status("daily")
+    if not daily_scan or daily_scan.get("status") == "failed":
+        return 0
+    fresh_sources = sorted(
+        name for name, details in (daily_scan.get("source_summary") or {}).items()
+        if details.get("status") == "success"
+    )
+    if not fresh_sources:
+        return 0
     radar_db = trend_radar.init_radar_db()
     radar_db.row_factory = sqlite3.Row
     try:
-        top_rows = [dict(row) for row in radar_db.execute(
-            "SELECT * FROM trend_recommendations WHERE period_type='daily' AND is_global_top10 > 0 ORDER BY is_global_top10 ASC"
-        ).fetchall()]
         channels = {row["name"]: row["persona"] for row in radar_db.execute("SELECT name, persona FROM channels")}
     finally:
         radar_db.close()
@@ -205,10 +302,27 @@ def auto_produce_top_trends(count=3):
     try:
         produced = {row[0] for row in db.execute("SELECT topic FROM auto_produced_topics")}
         queued = {row[0] for row in db.execute(
-            "SELECT topic FROM topic_queue WHERE source='daily_radar'"
+            "SELECT topic FROM topic_queue WHERE source='daily_radar' AND status IN ('pending','running')"
         )}
     finally:
         db.close()
+
+    # Source-local rank is comparable only within its own feed. Rotate by rank and region
+    # rather than inventing a cross-source "viral" score or global top-ten.
+    radar_db = trend_radar.init_radar_db()
+    radar_db.row_factory = sqlite3.Row
+    try:
+        placeholders = ",".join("?" for _ in fresh_sources)
+        top_rows = [dict(row) for row in radar_db.execute(
+            f"""SELECT * FROM trend_recommendations
+                WHERE period_type='daily' AND source_name IN ({placeholders})
+                ORDER BY source_rank ASC,
+                  CASE region WHEN 'KR' THEN 0 WHEN 'US' THEN 1 WHEN 'JP' THEN 2 ELSE 3 END,
+                  source_name ASC""",
+            fresh_sources,
+        ).fetchall()]
+    finally:
+        radar_db.close()
 
     date_key = datetime.now().strftime("%Y-%m-%d")
     queued_count = 0
@@ -292,7 +406,16 @@ def claim_next_topic(lease_seconds: int = 900):
     try:
         db.execute("BEGIN IMMEDIATE")
         db.execute(
-            """UPDATE topic_queue SET status='failed', lease_until=NULL,
+            """UPDATE pipeline_jobs SET stage='재제작 실패'
+               WHERE stage='재제작 대기' AND id IN (
+                   SELECT target_job_id FROM topic_queue
+                   WHERE status='running' AND lease_until < ? AND attempts >= 3
+                     AND target_job_id IS NOT NULL
+               )""",
+            (now,),
+        )
+        db.execute(
+            """UPDATE topic_queue SET status='failed', lease_until=NULL, lease_token=NULL,
                last_error=COALESCE(last_error, 'Worker lease expired after maximum attempts'),
                updated_at=?
                WHERE status='running' AND lease_until < ? AND attempts >= 3""",
@@ -308,13 +431,15 @@ def claim_next_topic(lease_seconds: int = 900):
         if not row:
             db.commit()
             return None
+        lease_token = secrets.token_urlsafe(24)
         db.execute(
             """UPDATE topic_queue SET status='running', attempts=attempts+1,
-               lease_until=?, updated_at=? WHERE id=?""",
-            (now + lease_seconds, datetime.now().isoformat(timespec="seconds"), row["id"]),
+               lease_until=?, lease_token=?, updated_at=? WHERE id=?""",
+            (now + lease_seconds, lease_token, datetime.now().isoformat(timespec="seconds"), row["id"]),
         )
         claimed = dict(row)
         claimed["attempts"] += 1
+        claimed["lease_token"] = lease_token
         db.commit()
         record_event("queue.claimed", entity_type="topic_queue", entity_id=claimed["id"],
                      payload={"channel": claimed["channel_name"], "attempt": claimed["attempts"]})
@@ -325,30 +450,74 @@ def claim_next_topic(lease_seconds: int = 900):
     finally:
         db.close()
 
-def finish_topic(queue_id: int, error: str | None = None, max_attempts: int = 3):
+def renew_topic_lease(queue_id: int, lease_token: str, lease_seconds: int = 900) -> bool:
+    """Extend a running job only when the caller still owns an unexpired fencing token."""
+    if not lease_token or lease_seconds < 1:
+        return False
     db = get_db()
     try:
-        row = db.execute("SELECT attempts, topic, source FROM topic_queue WHERE id=?", (queue_id,)).fetchone()
+        now = int(time.time())
+        cur = db.execute(
+            """UPDATE topic_queue SET lease_until=?, updated_at=?
+               WHERE id=? AND status='running' AND lease_token=? AND lease_until>?""",
+            (now + lease_seconds, datetime.now().isoformat(timespec="seconds"),
+             queue_id, lease_token, now),
+        )
+        db.commit()
+        return cur.rowcount == 1
+    finally:
+        db.close()
+
+
+def _topic_lease_heartbeat(queue_id: int, lease_token: str, stop_event: threading.Event,
+                           lease_seconds: int = 900):
+    interval = max(1, lease_seconds // 3)
+    while not stop_event.wait(interval):
+        try:
+            if not renew_topic_lease(queue_id, lease_token, lease_seconds):
+                logger.warning("Queue lease ownership lost for item %s", queue_id)
+                return
+        except Exception:
+            logger.exception("Could not renew queue lease for item %s", queue_id)
+
+
+def finish_topic(queue_id: int, lease_token: str, error: str | None = None, max_attempts: int = 3):
+    """Finish only the current lease owner; stale workers cannot overwrite a newer attempt."""
+    if not lease_token:
+        return False
+    db = get_db()
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute(
+            "SELECT attempts, topic, source, target_job_id FROM topic_queue WHERE id=? AND status='running' AND lease_token=? AND lease_until>?",
+            (queue_id, lease_token, int(time.time())),
+        ).fetchone()
         if not row:
-            return
+            db.rollback()
+            return False
         now = int(time.time())
         stamp = datetime.now().isoformat(timespec="seconds")
         if error is None:
             db.execute(
-                "UPDATE topic_queue SET status='completed', lease_until=NULL, last_error=NULL, updated_at=? WHERE id=?",
-                (stamp, queue_id),
+                "UPDATE topic_queue SET status='completed', lease_until=NULL, lease_token=NULL, last_error=NULL, updated_at=? WHERE id=? AND lease_token=?",
+                (stamp, queue_id, lease_token),
             )
         elif row["attempts"] >= max_attempts:
             db.execute(
-                "UPDATE topic_queue SET status='failed', lease_until=NULL, last_error=?, updated_at=? WHERE id=?",
-                (error[:2000], stamp, queue_id),
+                "UPDATE topic_queue SET status='failed', lease_until=NULL, lease_token=NULL, last_error=?, updated_at=? WHERE id=? AND lease_token=?",
+                (error[:2000], stamp, queue_id, lease_token),
             )
+            if row["target_job_id"] is not None:
+                db.execute(
+                    "UPDATE pipeline_jobs SET stage='재제작 실패' WHERE id=? AND stage='재제작 대기'",
+                    (row["target_job_id"],),
+                )
         else:
             delay = min(3600, 30 * (2 ** max(0, row["attempts"] - 1)))
             db.execute(
-                """UPDATE topic_queue SET status='pending', lease_until=NULL,
-                   available_at=?, last_error=?, updated_at=? WHERE id=?""",
-                (now + delay, error[:2000], stamp, queue_id),
+                """UPDATE topic_queue SET status='pending', lease_until=NULL, lease_token=NULL,
+                   available_at=?, last_error=?, updated_at=? WHERE id=? AND lease_token=?""",
+                (now + delay, error[:2000], stamp, queue_id, lease_token),
             )
         if error is None and row["source"] == "daily_radar":
             db.execute(
@@ -366,6 +535,11 @@ def finish_topic(queue_id: int, error: str | None = None, max_attempts: int = 3)
             event_type = "queue.retry_scheduled"
             payload = {"status": "pending", "attempt": row["attempts"]}
         record_event(event_type, entity_type="topic_queue", entity_id=queue_id, payload=payload)
+        if error is not None and row["attempts"] >= max_attempts and row["target_job_id"] is not None:
+            record_event("review.regeneration_failed", entity_type="pipeline_job",
+                         entity_id=row["target_job_id"],
+                         payload={"queue_id": queue_id, "error_type": "render_error"})
+        return True
     finally:
         db.close()
 
@@ -419,11 +593,31 @@ def import_legacy_topics_file():
         with open(path, "w", encoding="utf-8") as handle:
             handle.write("")
 
-def watch_topics_loop():
+def configured_queue_worker_count():
+    """Bound local render concurrency to protect CPU/memory while allowing parallel jobs."""
+    try:
+        requested = int(os.getenv("NEXUS_QUEUE_WORKERS", "1"))
+    except (TypeError, ValueError):
+        requested = 1
+    return max(1, min(requested, 4))
+
+
+def watch_legacy_topics_loop():
+    """Keep the legacy OneDrive text-file bridge single-writer and separate from render workers."""
+    while True:
+        try:
+            import_legacy_topics_file()
+        except Exception:
+            logger.exception("Legacy topics bridge failed")
+        time.sleep(5)
+
+
+def watch_topics_loop(worker_id: int = 1):
+    """One durable queue consumer; SQLite leases fence competing worker threads/instances."""
+    logger.info("Queue worker %s started", worker_id)
     while True:
         item = None
         try:
-            import_legacy_topics_file()
             item = claim_next_topic()
             if item:
                 db = get_db()
@@ -431,82 +625,109 @@ def watch_topics_loop():
                     channel = db.execute("SELECT * FROM channels WHERE name=?", (item["channel_name"],)).fetchone()
                     if not channel:
                         raise ValueError(f"Unknown channel: {item['channel_name']}")
-                    run_make_video(channel["name"], channel["persona"], item["topic"])
+                    heartbeat_stop = threading.Event()
+                    heartbeat = threading.Thread(
+                        target=_topic_lease_heartbeat,
+                        args=(item["id"], item["lease_token"], heartbeat_stop),
+                        daemon=True,
+                    )
+                    heartbeat.start()
+                    try:
+                        run_make_video(channel["name"], channel["persona"], item["topic"],
+                           queue_id=item["id"], lease_token=item["lease_token"],
+                           script_override=item.get("script_override"),
+                           title_override=item.get("title_override"),
+                           target_job_id=item.get("target_job_id"))
+                    finally:
+                        heartbeat_stop.set()
+                        heartbeat.join(timeout=2)
                 finally:
                     db.close()
-                finish_topic(item["id"])
         except Exception as exc:
-            logger.exception("Topic queue worker failed")
+            logger.exception("Topic queue worker %s failed", worker_id)
             if "item" in locals() and item:
                 try:
-                    finish_topic(item["id"], str(exc))
+                    finish_topic(item["id"], item["lease_token"], str(exc))
                 except Exception:
                     logger.exception("Could not update failed queue item")
-        time.sleep(5)
+        time.sleep(2)
 
 
 def claim_daily_schedule(schedule_key: str, lease_seconds: int = 21600, max_attempts: int = 3):
-    """Persistently claim one daily production run across process restarts/replicas."""
+    """Persistently claim one daily production run and return its fencing token."""
     now = int(time.time())
     stamp = datetime.now().isoformat(timespec="seconds")
+    lease_token = secrets.token_urlsafe(24)
     db = get_db()
     try:
         db.execute("BEGIN IMMEDIATE")
         row = db.execute("SELECT * FROM scheduler_runs WHERE schedule_key=?", (schedule_key,)).fetchone()
         if row and row["status"] == "completed":
             db.commit()
-            return False
+            return None
         if row and row["status"] == "running" and row["lease_until"] and row["lease_until"] > now:
             db.commit()
-            return False
+            return None
         if row and row["attempts"] >= max_attempts:
             db.execute(
-                "UPDATE scheduler_runs SET status='failed', lease_until=NULL, updated_at=? WHERE schedule_key=?",
+                "UPDATE scheduler_runs SET status='failed', lease_until=NULL, lease_token=NULL, updated_at=? WHERE schedule_key=?",
                 (stamp, schedule_key),
             )
             db.commit()
-            return False
+            return None
         if row:
             db.execute(
                 """UPDATE scheduler_runs SET status='running', attempts=attempts+1,
-                   lease_until=?, last_error=NULL, updated_at=? WHERE schedule_key=?""",
-                (now + lease_seconds, stamp, schedule_key),
+                   lease_until=?, lease_token=?, last_error=NULL, updated_at=? WHERE schedule_key=?""",
+                (now + lease_seconds, lease_token, stamp, schedule_key),
             )
         else:
             db.execute(
                 """INSERT INTO scheduler_runs
-                   (schedule_key, status, attempts, lease_until, created_at, updated_at)
-                   VALUES (?, 'running', 1, ?, ?, ?)""",
-                (schedule_key, now + lease_seconds, stamp, stamp),
+                   (schedule_key, status, attempts, lease_until, lease_token, created_at, updated_at)
+                   VALUES (?, 'running', 1, ?, ?, ?, ?)""",
+                (schedule_key, now + lease_seconds, lease_token, stamp, stamp),
             )
         db.commit()
         record_event("scheduler.started", entity_type="scheduler_run", entity_id=schedule_key,
                      payload={"attempt": (row["attempts"] + 1) if row else 1})
-        return True
+        return lease_token
     except Exception:
         db.rollback()
         raise
     finally:
         db.close()
 
-def finish_daily_schedule(schedule_key: str, error: str | None = None):
+def finish_daily_schedule(schedule_key: str, lease_token: str, error: str | None = None):
+    """Finish only the currently leased scheduler attempt."""
+    if not lease_token:
+        return False
     db = get_db()
     try:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute(
+            "SELECT attempts FROM scheduler_runs WHERE schedule_key=? AND status='running' AND lease_token=? AND lease_until>?",
+            (schedule_key, lease_token, int(time.time())),
+        ).fetchone()
+        if not row:
+            db.rollback()
+            return False
         stamp = datetime.now().isoformat(timespec="seconds")
         if error is None:
             db.execute(
-                "UPDATE scheduler_runs SET status='completed', lease_until=NULL, last_error=NULL, updated_at=? WHERE schedule_key=?",
-                (stamp, schedule_key),
+                "UPDATE scheduler_runs SET status='completed', lease_until=NULL, lease_token=NULL, last_error=NULL, updated_at=? WHERE schedule_key=? AND lease_token=?",
+                (stamp, schedule_key, lease_token),
             )
         else:
             db.execute(
-                "UPDATE scheduler_runs SET status='failed', lease_until=NULL, last_error=?, updated_at=? WHERE schedule_key=?",
-                (error[:2000], stamp, schedule_key),
+                "UPDATE scheduler_runs SET status='failed', lease_until=NULL, lease_token=NULL, last_error=?, updated_at=? WHERE schedule_key=? AND lease_token=?",
+                (error[:2000], stamp, schedule_key, lease_token),
             )
         db.commit()
         record_event("scheduler.failed" if error else "scheduler.completed",
                      entity_type="scheduler_run", entity_id=schedule_key,
                      payload={"error_type": "scheduler_error"} if error else {"status": "completed"})
+        return True
     finally:
         db.close()
 
@@ -518,12 +739,13 @@ def auto_radar_and_scheduler_loop():
             trend_radar.scan_global_trends("weekly")
             now = datetime.now()
             today_str = now.strftime("%Y-%m-%d")
-            if AUTO_PRODUCE_ENABLED and now.hour >= 8 and claim_daily_schedule(today_str):
+            schedule_token = claim_daily_schedule(today_str) if AUTO_PRODUCE_ENABLED and now.hour >= 8 else None
+            if schedule_token:
                 try:
                     auto_produce_top_trends(count=3)
-                    finish_daily_schedule(today_str)
+                    finish_daily_schedule(today_str, schedule_token)
                 except Exception as exc:
-                    finish_daily_schedule(today_str, str(exc))
+                    finish_daily_schedule(today_str, schedule_token, str(exc))
                     raise
         except Exception:
             logger.exception("Radar scheduler failed")
@@ -534,8 +756,19 @@ def startup_event():
     init_app_db()
     radar_db = trend_radar.init_radar_db()
     radar_db.close()
-    threading.Thread(target=watch_topics_loop, daemon=True).start()
-    threading.Thread(target=auto_radar_and_scheduler_loop, daemon=True).start()
+    threading.Thread(
+        target=watch_legacy_topics_loop, daemon=True, name="nexus-legacy-topics-bridge"
+    ).start()
+    worker_count = configured_queue_worker_count()
+    for worker_id in range(1, worker_count + 1):
+        threading.Thread(
+            target=watch_topics_loop, args=(worker_id,), daemon=True,
+            name=f"nexus-queue-worker-{worker_id}",
+        ).start()
+    logger.info("Started %s durable queue worker(s)", worker_count)
+    threading.Thread(
+        target=auto_radar_and_scheduler_loop, daemon=True, name="nexus-radar-scheduler"
+    ).start()
 
 class LoginReq(BaseModel):
     password: str
@@ -565,28 +798,82 @@ def serve_home():
 
 @app.get("/api/session/status")
 def session_status(request: Request):
-    return {"configured": auth_is_configured(), "authenticated": verify_session_cookie(request.cookies.get(SESSION_COOKIE_NAME))}
+    return {"configured": auth_is_configured(), "authenticated": verify_session_cookie(request.cookies.get(SESSION_COOKIE_NAME)), "required": auth_is_required()}
+
+def session_cookie_is_secure(request: Request) -> bool:
+    """Use Secure cookies automatically on HTTPS while preserving local HTTP development."""
+    configured = os.getenv("NEXUS_COOKIE_SECURE", "auto").strip().lower()
+    if configured == "auto":
+        return request.url.scheme == "https"
+    return configured in ("1", "true", "yes", "on")
+
 
 @app.post("/api/session/login")
-def session_login(req: LoginReq):
+def session_login(req: LoginReq, request: Request):
     if not auth_is_configured():
         raise HTTPException(status_code=503, detail="서버 설정에 NEXUS_API_PASSWORD(12자 이상)와 NEXUS_SESSION_SECRET(32자 이상)을 지정해야 합니다.")
     if not hmac.compare_digest(req.password, API_PASSWORD):
         raise HTTPException(status_code=401, detail="비밀번호가 올바르지 않습니다.")
     response = JSONResponse({"ok": True})
-    response.set_cookie(key=SESSION_COOKIE_NAME, value=create_session_cookie(), max_age=SESSION_TTL_SECONDS, httponly=True, secure=os.getenv("NEXUS_COOKIE_SECURE", "false").lower() == "true", samesite="strict", path="/")
+    response.set_cookie(key=SESSION_COOKIE_NAME, value=create_session_cookie(), max_age=SESSION_TTL_SECONDS, httponly=True, secure=session_cookie_is_secure(request), samesite="strict", path="/")
     return response
 
 @app.post("/api/session/logout")
-def session_logout():
+def session_logout(request: Request):
     response = JSONResponse({"ok": True})
-    response.delete_cookie(key=SESSION_COOKIE_NAME, path="/", httponly=True, samesite="strict")
+    response.delete_cookie(key=SESSION_COOKIE_NAME, path="/", httponly=True, secure=session_cookie_is_secure(request), samesite="strict")
     return response
 @app.get("/api/events")
 def get_events(limit: int = 50, event_type: str | None = None):
     if limit < 1 or limit > 200:
         raise HTTPException(status_code=400, detail="limit must be between 1 and 200")
     return {"items": list_events(limit=limit, event_type=event_type)}
+
+@app.get("/api/analytics/summary")
+def analytics_summary(refresh: bool = False):
+    db = get_db()
+    try:
+        total_jobs = db.execute("SELECT COUNT(*) FROM pipeline_jobs").fetchone()[0]
+        channel_names = [row[0] for row in db.execute("SELECT name FROM channels ORDER BY name").fetchall()]
+        by_stage = {
+            row[0]: row[1] for row in db.execute(
+                "SELECT stage, COUNT(*) FROM pipeline_jobs GROUP BY stage"
+            ).fetchall()
+        }
+        by_channel = [
+            dict(row) for row in db.execute(
+                """SELECT channel_name, COUNT(*) AS jobs_total,
+                          SUM(CASE WHEN stage='최종컨펌 대기' THEN 1 ELSE 0 END) AS review_pending,
+                          SUM(CASE WHEN stage='업로드 완료(비공개)' THEN 1 ELSE 0 END) AS uploaded_private,
+                          SUM(CASE WHEN youtube_video_id IS NOT NULL AND youtube_video_id != '' THEN 1 ELSE 0 END) AS provider_video_ids
+                   FROM pipeline_jobs GROUP BY channel_name ORDER BY jobs_total DESC, channel_name"""
+            ).fetchall()
+        ]
+        publishing = {
+            "private_uploads": by_stage.get("업로드 완료(비공개)", 0),
+            "upload_in_progress": by_stage.get("업로드 진행 중", 0),
+            "privacy_unverified": by_stage.get("업로드 상태 확인 필요", 0),
+            "regeneration_pending": by_stage.get("재제작 대기", 0),
+            "regeneration_failed": by_stage.get("재제작 실패", 0),
+        }
+    finally:
+        db.close()
+    daily_scan = trend_radar.get_scan_status("daily")
+    weekly_scan = trend_radar.get_scan_status("weekly")
+    source_health = trend_radar.get_source_health()
+    platform_metrics = youtube_analytics.get_platform_metrics(channel_names, force_refresh=refresh)
+    return {
+        "production": {"jobs_total": total_jobs, "by_stage": by_stage, "by_channel": by_channel},
+        "publishing": publishing,
+        "discovery": {
+            "daily_scan": daily_scan,
+            "weekly_scan": weekly_scan,
+            "source_health": source_health,
+            "global_ranking_available": False,
+        },
+        "platform_metrics": platform_metrics,
+    }
+
 
 @app.get("/api/ops/metrics")
 def ops_metrics():
@@ -621,30 +908,51 @@ def get_radar(period: str = "daily"):
     conn = trend_radar.init_radar_db()
     conn.row_factory = sqlite3.Row
     try:
-        rows = [dict(r) for r in conn.execute("SELECT * FROM trend_recommendations WHERE period_type=? ORDER BY is_global_top10 DESC, viral_score DESC", (period,)).fetchall()]
+        rows = [dict(r) for r in conn.execute(
+            """SELECT * FROM trend_recommendations WHERE period_type=?
+               ORDER BY region, source_name, source_rank""",
+            (period,),
+        ).fetchall()]
     finally:
         conn.close()
-    if len(rows) < 20:
-        trend_radar.scan_global_trends(period)
-        conn = trend_radar.init_radar_db()
-        conn.row_factory = sqlite3.Row
-        try:
-            rows = [dict(r) for r in conn.execute("SELECT * FROM trend_recommendations WHERE period_type=? ORDER BY is_global_top10 DESC, viral_score DESC", (period,)).fetchall()]
-        finally:
-            conn.close()
-    return {"period": period, "items": rows}
+    scan = trend_radar.get_scan_status(period)
+    source_health = trend_radar.get_source_health()
+    source_summary = (scan or {}).get("source_summary") or {}
+    for row in rows:
+        source_state = source_summary.get(row.get("source_name"), {})
+        row["source_status"] = source_state.get("status", "unknown")
+        row["source_error"] = source_state.get("error")
+        row["source_is_stale"] = row["source_status"] != "success"
+    data_status = "not_scanned" if not scan else (
+        "fresh" if scan["status"] == "success" else ("partial" if scan["status"] == "partial" else "stale")
+    )
+    return {
+        "period": period,
+        "items": rows,
+        "scan": scan,
+        "source_health": source_health,
+        "data_status": data_status,
+        "global_ranking_available": False,
+        "ranking_note": "Source-local order only; cross-source popularity is not comparable.",
+    }
 
 @app.post("/api/radar/scan/{period}")
 def run_radar_scan(period: str = "daily"):
     if period not in ("daily", "weekly"):
         raise HTTPException(status_code=400, detail="period must be daily or weekly")
-    trend_radar.scan_global_trends(period)
-    return {"ok": True, "msg": "글로벌 4개국 40개 순위 & TOP 10 스캔 완료"}
+    items = trend_radar.scan_global_trends(period)
+    scan = trend_radar.get_scan_status(period)
+    return {
+        "ok": bool(scan and scan["status"] in ("success", "partial")),
+        "fetched_count": len(items),
+        "scan": scan,
+        "msg": f"Discovery scan finished: {len(items)} source-attributed items",
+    }
 
 @app.post("/api/radar/auto-produce-now")
 def trigger_auto_produce(bg: BackgroundTasks):
     bg.add_task(auto_produce_top_trends, 3)
-    return {"ok": True, "msg": "ꮀ로벌 종핹 TOP 10 상위 3편의 완전 자동 AI 영상제작이 시작되었습니다!"}
+    return {"ok": True, "msg": "지역별 원천 순위 후보 최대 3건을 제작 큐에 등록합니다."}
 
 @app.post("/api/radar/toggle-auto/{enabled}")
 def toggle_auto_produce(enabled: int):
@@ -658,7 +966,7 @@ def set_radar_interval(minutes: int):
     if minutes < 1 or minutes > 1440:
         raise HTTPException(status_code=400, detail="minutes must be between 1 and 1440")
     RADAR_INTERVAL_SEC = minutes * 60
-    return {"ok": True, "msg": f"자동 수집 주기가 {minutes}분위로 변경되었습니다."}
+    return {"ok": True, "msg": f"자동 수집 주기가 {minutes}분으로 변경되었습니다."}
 
 @app.post("/api/create")
 def create_single(req: CreateReq):
@@ -691,9 +999,48 @@ def create_all():
 
 @app.post("/api/queue")
 def save_queue(req: QueueReq):
-    lines = [line.strip() for line in req.topics_text.splitlines() if line.strip()]
-    added = sum(enqueue_topic(line, source="api") for line in lines)
+    topics_text = req.topics_text or ""
+    if len(topics_text) > 20000:
+        raise HTTPException(status_code=413, detail="Queue payload exceeds 20,000 characters")
+    lines = [line.strip() for line in topics_text.splitlines() if line.strip()]
+    if len(lines) > 100:
+        raise HTTPException(status_code=400, detail="A single queue request may contain at most 100 topics")
+    db = get_db()
+    try:
+        known_channels = {row["name"] for row in db.execute("SELECT name FROM channels")}
+    finally:
+        db.close()
+    for line in lines:
+        if "|" in line:
+            channel_name, topic = [part.strip() for part in line.split("|", 1)]
+            if not channel_name or not topic:
+                raise HTTPException(status_code=400, detail="Queue lines must be 'channel | topic' or 'topic'")
+            if channel_name not in known_channels:
+                raise HTTPException(status_code=400, detail=f"Unknown channel: {channel_name}")
+        if len(line) > 2000:
+            raise HTTPException(status_code=400, detail="Each topic must be 2,000 characters or fewer")
+    try:
+        added = sum(enqueue_topic(line, source="api") for line in lines)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "queued": added, "msg": f"{added}건을 채널별 내구성 제작 큐에 등록했습니다."}
+
+def _upload_result_metadata(ok: bool, message: str):
+    """Extract only the provider-confirmed video ID and privacy state from the upload adapter result."""
+    if ok:
+        marker = "영상 ID: "
+        video_id = message.split(marker, 1)[1].split()[0] if marker in message else None
+        return video_id, "private" if video_id else "unknown"
+    if message.startswith("UPLOAD_CREATED_PRIVACY_UNVERIFIED:"):
+        parts = message.split(":", 2)
+        video_id = parts[1] if len(parts) > 1 and parts[1] != "unknown" else None
+        reported_privacy = parts[2] if len(parts) > 2 else "unknown"
+        privacy = reported_privacy if reported_privacy in ("private", "public", "unlisted", "unknown") else "unknown"
+        return video_id, privacy
+    if message.startswith("UPLOAD_RESULT_UNCERTAIN:"):
+        return None, "unknown"
+    return None, None
+
 
 @app.post("/api/approve/{job_id}")
 def approve_job(job_id: int):
@@ -708,8 +1055,17 @@ def approve_job(job_id: int):
         raise HTTPException(status_code=409, detail="이미 처리됐거나 업로드 상태 확인이 필요한 작업입니다.")
     output_root = os.path.realpath("output")
     video_path = os.path.realpath(jb["video_path"])
-    if os.path.commonpath([output_root, video_path]) != output_root or not os.path.isfile(video_path):
+    try:
+        inside_output = os.path.commonpath([output_root, video_path]) == output_root
+    except ValueError:
+        inside_output = False
+    if not inside_output or not os.path.isfile(video_path):
         raise HTTPException(status_code=400, detail="output 폴더 안의 실제 영상 파일만 업로드할 수 있습니다.")
+    qa = validate_video(video_path)
+    if not qa.get("ok"):
+        record_event("upload.blocked_qa", entity_type="pipeline_job", entity_id=job_id,
+                     payload={"errors": qa.get("errors", [])})
+        raise HTTPException(status_code=409, detail="업로드 직전 영상 품질검사에 실패했습니다.")
     db = get_db()
     try:
         if not claim_upload(db, job_id):
@@ -721,17 +1077,26 @@ def approve_job(job_id: int):
                  payload={"channel": jb["channel_name"], "approval_source": "api"})
     ok, msg = yt_uploader.upload_to_youtube(jb["channel_name"], video_path, jb["title"], jb["script"])
     privacy_unverified = msg.startswith("UPLOAD_CREATED_PRIVACY_UNVERIFIED:") or msg.startswith("UPLOAD_RESULT_UNCERTAIN:")
+    video_id, privacy_status = _upload_result_metadata(ok, msg)
+    if ok and (not video_id or privacy_status != "private"):
+        ok = False
+        privacy_unverified = True
+        privacy_status = privacy_status or "unknown"
+        msg = f"UPLOAD_CREATED_PRIVACY_UNVERIFIED:{video_id or 'unknown'}:{privacy_status}"
     event_type = "upload.completed" if ok else ("upload.privacy_unverified" if privacy_unverified else "upload.failed")
     record_event(event_type, entity_type="pipeline_job", entity_id=job_id,
-                 payload={"channel": jb["channel_name"], "privacy_status": "private" if ok else "unverified"})
+                 payload={"channel": jb["channel_name"], "video_id": video_id,
+                          "privacy_status": privacy_status})
     db = get_db()
     try:
-        db.execute("UPDATE pipeline_jobs SET stage=? WHERE id=?",
-                   (upload_result_stage(ok, privacy_unverified), job_id))
+        db.execute(
+            "UPDATE pipeline_jobs SET stage=?, youtube_video_id=?, privacy_status=? WHERE id=?",
+            (upload_result_stage(ok, privacy_unverified), video_id, privacy_status, job_id),
+        )
         db.commit()
     finally:
         db.close()
-    return {"ok": ok, "msg": msg}
+    return {"ok": ok, "msg": msg, "video_id": video_id, "privacy_status": privacy_status}
 
 @app.post("/api/reject/{job_id}")
 def reject_job(job_id: int, req: RejectReq):
@@ -755,34 +1120,84 @@ def reject_job(job_id: int, req: RejectReq):
                  payload={"channel": job["channel_name"], "note": note, "source": "browser_studio"})
     return {"ok": True, "msg": "반려 및 수정 요청이 기록되었습니다."}
 
-@app.put("/api/jobs/{job_id}")
-def update_job(job_id: int, req: UpdateJobReq):
+def enqueue_job_regeneration(job_id: int, title: str, script: str):
+    """Atomically move an editable review job to regeneration and enqueue its exact revision."""
+    sentences = split_manual_script(script)
     db = get_db()
     try:
-        job = db.execute("SELECT stage, channel_name FROM pipeline_jobs WHERE id=?", (job_id,)).fetchone()
+        db.execute("BEGIN IMMEDIATE")
+        job = db.execute(
+            "SELECT stage, channel_name FROM pipeline_jobs WHERE id=?", (job_id,)
+        ).fetchone()
         if not job:
             raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
-        resubmitted = job["stage"] == "반려(수정 필요)"
-        stage_sql = ", stage='최종컨펌 대기'" if resubmitted else ""
-        db.execute(f"UPDATE pipeline_jobs SET title=?, script=?{stage_sql} WHERE id=?", (req.title, req.script, job_id))
+        allowed_stages = ("최종컨펌 대기", "반려(수정 필요)", "재제작 실패")
+        if job["stage"] not in allowed_stages:
+            raise HTTPException(status_code=409, detail="검수 대기, 반려 또는 재제작 실패 상태의 작업만 수정할 수 있습니다.")
+        cur = db.execute(
+            "UPDATE pipeline_jobs SET stage='재제작 대기' WHERE id=? AND stage=?",
+            (job_id, job["stage"]),
+        )
+        if cur.rowcount != 1:
+            raise HTTPException(status_code=409, detail="작업 상태가 변경되어 재제작을 등록하지 못했습니다.")
+        stamp = datetime.now().isoformat(timespec="seconds")
+        queue_key = f"review-edit:{job_id}:{secrets.token_urlsafe(12)}"
+        queued = db.execute(
+            """INSERT INTO topic_queue
+               (idempotency_key, channel_name, topic, source, status, attempts, available_at,
+                title_override, script_override, target_job_id, created_at, updated_at)
+               VALUES (?, ?, ?, 'review_regeneration', 'pending', 0, ?, ?, ?, ?, ?, ?)""",
+            (queue_key, job["channel_name"], title, int(time.time()), title, script,
+             job_id, stamp, stamp),
+        )
+        queue_id = queued.lastrowid
         db.commit()
-        if resubmitted:
-            record_event("review.resubmitted", entity_type="pipeline_job", entity_id=job_id,
-                         payload={"channel": job["channel_name"], "source": "browser_studio"})
-        return {"ok": True, "msg": "수정 내용이 저장되었습니다."}
+        record_event("review.regeneration_queued", entity_type="pipeline_job", entity_id=job_id,
+                     payload={"channel": job["channel_name"], "queue_id": queue_id,
+                              "sentence_count": len(sentences)})
+        return queue_id
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 
+
+@app.put("/api/jobs/{job_id}")
+def update_job(job_id: int, req: UpdateJobReq):
+    title = (req.title or "").strip()
+    script = (req.script or "").strip()
+    title = " ".join(title.split())
+    if not title or len(title) > 100:
+        raise HTTPException(status_code=400, detail="title must contain 1 to 100 characters")
+    if len(script) > 20000:
+        raise HTTPException(status_code=400, detail="script exceeds the 20,000 character limit")
+    try:
+        queue_id = enqueue_job_regeneration(job_id, title, script)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "queued": True, "queue_id": queue_id,
+            "msg": "수정한 대본으로 재제작을 등록했습니다. 새 영상의 품질검수 후 다시 최종 승인을 요청합니다."}
+
 @app.post("/api/jobs/bulk-delete")
 def bulk_delete_jobs(req: BulkDelReq):
-    if not req.job_ids:
-        return {"ok": False, "msg": "선택된 핬목이 없습니다."}
+    job_ids = sorted(set(req.job_ids or []))
+    if not job_ids:
+        return {"ok": False, "deleted": 0, "skipped": 0, "msg": "선택된 항목이 없습니다."}
+    if len(job_ids) > 100 or any(job_id < 1 for job_id in job_ids):
+        raise HTTPException(status_code=400, detail="Select at most 100 valid job IDs")
     db = get_db()
     try:
-        placeholders = ",".join("?" for _ in req.job_ids)
-        cur = db.execute(f"DELETE FROM pipeline_jobs WHERE id IN ({placeholders})", req.job_ids)
+        placeholders = ",".join("?" for _ in job_ids)
+        cur = db.execute(
+            f"DELETE FROM pipeline_jobs WHERE id IN ({placeholders}) AND stage NOT IN ('업로드 진행 중','재제작 대기')",
+            job_ids,
+        )
         db.commit()
-        return {"ok": True, "msg": f"{cur.rowcount}건의 작업이 삭제되었습니다."}
+        deleted = cur.rowcount
+        skipped = len(job_ids) - deleted
+        return {"ok": True, "deleted": deleted, "skipped": skipped,
+                "msg": f"{deleted}건 삭제, 진행 중인 작업 {skipped}건은 보호했습니다."}
     finally:
         db.close()
 
@@ -790,10 +1205,15 @@ def bulk_delete_jobs(req: BulkDelReq):
 def delete_job(job_id: int):
     db = get_db()
     try:
-        cur = db.execute("DELETE FROM pipeline_jobs WHERE id=?", (job_id,))
-        db.commit()
-        if cur.rowcount == 0:
+        job = db.execute("SELECT stage FROM pipeline_jobs WHERE id=?", (job_id,)).fetchone()
+        if not job:
             raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
+        if job["stage"] in ("업로드 진행 중", "재제작 대기"):
+            raise HTTPException(status_code=409, detail="업로드 또는 재제작이 진행 중인 작업은 삭제할 수 없습니다.")
+        cur = db.execute("DELETE FROM pipeline_jobs WHERE id=? AND stage NOT IN ('업로드 진행 중','재제작 대기')", (job_id,))
+        db.commit()
+        if cur.rowcount != 1:
+            raise HTTPException(status_code=409, detail="작업 상태가 변경되어 삭제하지 못했습니다.")
         return {"ok": True, "msg": "삭제 완료"}
     finally:
         db.close()
