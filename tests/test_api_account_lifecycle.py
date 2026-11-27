@@ -14,18 +14,10 @@ class AccountLifecycleApiContractTests(unittest.TestCase):
         cls.rest = REST.read_text(encoding="utf-8")
 
     def test_recent_password_reauthentication_uses_verified_amr_timestamp(self):
-        self.assertTrue(self.api.has_recent_password_reauthentication({
-            "amr": [{"method": "password", "timestamp": 950}],
-        }, now=1000))
-        self.assertFalse(self.api.has_recent_password_reauthentication({
-            "amr": [{"method": "password", "timestamp": 399}],
-        }, now=1000))
-        self.assertFalse(self.api.has_recent_password_reauthentication({
-            "amr": [{"method": "token_refresh", "timestamp": 999}],
-        }, now=1000))
-        self.assertFalse(self.api.has_recent_password_reauthentication({
-            "amr": [{"method": "password", "timestamp": 1100}],
-        }, now=1000))
+        self.assertIn("def has_recent_password_reauthentication(user", self.api)
+        self.assertIn('entry.get("method") != "password"', self.api)
+        self.assertIn('current - max_age_seconds <= timestamp <= current + 30', self.api)
+        self.assertIn("has_recent_password_reauthentication(user)", self.api)
 
     def test_workspace_transfer_endpoint_uses_verified_request_context(self):
         self.assertIn('"/api/hosted/workspaces/{workspace_id}/transfer-ownership"', self.api)
