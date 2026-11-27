@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import Mock
 
-from hosted_upload_worker import process_one_upload
+from hosted_upload_worker import DEFAULT_MAX_ATTEMPTS, process_one_upload
 
 
 JOB = {
