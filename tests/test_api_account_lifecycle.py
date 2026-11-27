@@ -19,6 +19,8 @@ class AccountLifecycleApiContractTests(unittest.TestCase):
         self.assertIn('client.rpc("transfer_workspace_ownership"', self.api)
         self.assertIn('"p_new_owner_id": str(req.new_owner_id)', self.api)
         self.assertIn("_hosted_rest_client(request)", self.api)
+        self.assertIn('"is_account_deletion_tombstoned"', self.rest)
+        self.assertIn("This account is no longer active", self.api)
 
     def test_account_deletion_preflight_is_read_only_and_reports_shared_owner_blockers(self):
         self.assertIn('"/api/hosted/account/deletion/preflight"', self.api)
@@ -38,7 +40,7 @@ class AccountLifecycleApiContractTests(unittest.TestCase):
         self.assertIn("The current owner role cannot be changed here", self.api)
 
     def test_rpc_client_is_allowlisted_and_uses_user_token(self):
-        self.assertIn('_ALLOWED_RPCS = {"transfer_workspace_ownership"}', self.rest)
+        self.assertIn('_ALLOWED_RPCS = {"transfer_workspace_ownership", "is_account_deletion_tombstoned"}', self.rest)
         self.assertIn('if name not in _ALLOWED_RPCS:', self.rest)
         self.assertIn('"Authorization": f"Bearer {self.access_token}"', self.rest)
         self.assertNotIn("NEXUS_SUPABASE_SERVICE_ROLE_KEY", self.rest)
