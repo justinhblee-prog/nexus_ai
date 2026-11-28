@@ -27,6 +27,7 @@ from review_workflow import claim_upload, upload_result_stage
 from supabase_rest import SupabaseRestClient, SupabaseRestError
 from supabase_admin import SupabaseAdminRestClient, SupabaseAdminError
 from hosted_trend_store import read_shared_trends
+from social_platforms import get_social_platform_catalog
 from youtube_oauth import GoogleOAuthConfig, GoogleOAuthError, create_oauth_state, create_pkce_pair
 from token_vault import encrypt_refresh_token, decrypt_refresh_token, TokenVaultError
 
@@ -834,6 +835,63 @@ def hosted_create_job(workspace_id: str, req: HostedJobCreateReq, request: Reque
         if not rows:
             raise HTTPException(status_code=403, detail="Workspace job creation was denied")
         return {"job": rows[0]}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+@app.get("/api/hosted/workspaces/{workspace_id}/social/platforms")
+def hosted_social_platforms(workspace_id: str, request: Request):
+    """Return the provider catalogue and per-workspace connection counts."""
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    user_id = request.state.hosted_user["user_id"]
+    try:
+        memberships = client.select("workspace_members", {
+            "select": "role",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{user_id}",
+            "limit": "1",
+        }) or []
+        if not memberships:
+            raise HTTPException(status_code=404, detail="Workspace not found")
+        connections = client.select("youtube_connections", {
+            "select": "provider,status",
+            "workspace_id": f"eq.{workspace_id}",
+        }) or []
+        counts = {}
+        for connection in connections:
+            if connection.get("status") == "connected":
+                provider = connection.get("provider")
+                counts[provider] = counts.get(provider, 0) + 1
+        items = get_social_platform_catalog()
+        for item in items:
+            item["connected_account_count"] = counts.get(item["id"], 0)
+        return {"items": items}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+@app.get("/api/hosted/workspaces/{workspace_id}/social/connections")
+def hosted_social_connections(workspace_id: str, request: Request):
+    """List all provider connections in the active workspace, not just YouTube."""
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    user_id = request.state.hosted_user["user_id"]
+    try:
+        memberships = client.select("workspace_members", {
+            "select": "role",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{user_id}",
+            "limit": "1",
+        }) or []
+        if not memberships:
+            raise HTTPException(status_code=404, detail="Workspace not found")
+        items = client.select("youtube_connections", {
+            "select": "connection_id,provider,provider_account_id,display_name,status,scopes,created_at,updated_at,disconnected_at",
+            "workspace_id": f"eq.{workspace_id}",
+            "order": "created_at.desc",
+        })
+        return {"items": items or []}
     except SupabaseRestError as exc:
         _hosted_rest_error(exc)
 

@@ -31,6 +31,13 @@
     .appearance-controls label{margin:0}
     .appearance-controls select,.appearance-controls input{width:100%;min-height:40px;background:var(--inset);border:1px solid var(--line);border-radius:9px;color:var(--text);padding:8px;font:inherit}
     .appearance-controls input[type=color]{padding:3px;cursor:pointer}
+    .platform-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin:12px 0}
+    .platform-card{min-width:0;padding:13px;border:1px solid var(--line);border-radius:12px;background:var(--inset)}
+    .platform-card strong{display:block;color:var(--text);font-size:14px}
+    .platform-card .platform-status{display:inline-block;margin:6px 0 4px;padding:3px 8px;border-radius:999px;background:#18243a;color:#b9c9e3;font-size:11px}
+    .platform-card[data-status="ready"] .platform-status{background:#103326;color:#8df0c7}
+    .platform-card p{margin:3px 0 0;font-size:12px;line-height:1.45}
+    .platform-section-title{display:block;margin:14px 0 7px;color:var(--text);font-size:13px}
     .session{display:none;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
     .session>strong,.session>#session-email,.session>.appearance-controls,.session>#workspace,.session>.studio-metrics,
     .session>#workspace-picker,.session>#connections,.session>#workspace-members-panel,.session>#connect-youtube,
@@ -119,7 +126,15 @@
           <div class="studio-metric"><span>비공개 업로드 완료</span><strong id="metric-published">—</strong></div>
         </div>
         <div id="workspace-picker" class="workspace-select hidden"><label for="workspace-select">활성 워크스페이스</label><select id="workspace-select" aria-label="활성 워크스페이스"></select></div>
-        <div id="connections" class="connections"></div>
+        <div class="workspace" id="social-account-hub" style="margin-top:14px">
+          <strong>멀티 플랫폼 계정 관리</strong>
+          <p>하나의 워크스페이스에 플랫폼별 여러 계정을 연결하고, 각 계정에 속한 게시 채널을 관리합니다.</p>
+          <div id="social-platforms" class="platform-grid" aria-live="polite"></div>
+          <strong class="platform-section-title">연결된 계정</strong>
+          <div id="connections" class="connections"></div>
+          <strong class="platform-section-title">게시 채널</strong>
+          <div id="social-channels" class="connections"></div>
+        </div>
         <div id="workspace-members-panel" class="workspace hidden" style="margin-top:12px">
           <strong>워크스페이스 구성원 및 소유권</strong>
           <p class="muted">계정을 삭제하기 전에 다른 구성원에게 소유권을 이전할 수 있습니다. 공유 작업과 채널은 유지됩니다.</p>
@@ -132,7 +147,7 @@
           </div>
           <div id="workspace-members-status" class="muted" role="status"></div>
         </div>
-        <button class="primary" type="button" id="connect-youtube">YouTube 채널 연결</button>
+        <button class="primary" type="button" id="connect-youtube">YouTube 계정 추가</button>
         <div class="workspace" id="trend-panel" style="margin-top:16px">
           <strong>글로벌 트렌드 레이더</strong>
           <p class="muted" id="trend-scan-status">공개 트렌드 소스를 확인하고 있습니다.</p>
@@ -232,6 +247,8 @@
       document.getElementById("workspace-members-panel").classList.add("hidden");
       authForms.classList.remove("hidden");
       document.getElementById("connections").replaceChildren();
+      document.getElementById("social-platforms").replaceChildren();
+      document.getElementById("social-channels").replaceChildren();
       document.getElementById("jobs").replaceChildren();
       document.getElementById("saved-topic-items").replaceChildren();
       document.getElementById("workspace-select").replaceChildren();
@@ -663,46 +680,63 @@
 
     async function loadConnections() {
       const node = document.getElementById("connections");
+      const platformNode = document.getElementById("social-platforms");
+      const channelNode = document.getElementById("social-channels");
       node.replaceChildren();
+      platformNode.replaceChildren();
+      channelNode.replaceChildren();
       if (!activeWorkspaceId || !activeAccessToken) {
-        node.textContent = "워크스페이스를 선택할 수 없어 채널 연결을 시작할 수 없습니다.";
+        node.textContent = "워크스페이스를 선택할 수 없어 계정 연결을 시작할 수 없습니다.";
         return;
       }
-      const response = await fetch(
-        "/api/hosted/workspaces/" + encodeURIComponent(activeWorkspaceId) + "/youtube/connections",
-        { headers: { Authorization: "Bearer " + activeAccessToken } }
-      );
-      if (!response.ok) throw new Error("YouTube 연결 정보를 불러오지 못했습니다.");
-      const result = await response.json();
-      const items = result.items || [];
-      const channelResponse = await fetch(
-        "/api/hosted/workspaces/" + encodeURIComponent(activeWorkspaceId) + "/channels",
-        { headers: { Authorization: "Bearer " + activeAccessToken } }
-      );
-      if (!channelResponse.ok) throw new Error("YouTube 채널 목록을 불러오지 못했습니다.");
-      const channelResult = await channelResponse.json();
-      const channels = channelResult.items || [];
-      const channelSelect = document.getElementById("job-channel");
-      channelSelect.replaceChildren();
-      for (const channel of channels.filter(item => item.is_active)) {
-        const option = document.createElement("option");
-        option.value = channel.channel_id;
-        option.textContent = channel.display_name;
-        channelSelect.appendChild(option);
+      const headers = { headers: { Authorization: "Bearer " + activeAccessToken } };
+      const base = "/api/hosted/workspaces/" + encodeURIComponent(activeWorkspaceId);
+      const [platformResponse, connectionResponse, channelResponse] = await Promise.all([
+        fetch(base + "/social/platforms", headers),
+        fetch(base + "/social/connections", headers),
+        fetch(base + "/channels", headers)
+      ]);
+      if (!platformResponse.ok) throw new Error("플랫폼 연결 상태를 불러오지 못했습니다.");
+      if (!connectionResponse.ok) throw new Error("연결된 계정 정보를 불러오지 못했습니다.");
+      if (!channelResponse.ok) throw new Error("게시 채널 목록을 불러오지 못했습니다.");
+      const platforms = (await platformResponse.json()).items || [];
+      const items = (await connectionResponse.json()).items || [];
+      const channels = (await channelResponse.json()).items || [];
+      const labels = Object.fromEntries(platforms.map(item => [item.id, item.label]));
+      const statusLabels = {
+        ready: "연결 가능",
+        setup_required: "운영자 설정 필요",
+        coming_soon: "연동 준비 중"
+      };
+      for (const platform of platforms) {
+        const card = document.createElement("div");
+        card.className = "platform-card";
+        card.dataset.status = platform.status;
+        const title = document.createElement("strong");
+        title.textContent = platform.label;
+        const status = document.createElement("span");
+        status.className = "platform-status";
+        status.textContent = statusLabels[platform.status] || "상태 확인 필요";
+        const detail = document.createElement("p");
+        detail.textContent = platform.detail + " · 연결 계정 " + String(platform.connected_account_count || 0) + "개";
+        card.append(title, status, detail);
+        platformNode.appendChild(card);
       }
-      document.getElementById("create-job").disabled = !channelSelect.options.length ||
-        !["owner", "admin", "editor"].includes(activeWorkspaceRole);
+      const connectButton = document.getElementById("connect-youtube");
+      const youtube = platforms.find(item => item.id === "youtube");
+      connectButton.hidden = !["owner", "admin"].includes(activeWorkspaceRole) || !youtube || !youtube.connectable;
+      connectButton.textContent = "YouTube 계정 추가";
       if (!items.length) {
-        node.textContent = "연결된 Google 계정이 없습니다.";
+        node.textContent = "아직 연결된 SNS 계정이 없습니다. YouTube부터 연결하거나 다른 플랫폼의 연동 준비 상태를 확인하세요.";
       }
       for (const item of items) {
         const row = document.createElement("div");
         row.className = "connection-row";
         const detail = document.createElement("span");
-        detail.textContent = item.display_name + " · " + item.status;
+        detail.textContent = (labels[item.provider] || item.provider || "SNS") + " · " +
+          item.display_name + " · " + item.status;
         row.appendChild(detail);
-        if (activeWorkspaceRole === "owner" || activeWorkspaceRole === "admin") {
-          if (item.status !== "disconnected") {
+        if (item.provider === "youtube" && ["owner", "admin"].includes(activeWorkspaceRole) && item.status !== "disconnected") {
           const disconnect = document.createElement("button");
           disconnect.type = "button";
           disconnect.textContent = "연결 해제";
@@ -710,20 +744,18 @@
             disconnect.disabled = true;
             try {
               const disconnected = await fetch(
-                "/api/hosted/workspaces/" + encodeURIComponent(activeWorkspaceId) +
-                  "/youtube/" + encodeURIComponent(item.connection_id) + "/disconnect",
+                base + "/youtube/" + encodeURIComponent(item.connection_id) + "/disconnect",
                 { method: "POST", headers: { Authorization: "Bearer " + activeAccessToken } }
               );
               if (!disconnected.ok) throw new Error("YouTube 연결 해제에 실패했습니다.");
               await loadConnections();
-              showMessage("YouTube 채널 연결을 해제하고 토큰 폐기를 확인했습니다.", "success");
+              showMessage("YouTube 계정 연결을 해제하고 토큰 폐기를 확인했습니다.", "success");
             } catch (error) {
               showMessage(error.message || "연결 해제에 실패했습니다.", "error");
               disconnect.disabled = false;
             }
           });
-            row.appendChild(disconnect);
-          }
+          row.appendChild(disconnect);
         }
         node.appendChild(row);
       }
@@ -731,10 +763,24 @@
         const row = document.createElement("div");
         row.className = "connection-row";
         const detail = document.createElement("span");
-        detail.textContent = channel.display_name + " · " + (channel.is_active ? "활성" : "비활성");
+        detail.textContent = (labels[channel.platform] || channel.platform || "SNS") + " · " +
+          channel.display_name + " · " + (channel.is_active ? "활성" : "비활성");
         row.appendChild(detail);
-        node.appendChild(row);
+        channelNode.appendChild(row);
       }
+      if (!channels.length) channelNode.textContent = "연결된 계정에서 확인된 게시 채널이 아직 없습니다.";
+      const channelSelect = document.getElementById("job-channel");
+      channelSelect.replaceChildren();
+      // The current rendering/upload worker is YouTube-only. Never queue a TikTok
+      // or other platform channel into the YouTube uploader by mistake.
+      for (const channel of channels.filter(item => item.is_active && item.platform === "youtube")) {
+        const option = document.createElement("option");
+        option.value = channel.channel_id;
+        option.textContent = "YouTube · " + channel.display_name;
+        channelSelect.appendChild(option);
+      }
+      document.getElementById("create-job").disabled = !channelSelect.options.length ||
+        !["owner", "admin", "editor"].includes(activeWorkspaceRole);
       await loadJobs();
       await loadWorkspaceMembers();
       await loadWorkspaceOverview();
@@ -910,6 +956,8 @@
       if (activeWorkspaceId) await loadConnections();
       else {
         document.getElementById("connections").textContent = "접근 가능한 워크스페이스가 없습니다.";
+        document.getElementById("social-platforms").replaceChildren();
+        document.getElementById("social-channels").replaceChildren();
         document.getElementById("jobs").textContent = "";
       }
       await loadAccountDeletionPreflight();
@@ -1042,7 +1090,7 @@
         return;
       }
       if (activeWorkspaceRole !== "owner" && activeWorkspaceRole !== "admin") {
-        showMessage("YouTube 계정 연결은 워크스페이스 소유자 또는 관리자만 할 수 있습니다.", "error");
+        showMessage("SNS 계정 연결은 워크스페이스 소유자 또는 관리자만 할 수 있습니다.", "error");
         return;
       }
       const button = document.getElementById("connect-youtube");

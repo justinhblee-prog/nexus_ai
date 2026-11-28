@@ -141,6 +141,18 @@ class HostedSignupPageContractTests(unittest.TestCase):
         self.assertIn('scope: "local"', self.html)
         self.assertIn("showDeletionRetryOnly", self.html)
 
+    def test_multi_platform_account_hub_lists_providers_and_multiple_connections(self):
+        self.assertIn('id="social-account-hub"', self.html)
+        self.assertIn('id="social-platforms"', self.html)
+        self.assertIn('id="social-channels"', self.html)
+        self.assertIn('/social/platforms', self.html)
+        self.assertIn('/social/connections', self.html)
+        self.assertIn('연결 계정 ', self.html)
+        self.assertIn('YouTube 계정 추가', self.html)
+        self.assertIn('연동 준비 중', self.html)
+        self.assertIn('item.provider === "youtube"', self.html)
+        self.assertIn('item.platform === "youtube"', self.html)
+
     def test_youtube_channel_connect_and_disconnect_controls_use_authenticated_api(self):
         self.assertIn('"/youtube/connections"', self.html)
         self.assertIn('"/youtube/connect"', self.html)

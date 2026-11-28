@@ -134,12 +134,14 @@ class SupabaseAdminRestClient:
             raise ValueError("Unsupported Supabase admin RPC")
         return self._call("POST", f"rpc/{quote(name, safe='')}", payload=payload)
 
-    def store_oauth_state(self, state_hash, user_id, workspace_id, redirect_uri, return_uri, code_verifier, expires_at):
+    def store_oauth_state(self, state_hash, user_id, workspace_id, redirect_uri, return_uri, code_verifier, expires_at, provider="youtube"):
+        if provider not in {"youtube", "tiktok", "instagram", "facebook", "linkedin"}:
+            raise ValueError("Unsupported social OAuth provider")
         return self.rpc("store_youtube_oauth_state", {
             "p_state_hash": state_hash,
             "p_user_id": user_id,
             "p_workspace_id": workspace_id,
-            "p_provider": "youtube",
+            "p_provider": provider,
             "p_redirect_uri": redirect_uri,
             "p_return_uri": return_uri,
             "p_code_verifier": code_verifier,
