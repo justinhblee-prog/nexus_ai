@@ -20,12 +20,12 @@ class VercelFastApiEntrypointTests(unittest.TestCase):
     def test_hosted_startup_skips_local_sqlite_and_output_directory_writes(self):
         api = (ROOT / "api_server.py").read_text(encoding="utf-8")
         startup_start = api.index('@app.on_event("startup")')
-        startup_end = api.index("\\nclass LoginReq", startup_start)
+        startup_end = api.index("\nclass LoginReq", startup_start)
         startup = api[startup_start:startup_end]
         self.assertLess(startup.index("if is_hosted_auth_enabled():"), startup.index("init_app_db()"))
         self.assertIn("return", startup[startup.index("if is_hosted_auth_enabled():"):])
         output_start = api.index("# Local filesystem output is used only")
-        output_end = api.index("\\nRADAR_INTERVAL_SEC", output_start)
+        output_end = api.index("\nRADAR_INTERVAL_SEC", output_start)
         output_setup = api[output_start:output_end]
         self.assertIn("if not is_hosted_auth_enabled():", output_setup)
         self.assertIn('app.mount("/output"', output_setup)
