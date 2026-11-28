@@ -1,0 +1,68 @@
+name: Supabase local migration validation
+
+on:
+  pull_request:
+    paths:
+      - "supabase/migrations/**"
+      - "supabase/operations/**"
+      - "docs/SHARED_PUBLIC_TREND_STORE_MIGRATION.md"
+      - "docs/SUPABASE_ADMIN_DEFAULT_PRIVILEGES.md"
+      - ".github/workflows/supabase-local-migrations.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-local-migrations-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  local-migrations:
+    name: Replay and lint local Supabase migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_DB_PORT: 55432
+    steps:
+      - name: Check out PR source
+        uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: v2.stable
+
+      - name: Initialize local Supabase config
+        run: supabase init
+
+      - name: Start the isolated local Supabase stack
+        run: supabase start --exclude studio,mailpit,logflare,realtime,edge-runtime,postgrest,vector,imgproxy
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+
+      - name: Replay all repository migrations from an empty local database
+        run: supabase migration up
+
+      - name: Validate privileged admin ACL operation in the isolated database
+        run: |
+          PGPASSWORD=postgres psql \
+            --host 127.0.0.1 --port 55432 --username supabase_admin --dbname postgres \
+            --set ON_ERROR_STOP=1 --file supabase/operations/nexus_admin_anon_acl_hardening.sql
+          storage_anon_acl_count="$(PGPASSWORD=postgres psql --host 127.0.0.1 --port 55432 --username supabase_admin --dbname postgres --tuples-only --no-align --command "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a JOIN pg_roles g ON g.oid=a.grantee WHERE n.nspname='storage' AND c.relname='objects' AND g.rolname='anon'")"
+          public_default_anon_count="$(PGPASSWORD=postgres psql --host 127.0.0.1 --port 55432 --username supabase_admin --dbname postgres --tuples-only --no-align --command "SELECT count(*) FROM pg_default_acl d JOIN pg_roles r ON r.oid=d.defaclrole JOIN pg_namespace n ON n.oid=d.defaclnamespace CROSS JOIN LATERAL aclexplode(d.defaclacl) a LEFT JOIN pg_roles g ON g.oid=a.grantee WHERE r.rolname IN ('postgres','supabase_admin') AND n.nspname='public' AND g.rolname='anon' AND d.defaclobjtype IN ('r','S','f')")"
+          echo "storage.objects direct anon ACL entries after privileged cleanup: ${storage_anon_acl_count}"
+          echo "postgres/supabase_admin anon table/sequence/function defaults after cleanup: ${public_default_anon_count}"
+          test "${storage_anon_acl_count}" = "0"
+          test "${public_default_anon_count}" = "0"
+
+      - name: Lint local database functions and schema
+        run: supabase db lint --fail-on error
+
+      - name: Stop isolated local Supabase stack
+        if: always()
+        run: supabase stop --no-backup || true
+

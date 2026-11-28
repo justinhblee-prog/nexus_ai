@@ -1,12 +1,15 @@
 import importlib
+import logging
 import asyncio
 import os
 import sys
+import sqlite3
+import tempfile
 import types
 import unittest
 from starlette.requests import Request
 from starlette.responses import Response
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 class SignedSessionTests(unittest.TestCase):
@@ -33,6 +36,17 @@ class SignedSessionTests(unittest.TestCase):
         cls.env_patch.stop()
         sys.modules.pop("api_server", None)
 
+    def test_root_routes_hosted_mode_to_authenticated_workspace_studio(self):
+        with patch.dict(os.environ, {"NEXUS_HOSTED_AUTH_ENABLED": "true"}):
+            response = self.api.serve_home()
+        self.assertEqual(response.path, "workspace.html")
+        self.assertTrue(response.media_type.startswith("text/html"))
+
+    def test_root_keeps_legacy_dashboard_in_local_mode(self):
+        with patch.dict(os.environ, {"NEXUS_HOSTED_AUTH_ENABLED": "false"}):
+            response = self.api.serve_home()
+        self.assertEqual(response.path, "index.html")
+
     def test_signed_cookie_round_trip_and_expiry(self):
         now = 1_800_000_000
         cookie = self.api.create_session_cookie(now=now)
@@ -46,12 +60,14 @@ class SignedSessionTests(unittest.TestCase):
         self.assertFalse(self.api.verify_session_cookie("not-a-session", now=now))
         self.assertFalse(self.api.verify_session_cookie(None, now=now))
 
-    def _request(self, path, method='GET', cookie=None, origin=None):
+    def _request(self, path, method='GET', cookie=None, origin=None, authorization=None):
         headers = []
         if cookie:
             headers.append((b'cookie', f'nexus_session={cookie}'.encode('ascii')))
         if origin:
             headers.append((b'origin', origin.encode('ascii')))
+        if authorization:
+            headers.append((b'authorization', authorization.encode('ascii')))
         scope = {
             'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1',
             'method': method, 'scheme': 'http', 'path': path, 'raw_path': path.encode('ascii'),
@@ -126,6 +142,797 @@ class SignedSessionTests(unittest.TestCase):
         with patch.object(self.api, "API_PASSWORD", ""), patch.object(self.api, "SESSION_SECRET", ""):
             self.assertFalse(self.api.auth_is_configured())
             self.assertFalse(self.api.verify_session_cookie("forged.cookie.value"))
+
+
+    def test_hosted_mode_blocks_legacy_single_operator_routes_and_verifies_bearer(self):
+        seen_requests = []
+        async def next_response(_request):
+            seen_requests.append(_request)
+            return Response(status_code=204)
+        with patch.dict(os.environ, {"NEXUS_HOSTED_AUTH_ENABLED": "true"}):
+            blocked = asyncio.run(self.api.enforce_local_origin_and_session(
+                self._request('/api/overview'), next_response
+            ))
+            blocked_media = asyncio.run(self.api.enforce_local_origin_and_session(
+                self._request('/output/video.mp4'), next_response
+            ))
+            with patch.object(self.api, "verify_access_token", return_value={
+                "user_id": "11111111-1111-4111-8111-111111111111",
+                "email": "member@example.test",
+                "role": "authenticated",
+            }), patch.object(self.api, "SupabaseRestClient") as rest_client:
+                rest_client.return_value.rpc.return_value = False
+                allowed = asyncio.run(self.api.enforce_local_origin_and_session(
+                    self._request('/api/hosted/session', authorization='Bearer valid.jwt.token'),
+                    next_response,
+                ))
+            with patch.object(self.api, "verify_access_token", side_effect=self.api.HostedAuthError("invalid")):
+                denied = asyncio.run(self.api.enforce_local_origin_and_session(
+                    self._request('/api/hosted/session', authorization='Bearer invalid.jwt.token'),
+                    next_response,
+                ))
+        self.assertEqual(blocked.status_code, 503)
+        self.assertEqual(blocked_media.status_code, 503)
+        self.assertEqual(allowed.status_code, 204)
+        self.assertEqual(seen_requests[0].state.hosted_user["role"], "authenticated")
+        self.assertEqual(denied.status_code, 401)
+
+    def test_tombstoned_hosted_account_is_rejected_before_route_execution(self):
+        async def next_response(_request):
+            return Response(status_code=204)
+        with patch.dict(os.environ, {"NEXUS_HOSTED_AUTH_ENABLED": "true"}), \
+             patch.object(self.api, "verify_access_token", return_value={
+                 "user_id": "11111111-1111-4111-8111-111111111111",
+                 "role": "authenticated",
+             }), patch.object(self.api, "SupabaseRestClient") as rest_client:
+            rest_client.return_value.rpc.return_value = True
+            response = asyncio.run(self.api.enforce_local_origin_and_session(
+                self._request("/api/hosted/session", authorization="Bearer valid.jwt.token"),
+                next_response,
+            ))
+        self.assertEqual(response.status_code, 401)
+
+    def test_recent_password_amr_is_required_for_account_deletion(self):
+        self.assertTrue(self.api.has_recent_password_reauthentication(
+            {"amr": [{"method": "password", "timestamp": 950}]}, now=1000
+        ))
+        self.assertFalse(self.api.has_recent_password_reauthentication(
+            {"amr": [{"method": "token_refresh", "timestamp": 999}]}, now=1000
+        ))
+        self.assertFalse(self.api.has_recent_password_reauthentication(
+            {"amr": [{"method": "password", "timestamp": 399}]}, now=1000
+        ))
+
+    def test_tombstoned_account_can_only_retry_account_deletion_request(self):
+        async def next_response(_request):
+            return Response(status_code=204)
+        with patch.dict(os.environ, {"NEXUS_HOSTED_AUTH_ENABLED": "true"}), \
+             patch.object(self.api, "verify_access_token", return_value={
+                 "user_id": "11111111-1111-4111-8111-111111111111",
+                 "role": "authenticated",
+             }), patch.object(self.api, "SupabaseRestClient") as rest_client:
+            rest_client.return_value.rpc.return_value = True
+            retry = asyncio.run(self.api.enforce_local_origin_and_session(
+                self._request("/api/hosted/account/deletion/request", method="POST", authorization="Bearer valid.jwt.token"),
+                next_response,
+            ))
+            denied = asyncio.run(self.api.enforce_local_origin_and_session(
+                self._request("/api/hosted/account/deletion/preflight", method="GET", authorization="Bearer valid.jwt.token"),
+                next_response,
+            ))
+        self.assertEqual(retry.status_code, 204)
+        self.assertEqual(denied.status_code, 401)
+
+    def test_hosted_account_status_check_fails_closed_when_tombstone_lookup_fails(self):
+        async def next_response(_request):
+            return Response(status_code=204)
+        with patch.dict(os.environ, {"NEXUS_HOSTED_AUTH_ENABLED": "true"}), \
+             patch.object(self.api, "verify_access_token", return_value={
+                 "user_id": "11111111-1111-4111-8111-111111111111",
+                 "role": "authenticated",
+             }), patch.object(self.api, "SupabaseRestClient") as rest_client:
+            rest_client.return_value.rpc.side_effect = self.api.SupabaseRestError(503, "unavailable")
+            response = asyncio.run(self.api.enforce_local_origin_and_session(
+                self._request("/api/hosted/session", authorization="Bearer valid.jwt.token"),
+                next_response,
+            ))
+        self.assertEqual(response.status_code, 503)
+
+    def test_hosted_auth_config_is_public_but_legacy_auth_is_not_reused(self):
+        async def next_response(_request):
+            return Response(status_code=204)
+        with patch.dict(os.environ, {"NEXUS_HOSTED_AUTH_ENABLED": "true"}):
+            response = asyncio.run(self.api.enforce_local_origin_and_session(
+                self._request('/api/hosted/auth-config'), next_response
+            ))
+            health = asyncio.run(self.api.enforce_local_origin_and_session(
+                self._request('/api/session/status'), next_response
+            ))
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(health.status_code, 204)
+
+
+    def test_hosted_signup_page_is_served_from_api(self):
+        response = self.api.signup_page()
+        self.assertEqual(response.path, "signup.html")
+        self.assertTrue(response.media_type.startswith("text/html"))
+
+
+    def test_hosted_workspace_routes_use_verified_user_jwt_and_workspace_filters(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111", "role": "authenticated"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.side_effect = [
+                [{"workspace_id": "wsp_11111111-1111-4111-8111-111111111111", "workspace_name": "Personal"}],
+                [{"workspace_id": "wsp_11111111-1111-4111-8111-111111111111", "role": "owner"}],
+                [{"job_id": "job-1"}],
+            ]
+            result = self.api.hosted_workspaces(request)
+            self.assertEqual(result["items"][0]["workspace_id"], "wsp_11111111-1111-4111-8111-111111111111")
+            self.assertEqual(result["items"][0]["member_role"], "owner")
+            self.assertEqual(client_type.call_args.args[0], "verified.user.jwt")
+            jobs = self.api.hosted_workspace_jobs("wsp_11111111-1111-4111-8111-111111111111", request)
+            self.assertEqual(jobs["items"][0]["job_id"], "job-1")
+            self.assertEqual(
+                client_type.return_value.select.call_args.args[1]["workspace_id"],
+                "eq.wsp_11111111-1111-4111-8111-111111111111",
+            )
+
+    def test_hosted_workspace_channels_and_overview_are_scoped_to_user_jwt_and_workspace(self):
+        workspace_id = "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "role": "authenticated"},
+            hosted_access_token="user-a.verified.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.side_effect = [
+                [{"channel_id": "channel-a"}],
+            ]
+            client_type.return_value.count.side_effect = [1, 1, 1, 1, 1, 1]
+            channels = self.api.hosted_workspace_channels(workspace_id, request)
+            overview = self.api.hosted_workspace_overview(workspace_id, request)
+        self.assertEqual(channels["items"][0]["channel_id"], "channel-a")
+        self.assertEqual(overview["workspace_id"], workspace_id)
+        self.assertEqual(overview["channel_count"], 1)
+        self.assertEqual(overview["job_count"], 1)
+        self.assertEqual(client_type.call_args.args[0], "user-a.verified.jwt")
+        filters = [call.args[1] for call in client_type.return_value.count.call_args_list]
+        self.assertEqual(len(filters), 6)
+        self.assertTrue(all(item["workspace_id"] == f"eq.{workspace_id}" for item in filters))
+
+    def test_hosted_job_creation_uses_verified_identity_and_server_defaults(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111", "role": "authenticated"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        payload = self.api.HostedJobCreateReq(
+            channel_id="22222222-2222-4222-8222-222222222222",
+            topic="New topic",
+            title="Draft title",
+            script="Draft script",
+        )
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.insert.return_value = [{"job_id": "job-1", "privacy_status": "private"}]
+            result = self.api.hosted_create_job(
+                "wsp_11111111-1111-4111-8111-111111111111", payload, request
+            )
+        inserted = client_type.return_value.insert.call_args.args[1]
+        self.assertEqual(inserted["created_by"], "11111111-1111-4111-8111-111111111111")
+        self.assertNotIn("owner_id", inserted)
+        self.assertNotIn("approval_status", inserted)
+        self.assertNotIn("privacy_status", inserted)
+        self.assertNotIn("stage", inserted)
+        self.assertEqual(result["job"]["privacy_status"], "private")
+
+    def test_hosted_trends_are_public_signals_scoped_to_verified_workspace_membership(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        signals = [
+            {"region": "KR", "rank_no": 1, "topic": "AI 업무 자동화", "source_name": "News",
+             "source_url": "https://example.com/story", "viral_score": None},
+            {"region": "US", "rank_no": 2, "topic": " ai   업무 자동화 ", "source_name": "HN",
+             "source_url": "javascript:alert(1)", "viral_score": None},
+        ]
+        scan = [{"status": "partial", "completed_at": "2026-11-28T00:00:00Z", "item_count": 2}]
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.side_effect = [
+                [{"role": "viewer"}], signals, scan
+            ]
+            result = self.api.hosted_workspace_trends(
+                "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", request
+            )
+        self.assertEqual(len(result["items"]), 1)
+        self.assertEqual(result["items"][0]["source_url"], "https://example.com/story")
+        self.assertEqual(result["scope"], "shared_public_signals")
+        self.assertTrue(result["available"])
+        calls = client_type.return_value.select.call_args_list
+        self.assertEqual(calls[0].args[0], "workspace_members")
+        self.assertEqual(calls[1].args[0], "public_trend_signals")
+        self.assertEqual(calls[2].args[0], "public_trend_scans")
+
+    def test_hosted_trends_reject_non_members(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.return_value = []
+            with self.assertRaises(self.api.HTTPException) as denied:
+                self.api.hosted_workspace_trends(
+                    "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", request
+                )
+            self.assertEqual(denied.exception.status_code, 404)
+
+    def test_hosted_job_approval_is_attributed_to_verified_workspace_admin(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111", "role": "authenticated"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        workspace_id = "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.side_effect = [
+                [{"job_id": "job-1", "workspace_id": workspace_id, "stage": "review_pending", "approval_status": "pending"}],
+                [{"role": "admin"}],
+            ]
+            client_type.return_value.update.return_value = [{"job_id": "job-1", "approval_status": "approved"}]
+            result = self.api.hosted_approve_job(
+                self.api.UUID("22222222-2222-4222-8222-222222222222"), request
+            )
+        params, payload = client_type.return_value.update.call_args.args[1:]
+        self.assertEqual(client_type.call_args.args[0], "verified.user.jwt")
+        self.assertEqual(params["job_id"], "eq.22222222-2222-4222-8222-222222222222")
+        self.assertEqual(params["stage"], "eq.review_pending")
+        self.assertEqual(params["approval_status"], "eq.pending")
+        self.assertEqual(payload["approved_by"], "11111111-1111-4111-8111-111111111111")
+        self.assertEqual(payload["approval_status"], "approved")
+        self.assertEqual(result["job"]["approval_status"], "approved")
+
+    def test_hosted_job_approval_rejects_non_admin_and_non_review_jobs(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111", "role": "authenticated"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        workspace_id = "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        job_id = self.api.UUID("22222222-2222-4222-8222-222222222222")
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.side_effect = [
+                [{"job_id": "job-1", "workspace_id": workspace_id, "stage": "review_pending", "approval_status": "pending"}],
+                [{"role": "viewer"}],
+            ]
+            with self.assertRaises(self.api.HTTPException) as denied:
+                self.api.hosted_approve_job(job_id, request)
+            self.assertEqual(denied.exception.status_code, 403)
+            client_type.return_value.update.assert_not_called()
+
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.return_value = [
+                {"job_id": "job-1", "workspace_id": workspace_id, "stage": "queued", "approval_status": "pending"}
+            ]
+            with self.assertRaises(self.api.HTTPException) as wrong_stage:
+                self.api.hosted_approve_job(job_id, request)
+            self.assertEqual(wrong_stage.exception.status_code, 409)
+            self.assertEqual(client_type.return_value.select.call_count, 1)
+            client_type.return_value.update.assert_not_called()
+
+    def test_hosted_job_approval_rejects_state_race(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111", "role": "authenticated"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.side_effect = [
+                [{"job_id": "job-1", "workspace_id": "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "stage": "review_pending", "approval_status": "pending"}],
+                [{"role": "owner"}],
+            ]
+            client_type.return_value.update.return_value = []
+            with self.assertRaises(self.api.HTTPException) as raced:
+                self.api.hosted_approve_job(
+                    self.api.UUID("22222222-2222-4222-8222-222222222222"), request
+                )
+            self.assertEqual(raced.exception.status_code, 409)
+
+    def test_hosted_workspace_ids_are_validated_before_data_access(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with self.assertRaises(self.api.HTTPException) as raised:
+            self.api.hosted_workspace_jobs("not-a-workspace", request)
+        self.assertEqual(raised.exception.status_code, 404)
+
+    def test_hosted_mutations_allow_same_origin_but_reject_foreign_origins(self):
+        async def next_response(_request):
+            return Response(status_code=204)
+        with patch.dict(os.environ, {"NEXUS_HOSTED_AUTH_ENABLED": "true"}):
+            with patch.object(self.api, "verify_access_token", return_value={
+                "user_id": "11111111-1111-4111-8111-111111111111",
+                "role": "authenticated",
+            }), patch.object(self.api, "SupabaseRestClient") as rest_client:
+                rest_client.return_value.rpc.return_value = False
+                same_origin = asyncio.run(self.api.enforce_local_origin_and_session(
+                    self._request(
+                        "/api/hosted/workspaces", method="POST",
+                        origin="http://testserver", authorization="Bearer valid.jwt.token",
+                    ), next_response
+                ))
+                foreign = asyncio.run(self.api.enforce_local_origin_and_session(
+                    self._request(
+                        "/api/hosted/workspaces", method="POST",
+                        origin="https://attacker.example", authorization="Bearer valid.jwt.token",
+                    ), next_response
+                ))
+        self.assertEqual(same_origin.status_code, 204)
+        self.assertEqual(foreign.status_code, 403)
+
+
+    def test_youtube_connect_requires_workspace_admin_and_stores_one_time_pkce_state(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        config = types.SimpleNamespace(
+            redirect_uri="https://api.example.test/api/hosted/youtube/callback",
+            app_url="https://app.example.test",
+            authorization_url=Mock(return_value="https://accounts.google.com/oauth"),
+        )
+        with patch.object(self.api, "SupabaseRestClient") as client_type, \
+             patch.object(self.api, "SupabaseAdminRestClient") as admin_type, \
+             patch.object(self.api.GoogleOAuthConfig, "from_env", return_value=config), \
+             patch.object(self.api, "create_oauth_state", return_value=("raw-state", "a" * 64)), \
+             patch.object(self.api, "create_pkce_pair", return_value=("verifier-value", "challenge-value")):
+            client_type.return_value.select.return_value = [{"role": "owner"}]
+            result = self.api.hosted_youtube_connect(
+                "wsp_11111111-1111-4111-8111-111111111111", request
+            )
+        self.assertEqual(result["authorization_url"], "https://accounts.google.com/oauth")
+        stored = admin_type.return_value.store_oauth_state.call_args.args
+        self.assertEqual(stored[0], "a" * 64)
+        self.assertEqual(stored[1], "11111111-1111-4111-8111-111111111111")
+        self.assertEqual(stored[2], "wsp_11111111-1111-4111-8111-111111111111")
+        self.assertEqual(stored[5], "verifier-value")
+
+    def test_youtube_connect_rejects_editor_role(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.return_value = [{"role": "editor"}]
+            with self.assertRaises(self.api.HTTPException) as raised:
+                self.api.hosted_youtube_connect(
+                    "wsp_11111111-1111-4111-8111-111111111111", request
+                )
+        self.assertEqual(raised.exception.status_code, 403)
+
+    def test_youtube_callback_consumes_state_and_encrypts_refresh_token(self):
+        admin_state = {
+            "user_id": "11111111-1111-4111-8111-111111111111",
+            "workspace_id": "wsp_11111111-1111-4111-8111-111111111111",
+            "provider": "youtube",
+            "redirect_uri": "https://api.example.test/api/hosted/youtube/callback",
+            "return_uri": "https://app.example.test/signup",
+            "code_verifier": "pkce-verifier",
+        }
+        config = types.SimpleNamespace(
+            redirect_uri=admin_state["redirect_uri"],
+            app_url="https://app.example.test",
+            exchange_code=Mock(return_value={
+                "access_token": "temporary-access",
+                "refresh_token": "refresh-secret",
+                "scope": "youtube.upload youtube.readonly",
+                "expires_in": 3600,
+            }),
+            fetch_account=Mock(return_value={"account_id": "google-account-123", "email": "owner@example.test", "name": "Owner"}),
+            fetch_channels=Mock(return_value=[
+                {"channel_id": "UC123", "title": "NEXUS"},
+                {"channel_id": "UC456", "title": "Second"},
+            ]),
+        )
+        with patch.object(self.api, "SupabaseAdminRestClient") as admin_type, \
+             patch.object(self.api.GoogleOAuthConfig, "from_env", return_value=config), \
+             patch.object(self.api, "encrypt_refresh_token", return_value={"ciphertext_hex": "aabb", "key_version": "v1"}):
+            admin_type.return_value.consume_oauth_state.return_value = admin_state
+            admin_type.return_value.list_account_user_memberships.return_value = [{
+                "workspace_id": admin_state["workspace_id"], "role": "owner"
+            }]
+            admin_type.return_value.upsert_connection.return_value = [{"connection_id": "33333333-3333-4333-8333-333333333333"}]
+            response = self.api.hosted_youtube_callback(code="google-code", state="raw-state")
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("youtube=connected", response.headers["location"])
+        config.exchange_code.assert_called_once_with("google-code", "pkce-verifier")
+        admin_type.return_value.upsert_credential.assert_called_once()
+        self.assertEqual(admin_type.return_value.upsert_channel.call_count, 2)
+
+    def test_youtube_callback_rechecks_admin_membership_before_exchanging_code(self):
+        admin_state = {
+            "user_id": "11111111-1111-4111-8111-111111111111",
+            "workspace_id": "wsp_11111111-1111-4111-8111-111111111111",
+            "provider": "youtube",
+            "redirect_uri": "https://api.example.test/api/hosted/youtube/callback",
+            "return_uri": "https://app.example.test/signup",
+            "code_verifier": "pkce-verifier",
+        }
+        config = types.SimpleNamespace(
+            redirect_uri=admin_state["redirect_uri"],
+            app_url="https://app.example.test",
+            exchange_code=Mock(),
+        )
+        with patch.object(self.api, "SupabaseAdminRestClient") as admin_type, \
+             patch.object(self.api.GoogleOAuthConfig, "from_env", return_value=config):
+            admin_type.return_value.consume_oauth_state.return_value = admin_state
+            admin_type.return_value.list_account_user_memberships.return_value = [{
+                "workspace_id": admin_state["workspace_id"], "role": "editor"
+            }]
+            with self.assertRaises(self.api.HTTPException) as raised:
+                self.api.hosted_youtube_callback(code="google-code", state="raw-state")
+        self.assertEqual(raised.exception.status_code, 403)
+        config.exchange_code.assert_not_called()
+        admin_type.return_value.upsert_connection.assert_not_called()
+
+    def test_youtube_callback_rechecks_membership_after_google_exchange(self):
+        admin_state = {
+            "user_id": "11111111-1111-4111-8111-111111111111",
+            "workspace_id": "wsp_11111111-1111-4111-8111-111111111111",
+            "provider": "youtube",
+            "redirect_uri": "https://api.example.test/api/hosted/youtube/callback",
+            "return_uri": "https://app.example.test/signup",
+            "code_verifier": "pkce-verifier",
+        }
+        config = types.SimpleNamespace(
+            redirect_uri=admin_state["redirect_uri"],
+            app_url="https://app.example.test",
+            exchange_code=Mock(return_value={
+                "access_token": "temporary-access", "refresh_token": "refresh-secret",
+                "scope": "youtube.upload", "expires_in": 3600,
+            }),
+            fetch_account=Mock(return_value={"account_id": "google-account-123"}),
+            fetch_channels=Mock(return_value=[{"channel_id": "UC123", "title": "NEXUS"}]),
+        )
+        with patch.object(self.api, "SupabaseAdminRestClient") as admin_type, \
+             patch.object(self.api.GoogleOAuthConfig, "from_env", return_value=config), \
+             patch.object(self.api, "encrypt_refresh_token", return_value={"ciphertext_hex": "aabb", "key_version": "v1"}):
+            admin_type.return_value.consume_oauth_state.return_value = admin_state
+            admin_type.return_value.list_account_user_memberships.side_effect = [
+                [{"workspace_id": admin_state["workspace_id"], "role": "owner"}],
+                [{"workspace_id": admin_state["workspace_id"], "role": "editor"}],
+            ]
+            with self.assertRaises(self.api.HTTPException) as raised:
+                self.api.hosted_youtube_callback(code="google-code", state="raw-state")
+        self.assertEqual(raised.exception.status_code, 403)
+        config.exchange_code.assert_called_once()
+        admin_type.return_value.upsert_connection.assert_not_called()
+        admin_type.return_value.upsert_credential.assert_not_called()
+
+    def test_youtube_callback_rejects_replayed_or_unknown_state(self):
+        with patch.object(self.api, "SupabaseAdminRestClient") as admin_type:
+            admin_type.return_value.consume_oauth_state.return_value = None
+            with self.assertRaises(self.api.HTTPException) as raised:
+                self.api.hosted_youtube_callback(code="code", state="unknown")
+        self.assertEqual(raised.exception.status_code, 400)
+
+    def test_youtube_disconnect_revokes_provider_token_before_deleting_credential(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        config = types.SimpleNamespace(revoke_refresh_token=Mock())
+        with patch.object(self.api, "SupabaseRestClient") as client_type, \
+             patch.object(self.api, "SupabaseAdminRestClient") as admin_type, \
+             patch.object(self.api.GoogleOAuthConfig, "from_env", return_value=config), \
+             patch.object(self.api, "decrypt_refresh_token", return_value="refresh-secret"):
+            client_type.return_value.select.side_effect = [
+                [{"role": "owner"}],
+                [{"connection_id": "33333333-3333-4333-8333-333333333333", "status": "connected", "provider_account_id": "google-account-123"}],
+            ]
+            admin_type.return_value.get_credential.return_value = {
+                "encrypted_refresh_token_hex": "aabb", "encryption_key_version": "v1"
+            }
+            admin_type.return_value.has_other_active_connections.return_value = False
+            admin_type.return_value.get_youtube_disconnect_state.return_value = None
+            admin_type.return_value.set_youtube_disconnect_state.side_effect = lambda _connection_id, state: state
+            admin_type.return_value.update_connection.return_value = [{"status": "disconnected"}]
+            result = self.api.hosted_youtube_disconnect(
+                "wsp_11111111-1111-4111-8111-111111111111",
+                self.api.UUID("33333333-3333-4333-8333-333333333333"),
+                request,
+            )
+        config.revoke_refresh_token.assert_called_once_with("refresh-secret")
+        admin_type.return_value.delete_credential.assert_called_once()
+        self.assertEqual(result["status"], "disconnected")
+
+    def test_social_oauth_callbacks_are_public_but_state_protected_in_hosted_mode(self):
+        async def next_response(_request):
+            return Response(status_code=204)
+        with patch.dict(os.environ, {"NEXUS_HOSTED_AUTH_ENABLED": "true"}):
+            for callback_path in ("/api/hosted/youtube/callback", "/api/hosted/tiktok/callback"):
+                response = asyncio.run(self.api.enforce_local_origin_and_session(
+                    self._request(callback_path, method="GET"), next_response
+                ))
+                self.assertEqual(response.status_code, 204)
+
+
+    def test_social_oauth_callback_access_logs_redact_query_parameters(self):
+        filter_instance = self.api.OAuthCallbackLogFilter()
+        for provider in ("youtube", "tiktok"):
+            record = logging.LogRecord(
+                "uvicorn.access", logging.INFO, __file__, 1, "%s - %s %s %s %s",
+                ("127.0.0.1", "GET", f"/api/hosted/{provider}/callback?code=code123&state=state123", "1.1", 200),
+                None,
+            )
+            self.assertTrue(filter_instance.filter(record))
+            self.assertEqual(record.args[2], f"/api/hosted/{provider}/callback?[REDACTED]")
+            self.assertNotIn("code123", str(record.args))
+            self.assertNotIn("state123", str(record.args))
+
+
+    def test_youtube_disconnect_does_not_revoke_google_grant_shared_by_another_workspace(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type, \
+             patch.object(self.api, "SupabaseAdminRestClient") as admin_type, \
+             patch.object(self.api.GoogleOAuthConfig, "from_env") as config_factory:
+            client_type.return_value.select.side_effect = [
+                [{"role": "owner"}],
+                [{"connection_id": "33333333-3333-4333-8333-333333333333", "status": "connected", "provider_account_id": "google-account-123"}],
+            ]
+            admin_type.return_value.get_credential.return_value = {
+                "encrypted_refresh_token_hex": "aabb", "encryption_key_version": "v1"
+            }
+            admin_type.return_value.has_other_active_connections.return_value = True
+            admin_type.return_value.get_youtube_disconnect_state.return_value = None
+            admin_type.return_value.set_youtube_disconnect_state.side_effect = lambda _connection_id, state: state
+            admin_type.return_value.update_connection.return_value = [{"status": "disconnected"}]
+            result = self.api.hosted_youtube_disconnect(
+                "wsp_11111111-1111-4111-8111-111111111111",
+                self.api.UUID("33333333-3333-4333-8333-333333333333"),
+                request,
+            )
+        config_factory.assert_not_called()
+        admin_type.return_value.update_channels.assert_called_once()
+        admin_type.return_value.delete_credential.assert_called_once()
+        self.assertEqual(result["status"], "disconnected")
+
+
+    def test_hosted_mode_disables_legacy_sqlite_workers_and_scheduler(self):
+        with patch.object(self.api, "is_hosted_auth_enabled", return_value=True), \
+             patch.object(self.api, "init_app_db") as init_db, \
+             patch.object(self.api.threading, "Thread") as thread:
+            self.api.startup_event()
+        init_db.assert_not_called()
+        thread.assert_not_called()
+
+
+    def test_hosted_job_preview_requires_rls_visible_job_and_returns_short_lived_signed_url(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type, \
+             patch.object(self.api, "SupabaseAdminRestClient") as admin_type:
+            client_type.return_value.select.return_value = [{
+                "job_id": "22222222-2222-4222-8222-222222222222",
+                "workspace_id": "wsp_11111111-1111-4111-8111-111111111111",
+                "output_storage_key": "wsp_11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/render.mp4",
+            }]
+            admin_type.return_value.create_signed_url.return_value = "https://storage.example.test/signed"
+            result = self.api.hosted_job_preview(
+                self.api.UUID("22222222-2222-4222-8222-222222222222"), request
+            )
+        self.assertEqual(client_type.call_args.args[0], "verified.user.jwt")
+        self.assertEqual(
+            client_type.return_value.select.call_args.args[1],
+            {
+                "select": "job_id,workspace_id,output_storage_key",
+                "job_id": "eq.22222222-2222-4222-8222-222222222222",
+                "limit": "1",
+            },
+        )
+        self.assertEqual(result["signed_url"], "https://storage.example.test/signed")
+        self.assertEqual(result["expires_in"], 300)
+        admin_type.return_value.create_signed_url.assert_called_once()
+
+    def test_hosted_job_preview_never_signs_storage_for_an_rls_invisible_job(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type, patch.object(self.api, "SupabaseAdminRestClient") as admin_type:
+            client_type.return_value.select.return_value = []
+            with self.assertRaises(self.api.HTTPException) as raised:
+                self.api.hosted_job_preview(
+                    self.api.UUID("33333333-3333-4333-8333-333333333333"), request
+                )
+        self.assertEqual(raised.exception.status_code, 404)
+        self.assertEqual(client_type.call_args.args[0], "verified.user.jwt")
+        admin_type.return_value.create_signed_url.assert_not_called()
+
+
+    def test_hosted_trends_reads_shared_supabase_store_without_local_sqlite(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type, \
+             patch.object(self.api.sqlite3, "connect", side_effect=AssertionError("hosted trend API must not read SQLite")):
+            client_type.return_value.select.side_effect = [
+                [{"role": "owner"}],
+                [{"topic": "AI topic", "source_url": "https://example.test/story", "rank_no": 1}],
+                [{"status": "success", "completed_at": "2026-11-28T00:01:00Z", "item_count": 1}],
+            ]
+            result = self.api.hosted_workspace_trends(
+                "wsp_11111111-1111-4111-8111-111111111111", request
+            )
+        self.assertTrue(result["available"])
+        self.assertEqual(result["items"][0]["topic"], "AI topic")
+        self.assertEqual(result["scan"]["status"], "success")
+
+    def test_hosted_trends_returns_empty_state_when_shared_store_has_no_rows(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.side_effect = [
+                [{"role": "owner"}], [], []
+            ]
+            result = self.api.hosted_workspace_trends(
+                "wsp_11111111-1111-4111-8111-111111111111", request
+            )
+        self.assertEqual(result["items"], [])
+        self.assertFalse(result["available"])
+        self.assertEqual(result["scan"]["status"], "not_scanned")
+
+
+
+    def test_hosted_jobs_uses_workspace_scoped_lookahead_pagination(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        workspace_id = "wsp_11111111-1111-4111-8111-111111111111"
+        rows = [
+            {"job_id": "job-1", "output_storage_key": None},
+            {"job_id": "job-2", "output_storage_key": "private/job-2.mp4"},
+            {"job_id": "job-3", "output_storage_key": "private/job-3.mp4"},
+        ]
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.return_value = rows
+            result = self.api.hosted_workspace_jobs(workspace_id, request, limit=2, offset=4)
+        params = client_type.return_value.select.call_args.args[1]
+        self.assertEqual(params["workspace_id"], f"eq.{workspace_id}")
+        self.assertEqual(params["limit"], "3")
+        self.assertEqual(params["offset"], "4")
+        self.assertEqual(params["order"], "created_at.desc,job_id.desc")
+        self.assertEqual([item["job_id"] for item in result["items"]], ["job-1", "job-2"])
+        self.assertFalse(result["items"][0]["has_preview"])
+        self.assertTrue(result["items"][1]["has_preview"])
+        self.assertTrue(result["has_more"])
+        self.assertEqual(result["next_offset"], 6)
+
+    def test_hosted_jobs_marks_last_page_without_next_offset(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.return_value = [{"job_id": "job-1", "output_storage_key": None}]
+            result = self.api.hosted_workspace_jobs(
+                "wsp_11111111-1111-4111-8111-111111111111", request, limit=50, offset=0
+            )
+        self.assertFalse(result["has_more"])
+        self.assertIsNone(result["next_offset"])
+
+
+
+    def test_hosted_topic_queue_list_is_scoped_to_user_and_workspace(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        workspace_id = "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.return_value = [{"topic_id": "22222222-2222-4222-8222-222222222222", "topic": "AI"}]
+            result = self.api.hosted_topic_queue_list(workspace_id, request)
+        params = client_type.return_value.select.call_args.args[1]
+        self.assertEqual(client_type.return_value.select.call_args.args[0], "shorts_topic_queue")
+        self.assertEqual(params["workspace_id"], f"eq.{workspace_id}")
+        self.assertEqual(params["user_id"], "eq.11111111-1111-4111-8111-111111111111")
+        self.assertEqual(result["storage"], "server")
+        self.assertEqual(len(result["items"]), 1)
+
+    def test_hosted_topic_queue_add_normalizes_and_validates_https_source(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        req = self.api.HostedTopicQueueCreateReq(
+            topic="  AI   workflow  ", source="trend_radar",
+            region="KR", source_name="Example", source_url="https://example.test/story",
+        )
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.insert.return_value = [{"topic_id": "33333333-3333-4333-8333-333333333333", "topic": "AI workflow"}]
+            result = self.api.hosted_topic_queue_add(
+                "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", req, request
+            )
+        payload = client_type.return_value.insert.call_args.args[1]
+        self.assertEqual(payload["topic"], "AI workflow")
+        self.assertEqual(payload["user_id"], "11111111-1111-4111-8111-111111111111")
+        self.assertEqual(payload["workspace_id"], "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        self.assertEqual(payload["source_url"], "https://example.test/story")
+        self.assertEqual(result["storage"], "server")
+
+    def test_hosted_topic_queue_rejects_non_https_sources_before_database_write(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        req = self.api.HostedTopicQueueCreateReq(topic="AI", source_url="http://example.test")
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            with self.assertRaises(self.api.HTTPException) as raised:
+                self.api.hosted_topic_queue_add(
+                    "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", req, request
+                )
+        self.assertEqual(raised.exception.status_code, 422)
+        client_type.assert_not_called()
+
+    def test_hosted_topic_queue_maps_missing_migration_to_safe_pending_state(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.select.side_effect = self.api.SupabaseRestError(404, "Requested workspace data was not found")
+            with self.assertRaises(self.api.HTTPException) as raised:
+                self.api.hosted_topic_queue_list(
+                    "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", request
+                )
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertIn("마이그레이션", raised.exception.detail)
+
+    def test_hosted_topic_queue_delete_filters_user_workspace_and_topic(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        workspace_id = "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        topic_id = self.api.UUID("22222222-2222-4222-8222-222222222222")
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            result = self.api.hosted_topic_queue_delete(workspace_id, topic_id, request)
+        self.assertEqual(result, {"deleted": True})
+        params = client_type.return_value.delete.call_args.args[1]
+        self.assertEqual(params["topic_id"], f"eq.{topic_id}")
+        self.assertEqual(params["workspace_id"], f"eq.{workspace_id}")
+        self.assertEqual(params["user_id"], "eq.11111111-1111-4111-8111-111111111111")
+
+
+
+    def test_hosted_topic_queue_maps_unique_topic_conflict_to_duplicate_message(self):
+        request = types.SimpleNamespace(state=types.SimpleNamespace(
+            hosted_user={"user_id": "11111111-1111-4111-8111-111111111111"},
+            hosted_access_token="verified.user.jwt",
+        ))
+        req = self.api.HostedTopicQueueCreateReq(topic="AI workflow")
+        with patch.object(self.api, "SupabaseRestClient") as client_type:
+            client_type.return_value.insert.side_effect = self.api.SupabaseRestError(409, "Workspace data conflicts with an existing record")
+            with self.assertRaises(self.api.HTTPException) as raised:
+                self.api.hosted_topic_queue_add(
+                    "wsp_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", req, request
+                )
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(raised.exception.detail, "이미 저장된 주제입니다.")
+
+
+
+    def test_hosted_topic_queue_source_is_allowlisted(self):
+        with self.assertRaises(ValueError):
+            self.api.HostedTopicQueueCreateReq(topic="AI", source="worker_job")
+
 
 
 if __name__ == "__main__":

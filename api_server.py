@@ -1,18 +1,55 @@
-import os, time, sqlite3, threading, logging, hmac, hashlib, secrets
-from datetime import datetime
+import os, time, sqlite3, threading, logging, hmac, hashlib, secrets, re
+from datetime import date, datetime, timezone, timedelta
+from uuid import UUID
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel
-import video_maker, trend_radar, youtube_analytics, yt_uploader
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from pydantic import BaseModel, Field
+from types import SimpleNamespace
+from hosted_auth import (
+    HostedAuthConfigurationError, HostedAuthError, extract_bearer_token,
+    is_hosted_auth_enabled, public_auth_config, verify_access_token,
+)
+# Vercel's hosted ASGI runtime does not render local media or run the local
+# analytics/radar workers. Avoid importing MoviePy, Google client libraries,
+# and local schedulers on every serverless cold start.
+if is_hosted_auth_enabled():
+    trend_radar = SimpleNamespace(
+        DB_PATH=os.getenv("NEXUS_TREND_RADAR_DB_PATH", "data/studio_data.db")
+    )
+else:
+    import video_maker, trend_radar, youtube_analytics, yt_uploader
 from audit_log import safe_record_event as record_event, list_events, get_ops_metrics
 from video_qa import validate_video
 from script_templates import split_manual_script
 from review_workflow import claim_upload, upload_result_stage
+from supabase_rest import SupabaseRestClient, SupabaseRestError
+from supabase_admin import SupabaseAdminRestClient, SupabaseAdminError
+from hosted_trend_store import read_shared_trends
+from social_platforms import get_social_platform_catalog
+from youtube_oauth import GoogleOAuthConfig, GoogleOAuthError, create_oauth_state, create_pkce_pair
+from tiktok_oauth import TikTokOAuthConfig, TikTokOAuthError, TikTokOAuthReauthRequired
+from token_vault import encrypt_refresh_token, decrypt_refresh_token, TokenVaultError
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("nexus.api")
+
+
+class OAuthCallbackLogFilter(logging.Filter):
+    """Redact authorization code and state query strings from access logs."""
+    def filter(self, record):
+        args = record.args
+        if isinstance(args, tuple) and len(args) >= 3:
+            target = args[2]
+            if isinstance(target, str) and target.startswith(("/api/hosted/youtube/callback", "/api/hosted/tiktok/callback")):
+                redacted = list(args)
+                redacted[2] = record.args[2].split("?", 1)[0] + "?[REDACTED]"
+                record.args = tuple(redacted)
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(OAuthCallbackLogFilter())
 
 app = FastAPI(title="NEXUS STUDIO PRO API")
 # Browser sessions are signed server-side and stored in HttpOnly cookies.
@@ -61,9 +98,15 @@ LOCAL_UI_ORIGINS = {
     "http://127.0.0.1:28502", "http://localhost:28502",
     "http://127.0.0.1:28503", "http://localhost:28503",
 }
+HOSTED_UI_ORIGINS = {
+    item.strip().rstrip("/")
+    for item in os.getenv("NEXUS_CORS_ALLOWED_ORIGINS", "").split(",")
+    if item.strip()
+}
+ALLOWED_UI_ORIGINS = LOCAL_UI_ORIGINS | HOSTED_UI_ORIGINS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=sorted(LOCAL_UI_ORIGINS),
+    allow_origins=sorted(ALLOWED_UI_ORIGINS),
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
@@ -71,10 +114,45 @@ app.add_middleware(
 @app.middleware("http")
 async def enforce_local_origin_and_session(request, call_next):
     origin = request.headers.get("origin")
-    if request.method not in ("GET", "HEAD", "OPTIONS") and origin and origin not in LOCAL_UI_ORIGINS:
+    request_origin = f"{request.url.scheme}://{request.url.netloc}"
+    if request.method not in ("GET", "HEAD", "OPTIONS") and origin and origin not in ALLOWED_UI_ORIGINS and origin != request_origin:
         return JSONResponse(status_code=403, content={"detail": "Cross-origin mutation rejected"})
     path = request.url.path
-    public_paths = {"/api/session/status", "/api/session/login", "/api/session/logout"}
+    if is_hosted_auth_enabled():
+        if path in {"/api/hosted/auth-config", "/api/session/status"} and request.method == "GET":
+            return await call_next(request)
+        if path in {"/api/hosted/youtube/callback", "/api/hosted/tiktok/callback"} and request.method == "GET":
+            return await call_next(request)
+        if path.startswith("/api/hosted/"):
+            try:
+                token = extract_bearer_token(request.headers.get("authorization"))
+                request.state.hosted_user = verify_access_token(token)
+                request.state.hosted_access_token = token
+                tombstone_client = SupabaseRestClient(token)
+                request.state.account_deletion_tombstoned = bool(
+                    tombstone_client.rpc("is_account_deletion_tombstoned", {})
+                )
+                if request.state.account_deletion_tombstoned:
+                    # Only the existing deletion request may be retried, and only
+                    # to finish session revocation; no other API remains available.
+                    if not (path == "/api/hosted/account/deletion/request" and request.method == "POST"):
+                        return JSONResponse(status_code=401, content={"detail": "This account is no longer active"})
+            except SupabaseRestError:
+                return JSONResponse(status_code=503, content={"detail": "Account status could not be verified safely"})
+            except HostedAuthConfigurationError as exc:
+                return JSONResponse(status_code=503, content={"detail": str(exc)})
+            except HostedAuthError:
+                return JSONResponse(status_code=401, content={"detail": "Valid Supabase bearer token required"})
+            return await call_next(request)
+        if path.startswith("/api/") or path.startswith("/output/"):
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Hosted tenant-scoped API is not enabled for this route yet"},
+            )
+    public_paths = {
+        "/api/session/status", "/api/session/login", "/api/session/logout",
+        "/api/hosted/auth-config",
+    }
     protected = (path.startswith("/api/") and path not in public_paths) or path.startswith("/output/")
     if protected and auth_is_required():
         if not auth_is_configured():
@@ -83,9 +161,1406 @@ async def enforce_local_origin_and_session(request, call_next):
             return JSONResponse(status_code=401, content={"detail": "Authentication required"})
     return await call_next(request)
 
-os.makedirs("export", exist_ok=True)
-os.makedirs("output", exist_ok=True)
-app.mount("/output", StaticFiles(directory="output"), name="output")
+@app.get("/signup")
+def signup_page():
+    """Serve the hosted account registration and login experience."""
+    return FileResponse("signup.html", media_type="text/html; charset=utf-8")
+
+
+@app.get("/api/hosted/auth-config")
+def hosted_auth_configuration():
+    """Expose only the Supabase URL and publishable key required by browser auth."""
+    try:
+        return public_auth_config()
+    except HostedAuthConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get("/api/hosted/session")
+def hosted_session(request: Request):
+    """Return the identity verified by the hosted-auth middleware."""
+    user = getattr(request.state, "hosted_user", None)
+    if not user:
+        raise HTTPException(status_code=401, detail="Valid Supabase bearer token required")
+    return {"authenticated": True, "user": user}
+
+
+class HostedAccountDeletionReq(BaseModel):
+    confirmation: str = Field(pattern="^DELETE MY ACCOUNT$")
+
+    class Config:
+        extra = "forbid"
+
+
+class WorkspaceMemberRoleUpdateReq(BaseModel):
+    role: str = Field(pattern="^(admin|editor|viewer)$")
+
+    class Config:
+        extra = "forbid"
+
+
+class WorkspaceOwnershipTransferReq(BaseModel):
+    new_owner_id: UUID
+
+    class Config:
+        extra = "forbid"
+
+
+class HostedTopicQueueCreateReq(BaseModel):
+    topic: str = Field(min_length=1, max_length=300)
+    source: str = Field(default="manual", pattern="^(manual|trend_radar)$", max_length=40)
+    region: str = Field(default="", max_length=12)
+    source_name: str = Field(default="", max_length=120)
+    source_url: str | None = Field(default=None, max_length=2048)
+
+    class Config:
+        extra = "forbid"
+
+
+class HostedJobCreateReq(BaseModel):
+    channel_id: UUID
+    topic: str = Field(min_length=1, max_length=300)
+    title: str = Field(default="", max_length=200)
+    script: str = Field(default="", max_length=12000)
+
+    class Config:
+        extra = "forbid"
+
+
+def _hosted_rest_client(request: Request) -> SupabaseRestClient:
+    token = getattr(request.state, "hosted_access_token", None)
+    user = getattr(request.state, "hosted_user", None)
+    if not token or not user:
+        raise HTTPException(status_code=401, detail="Valid Supabase bearer token required")
+    try:
+        return SupabaseRestClient(token)
+    except HostedAuthConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+def _hosted_rest_error(exc: SupabaseRestError):
+    status = exc.status_code if 400 <= exc.status_code < 500 else 502
+    raise HTTPException(status_code=status, detail=exc.public_message) from exc
+
+
+def _validate_workspace_id(workspace_id: str):
+    if not re.fullmatch(r"wsp_[0-9a-fA-F-]{36}", workspace_id or ""):
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+
+@app.get("/api/hosted/workspaces")
+def hosted_workspaces(request: Request):
+    client = _hosted_rest_client(request)
+    try:
+        items = client.select("workspaces", {
+            "select": "workspace_id,workspace_name,owner_id,created_at",
+            "order": "created_at.asc",
+        }) or []
+        memberships = client.select("workspace_members", {
+            "select": "workspace_id,role",
+            "user_id": f"eq.{request.state.hosted_user['user_id']}",
+        }) or []
+        roles = {item["workspace_id"]: item["role"] for item in memberships}
+        for item in items:
+            item["member_role"] = roles.get(item["workspace_id"])
+        return {"items": items}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+@app.patch("/api/hosted/workspaces/{workspace_id}/members/{member_id}/role")
+def hosted_update_workspace_member_role(
+    workspace_id: str,
+    member_id: UUID,
+    req: WorkspaceMemberRoleUpdateReq,
+    request: Request,
+):
+    """Allow only the current owner to promote or change a non-owner member role."""
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    user_id = request.state.hosted_user["user_id"]
+    if str(member_id) == str(user_id):
+        raise HTTPException(status_code=400, detail="The current owner role cannot be changed here")
+    try:
+        own_membership = client.select("workspace_members", {
+            "select": "role",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{user_id}",
+            "limit": "1",
+        }) or []
+        if not own_membership or own_membership[0].get("role") != "owner":
+            raise HTTPException(status_code=403, detail="Workspace owner permission required")
+        target = client.select("workspace_members", {
+            "select": "user_id",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{member_id}",
+            "limit": "1",
+        }) or []
+        if not target:
+            raise HTTPException(status_code=404, detail="Workspace member not found")
+        updated = client.update("workspace_members", {
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{member_id}",
+        }, {"role": req.role}) or []
+        return {"updated": bool(updated), "user_id": str(member_id), "role": req.role}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+@app.post("/api/hosted/workspaces/{workspace_id}/transfer-ownership")
+def hosted_transfer_workspace_ownership(
+    workspace_id: str,
+    req: WorkspaceOwnershipTransferReq,
+    request: Request,
+):
+    """Transfer ownership to an existing admin before the current owner deletes their account."""
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    try:
+        client.rpc("transfer_workspace_ownership", {
+            "p_workspace_id": workspace_id,
+            "p_new_owner_id": str(req.new_owner_id),
+        })
+        return {"transferred": True, "workspace_id": workspace_id}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+@app.get("/api/hosted/workspaces/{workspace_id}/members")
+def hosted_workspace_members(workspace_id: str, request: Request):
+    """List workspace members only for the verified workspace owner."""
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    user_id = request.state.hosted_user["user_id"]
+    try:
+        own_membership = client.select("workspace_members", {
+            "select": "role",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{user_id}",
+            "limit": "1",
+        }) or []
+        if not own_membership or own_membership[0].get("role") != "owner":
+            raise HTTPException(status_code=403, detail="Workspace owner permission required")
+        items = client.select("workspace_members", {
+            "select": "user_id,role,created_at",
+            "workspace_id": f"eq.{workspace_id}",
+            "order": "created_at.asc",
+        }) or []
+        return {"items": items}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+def has_recent_password_reauthentication(user, now=None, max_age_seconds=600):
+    current = time.time() if now is None else now
+    entries = user.get("amr") if isinstance(user, dict) else None
+    if not isinstance(entries, list):
+        return False
+    for entry in entries:
+        if not isinstance(entry, dict) or entry.get("method") != "password":
+            continue
+        timestamp = entry.get("timestamp")
+        if (
+            isinstance(timestamp, (int, float))
+            and not isinstance(timestamp, bool)
+            and current - max_age_seconds <= timestamp <= current + 30
+        ):
+            return True
+    return False
+
+
+def account_deletion_is_enabled():
+    return (
+        os.getenv("NEXUS_ACCOUNT_DELETION_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+        and os.getenv("NEXUS_ACCOUNT_DELETION_WORKER_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+        and is_hosted_auth_enabled()
+    )
+
+
+@app.get("/api/hosted/account/deletion/preflight")
+def hosted_account_deletion_preflight(request: Request):
+    """Report workspace and Storage blockers without starting destructive cleanup."""
+    client = _hosted_rest_client(request)
+    user_id = request.state.hosted_user["user_id"]
+    try:
+        memberships = client.select("workspace_members", {
+            "select": "workspace_id,role",
+            "user_id": f"eq.{user_id}",
+            "order": "created_at.asc",
+        }) or []
+        owned_workspaces = client.select("workspaces", {
+            "select": "workspace_id,workspace_name,owner_id",
+            "owner_id": f"eq.{user_id}",
+            "order": "created_at.asc",
+        }) or []
+        membership_by_workspace = {row["workspace_id"]: row for row in memberships}
+        workspace_ids = list(dict.fromkeys(
+            [row["workspace_id"] for row in memberships]
+            + [row["workspace_id"] for row in owned_workspaces]
+        ))
+        blockers = []
+        summaries = []
+        shared_workspace_ids = set()
+        if len(workspace_ids) > 100:
+            return {
+                "ownership_clear": False,
+                "storage_clear": False,
+                "preflight_clear": False,
+                "workspaces": [],
+                "owned_workspaces": [],
+                "active_worker_lease_count": 0,
+                "youtube_oauth": {},
+                "storage": {},
+                "blockers": [{"reason": "This account has more than 100 workspace memberships; support-assisted cleanup is required."}],
+                "account_deletion_enabled": False,
+                "account_deletion_worker_online": False,
+                "account_deletion_reason": "Workspace inventory exceeds the safe automated deletion limit.",
+            }
+        for wid in workspace_ids:
+            membership = membership_by_workspace.get(wid, {"role": "owner"})
+            workspace_rows = client.select("workspaces", {
+                "select": "workspace_id,workspace_name,owner_id",
+                "workspace_id": f"eq.{wid}",
+                "limit": "1",
+            }) or []
+            if not workspace_rows:
+                continue
+            workspace = workspace_rows[0]
+            members = client.select("workspace_members", {
+                "select": "user_id,role",
+                "workspace_id": f"eq.{wid}",
+            }) or []
+            others = [member for member in members if member.get("user_id") != user_id]
+            is_owner = workspace.get("owner_id") == user_id
+            if is_owner and (
+                wid not in membership_by_workspace
+                or membership_by_workspace[wid].get("role") != "owner"
+            ):
+                blockers.append({
+                    "workspace_id": wid,
+                    "reason": "Workspace ownership and membership records do not match; resolve this before deletion.",
+                })
+            if not is_owner and membership.get("role") == "owner":
+                blockers.append({
+                    "workspace_id": wid,
+                    "reason": "Workspace owner and membership records do not match; resolve this before deletion.",
+                })
+            if others or not is_owner:
+                # Non-owners can only see their own membership row under RLS;
+                # treat those workspaces as shared rather than guessing member count.
+                shared_workspace_ids.add(wid)
+            summary = {
+                "workspace_id": wid,
+                "workspace_name": workspace.get("workspace_name") or "My Workspace",
+                "member_count": len(members) if is_owner else None,
+                "role": membership.get("role"),
+                "owned_by_current_user": is_owner,
+                "transfer_ready": is_owner and any(member.get("role") == "admin" for member in others),
+            }
+            summaries.append(summary)
+            if is_owner and others:
+                if not summary["transfer_ready"]:
+                    blockers.append({
+                        "workspace_id": wid,
+                        "reason": "Promote another workspace member to admin before transferring ownership.",
+                    })
+                else:
+                    blockers.append({
+                        "workspace_id": wid,
+                        "reason": "Transfer workspace ownership to an existing admin before account deletion.",
+                    })
+
+        deletion_workspace_ids = [
+            item["workspace_id"] for item in summaries
+            if item["owned_by_current_user"] and item["member_count"] <= 1
+        ]
+        admin = SupabaseAdminRestClient()
+        worker_online = account_deletion_is_enabled() and admin.is_account_deletion_worker_online()
+        active_leases = admin.list_account_deletion_active_leases(deletion_workspace_ids)
+        if active_leases:
+            blockers.append({
+                "reason": "Wait for active render or upload workers to finish before deleting a workspace.",
+                "active_lease_count": len(active_leases),
+                "latest_lease_expiry": max(item["lease_until"] for item in active_leases),
+            })
+        storage_objects = []
+        offset = 0
+        while True:
+            page = admin.list_account_deletion_storage_objects(user_id, limit=1000, offset=offset, workspace_ids=deletion_workspace_ids)
+            storage_objects.extend(page)
+            if len(page) < 1000:
+                break
+            offset += len(page)
+        personal_gallery_images = admin.list_account_personal_gallery_images(user_id)
+        personal_gallery_keys = {
+            key for item in personal_gallery_images
+            for key in (item.get("storage_key"), item.get("thumbnail_key"))
+            if key
+        }
+        connections = admin.list_social_connections_for_workspaces(deletion_workspace_ids)
+        credential_cleanup_count = len(connections)
+        provider_grants_to_revoke = 0
+        shared_provider_grants_preserved = 0
+        seen_provider_accounts = set()
+        for connection in connections:
+            if connection.get("status") != "connected":
+                continue
+            provider = connection.get("provider") or "youtube"
+            provider_account_id = connection.get("provider_account_id")
+            provider_key = (provider, provider_account_id)
+            if not provider_account_id or provider_key in seen_provider_accounts:
+                continue
+            seen_provider_accounts.add(provider_key)
+            if admin.has_active_connection_outside_workspaces(
+                provider_account_id,
+                deletion_workspace_ids,
+                provider=provider,
+            ):
+                shared_provider_grants_preserved += 1
+            else:
+                provider_grants_to_revoke += 1
+                if not admin.get_credential(str(connection.get("connection_id"))):
+                    blockers.append({
+                        "reason": f"A connected {provider} account has no stored refresh credential to revoke safely.",
+                        "connection_id": connection.get("connection_id"),
+                    })
+        bucket_counts = {}
+        shared_storage_count = 0
+        unclassified_storage_count = 0
+        user_owned_storage_count = 0
+        buckets_by_name = {}
+        allowed_storage_buckets = {"acs-assets", "acs-gallery", "acs-outputs", "nexus-shorts"}
+        for obj in storage_objects:
+            object_name = obj.get("name") or ""
+            buckets_by_name.setdefault(object_name, set()).add(obj.get("bucket_id"))
+            if obj.get("bucket_id") not in allowed_storage_buckets:
+                blockers.append({
+                    "reason": "An account Storage object uses an unsupported bucket and requires safe mapping.",
+                    "bucket_id": obj.get("bucket_id") or "unknown",
+                })
+        if any(len(values) > 1 for values in buckets_by_name.values()):
+            blockers.append({"reason": "Storage contains duplicate object paths across buckets; resolve the ambiguity before deletion."})
+        for obj in storage_objects:
+            bucket = obj.get("bucket_id") or "unknown"
+            bucket_counts[bucket] = bucket_counts.get(bucket, 0) + 1
+            if obj.get("owner") == user_id or obj.get("owner_id") == user_id:
+                user_owned_storage_count += 1
+            workspace_prefix = (obj.get("name") or "").split("/", 1)[0]
+            if workspace_prefix in shared_workspace_ids:
+                shared_storage_count += 1
+            elif workspace_prefix not in deletion_workspace_ids and obj.get("name") not in personal_gallery_keys:
+                unclassified_storage_count += 1
+        if shared_storage_count:
+            blockers.append({
+                "reason": "Some Storage objects owned by this account belong to shared workspaces. Re-upload or safely transfer those files before deleting the account.",
+                "storage_object_count": shared_storage_count,
+            })
+        if unclassified_storage_count:
+            blockers.append({
+                "reason": "Some account-owned Storage objects cannot be mapped safely to a workspace. Map or remove them before account deletion.",
+                "storage_object_count": unclassified_storage_count,
+            })
+        return {
+            "ownership_clear": not any(item.get("workspace_id") for item in blockers),
+            "storage_clear": shared_storage_count == 0 and unclassified_storage_count == 0,
+            "preflight_clear": not blockers,
+            "workspaces": summaries,
+            "owned_workspaces": [item for item in summaries if item["owned_by_current_user"]],
+            "active_worker_lease_count": len(active_leases),
+            "youtube_oauth": {
+                "workspace_connections_to_clean": credential_cleanup_count,
+                "provider_grants_to_revoke": provider_grants_to_revoke,
+                "provider_grants_preserved_for_other_workspaces": shared_provider_grants_preserved,
+            },
+            "storage": {
+                "cleanup_candidate_object_count": len(storage_objects),
+                "account_owned_object_count": user_owned_storage_count,
+                "personal_gallery_image_count": len(personal_gallery_images),
+                "unclassified_object_blockers": unclassified_storage_count,
+                "objects_by_bucket": bucket_counts,
+                "shared_workspace_object_blockers": shared_storage_count,
+            },
+            "blockers": blockers,
+            "account_deletion_enabled": worker_online,
+            "account_deletion_worker_online": worker_online,
+            "account_deletion_reason": None if worker_online else "The hosted account deletion API and a live cleanup worker must both be enabled after the reviewed migration is applied and free-tier service configuration is verified.",
+        }
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+    except SupabaseAdminError as exc:
+        raise HTTPException(status_code=503, detail="Account deletion preflight could not verify Storage ownership safely") from exc
+
+@app.post("/api/hosted/account/deletion/request")
+def hosted_account_deletion_request(req: HostedAccountDeletionReq, request: Request):
+    """Queue an explicitly confirmed deletion only after fresh authentication."""
+    if not account_deletion_is_enabled():
+        raise HTTPException(status_code=503, detail="Account deletion is not enabled for this deployment")
+    user = request.state.hosted_user
+    if not has_recent_password_reauthentication(user):
+        raise HTTPException(status_code=403, detail="Fresh password sign-in is required before account deletion")
+
+    user_id = user["user_id"]
+    try:
+        admin = SupabaseAdminRestClient()
+        if getattr(request.state, "account_deletion_tombstoned", False):
+            # A prior request already passed preflight and atomically created both
+            # tombstone and queue row. Do not rerun preflight: active leases or
+            # changed membership visibility must not strand session revocation.
+            queued = admin.get_account_deletion_request(user_id)
+            if not queued:
+                raise SupabaseAdminError("Existing tombstone has no verifiable deletion request")
+        else:
+            preflight = hosted_account_deletion_preflight(request)
+            if not preflight.get("account_deletion_enabled"):
+                raise HTTPException(status_code=503, detail="The account deletion worker is not online; no deletion request was queued")
+            if not preflight.get("preflight_clear"):
+                raise HTTPException(status_code=409, detail={
+                    "message": "Resolve account deletion blockers before confirming deletion",
+                    "blockers": preflight.get("blockers", []),
+                })
+            queued = admin.enqueue_account_deletion(user_id, {
+                "preflight_clear": True,
+                "workspace_ids": [item["workspace_id"] for item in preflight.get("workspaces", [])],
+                "requested_at": datetime.now(timezone.utc).isoformat(),
+            })
+            if not queued:
+                raise SupabaseAdminError("Account deletion queue did not return a durable request")
+        if not queued.get("sessions_revoked"):
+            admin.revoke_user_sessions(request.state.hosted_access_token)
+            if not admin.mark_account_deletion_sessions_revoked(user_id):
+                raise SupabaseAdminError("Account deletion session revocation state could not be persisted")
+        return {
+            "status": queued.get("status", "pending"),
+            "phase": queued.get("phase", "queued"),
+            "message": "Deletion request is durably queued. Cleanup will run asynchronously and can be retried safely.",
+        }
+    except SupabaseAdminError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="The deletion request is safely retained, but session revocation or queue verification needs retry. Submit the same confirmation again.",
+        ) from exc
+
+
+@app.get("/api/hosted/workspaces/{workspace_id}/channels")
+def hosted_workspace_channels(workspace_id: str, request: Request):
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    try:
+        items = client.select("shorts_channels", {
+            "select": "channel_id,platform,provider_channel_id,display_name,persona,is_active,created_at,updated_at",
+            "workspace_id": f"eq.{workspace_id}",
+            "order": "created_at.desc",
+        })
+        return {"items": items or []}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+@app.get("/api/hosted/workspaces/{workspace_id}/jobs")
+def hosted_workspace_jobs(
+    workspace_id: str,
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+):
+    _validate_workspace_id(workspace_id)
+    if limit < 1 or limit > 100 or offset < 0:
+        raise HTTPException(status_code=422, detail="Invalid jobs pagination")
+    client = _hosted_rest_client(request)
+    try:
+        # Fetch one extra row to determine whether another page exists without
+        # requiring a separate count query or exposing rows outside this tenant.
+        rows = client.select("shorts_jobs", {
+            "select": "job_id,channel_id,topic,title,script,stage,approval_status,privacy_status,output_storage_key,created_at,updated_at",
+            "workspace_id": f"eq.{workspace_id}",
+            "order": "created_at.desc,job_id.desc",
+            "limit": str(limit + 1),
+            "offset": str(offset),
+        }) or []
+        has_more = len(rows) > limit
+        items = rows[:limit]
+        for item in items:
+            item["has_preview"] = bool(item.pop("output_storage_key", None))
+        return {
+            "items": items,
+            "has_more": has_more,
+            "next_offset": offset + len(items) if has_more else None,
+        }
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+@app.get("/api/hosted/workspaces/{workspace_id}/topic-queue")
+def hosted_topic_queue_list(workspace_id: str, request: Request):
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    user_id = request.state.hosted_user["user_id"]
+    try:
+        items = client.select("shorts_topic_queue", {
+            "select": "topic_id,topic,source,region,source_name,source_url,created_at",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{user_id}",
+            "order": "created_at.desc,topic_id.desc",
+            "limit": "50",
+        }) or []
+        return {"items": items, "storage": "server"}
+    except SupabaseRestError as exc:
+        if exc.status_code == 404:
+            raise HTTPException(
+                status_code=503,
+                detail="서버 저장형 주제 큐의 데이터베이스 마이그레이션이 아직 적용되지 않았습니다.",
+            ) from exc
+        _hosted_rest_error(exc)
+
+
+@app.post("/api/hosted/workspaces/{workspace_id}/topic-queue")
+def hosted_topic_queue_add(
+    workspace_id: str, req: HostedTopicQueueCreateReq, request: Request
+):
+    _validate_workspace_id(workspace_id)
+    topic = " ".join(req.topic.split())
+    if not topic:
+        raise HTTPException(status_code=422, detail="Topic is required")
+    source_url = req.source_url.strip() if req.source_url else None
+    if source_url and not source_url.startswith("https://"):
+        raise HTTPException(status_code=422, detail="Only HTTPS source URLs are accepted")
+    user_id = request.state.hosted_user["user_id"]
+    client = _hosted_rest_client(request)
+    try:
+        rows = client.insert("shorts_topic_queue", {
+            "workspace_id": workspace_id,
+            "user_id": user_id,
+            "topic": topic,
+            "source": req.source.strip() or "manual",
+            "region": req.region.strip(),
+            "source_name": req.source_name.strip(),
+            "source_url": source_url,
+        }) or []
+        if not rows:
+            raise HTTPException(status_code=403, detail="Workspace topic queue write was denied")
+        return {"item": rows[0], "storage": "server"}
+    except SupabaseRestError as exc:
+        if exc.status_code == 404:
+            raise HTTPException(
+                status_code=503,
+                detail="서버 저장형 주제 큐의 데이터베이스 마이그레이션이 아직 적용되지 않았습니다.",
+            ) from exc
+        if exc.status_code == 409:
+            raise HTTPException(status_code=409, detail="이미 저장된 주제입니다.") from exc
+        _hosted_rest_error(exc)
+
+
+@app.delete("/api/hosted/workspaces/{workspace_id}/topic-queue/{topic_id}")
+def hosted_topic_queue_delete(workspace_id: str, topic_id: UUID, request: Request):
+    _validate_workspace_id(workspace_id)
+    user_id = request.state.hosted_user["user_id"]
+    client = _hosted_rest_client(request)
+    try:
+        client.delete("shorts_topic_queue", {
+            "topic_id": f"eq.{topic_id}",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{user_id}",
+        })
+        return {"deleted": True}
+    except SupabaseRestError as exc:
+        if exc.status_code == 404:
+            raise HTTPException(
+                status_code=503,
+                detail="서버 저장형 주제 큐의 데이터베이스 마이그레이션이 아직 적용되지 않았습니다.",
+            ) from exc
+        _hosted_rest_error(exc)
+
+
+@app.get("/api/hosted/workspaces/{workspace_id}/overview")
+def hosted_workspace_overview(workspace_id: str, request: Request):
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    try:
+        workspace_filter = {"workspace_id": f"eq.{workspace_id}"}
+        return {
+            "workspace_id": workspace_id,
+            # Exact counts are evaluated under the caller's JWT/RLS.
+            # HEAD avoids downloading job rows and removes the previous 1,000-row cap.
+            "channel_count": client.count("shorts_channels", workspace_filter),
+            "active_channel_count": client.count(
+                "shorts_channels", {**workspace_filter, "is_active": "eq.true"}
+            ),
+            "job_count": client.count("shorts_jobs", workspace_filter),
+            "queued_count": client.count(
+                "shorts_jobs", {**workspace_filter, "stage": "eq.queued"}
+            ),
+            "review_pending_count": client.count(
+                "shorts_jobs", {**workspace_filter, "approval_status": "eq.pending"}
+            ),
+            "published_count": client.count(
+                "shorts_jobs", {**workspace_filter, "stage": "eq.published"}
+            ),
+        }
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+@app.get("/api/hosted/workspaces/{workspace_id}/trends")
+def hosted_workspace_trends(workspace_id: str, request: Request):
+    """Read shared public trend signals from Supabase after tenant membership verification."""
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    try:
+        memberships = client.select("workspace_members", {
+            "select": "role",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{request.state.hosted_user['user_id']}",
+            "limit": "1",
+        }) or []
+        if not memberships:
+            raise HTTPException(status_code=404, detail="Workspace not found")
+        return read_shared_trends(client, limit=30)
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+@app.get("/api/hosted/workspaces/{workspace_id}/analytics")
+def hosted_workspace_analytics(workspace_id: str, request: Request, refresh: bool = False):
+    """Return real YouTube Analytics metrics for connections owned by this workspace."""
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    user = request.state.hosted_user
+    try:
+        memberships = client.select("workspace_members", {
+            "select": "role",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{user['user_id']}",
+            "limit": "1",
+        }) or []
+        if not memberships:
+            raise HTTPException(status_code=404, detail="Workspace not found")
+
+        connections = client.select("youtube_connections", {
+            "select": "connection_id,display_name,status,scopes",
+            "workspace_id": f"eq.{workspace_id}",
+            "provider": "eq.youtube",
+            "status": "eq.connected",
+            "order": "created_at.asc",
+        }) or []
+        today = date.today()
+        end_date = today - timedelta(days=2)
+        start_date = end_date - timedelta(days=27)
+        start_text, end_text = start_date.isoformat(), end_date.isoformat()
+        if not connections:
+            return {
+                "status": "not_connected", "period_days": 28,
+                "period_start": start_text, "period_end": end_text,
+                "views": None, "watch_minutes": None, "average_view_duration_seconds": None,
+                "likes": None, "comments": None, "shares": None,
+                "subscribers_gained": None, "subscribers_lost": None,
+                "engagement_rate": None, "source": None, "updated_at": None,
+                "channels": [], "note": "YouTube 계정을 연결하면 실제 Analytics 지표가 표시됩니다.",
+            }
+
+        admin = SupabaseAdminRestClient()
+        config = GoogleOAuthConfig.from_env()
+        from google.auth.transport.requests import Request as GoogleRequest
+        from google.oauth2.credentials import Credentials
+        from googleapiclient.discovery import build
+
+        channel_results = []
+        totals = {key: 0.0 for key in (
+            "views", "watch_minutes", "likes", "comments", "shares",
+            "subscribers_gained", "subscribers_lost",
+        )}
+        weighted_duration = 0.0
+        total_views = 0.0
+        subscribers = []
+        for connection in connections:
+            connection_id = str(connection["connection_id"])
+            scopes = set(connection.get("scopes") or [])
+            required_scopes = {
+                "https://www.googleapis.com/auth/yt-analytics.readonly",
+                "https://www.googleapis.com/auth/youtube.readonly",
+            }
+            if not required_scopes.issubset(scopes):
+                channel_results.append({
+                    "connection_id": connection_id,
+                    "display_name": connection.get("display_name") or "YouTube",
+                    "status": "scope_required",
+                })
+                continue
+            try:
+                credential = admin.get_credential(connection_id)
+                if not credential:
+                    channel_results.append({
+                        "connection_id": connection_id,
+                        "display_name": connection.get("display_name") or "YouTube",
+                        "status": "reauth_required",
+                    })
+                    continue
+                refresh_token = decrypt_refresh_token(
+                    credential["encrypted_refresh_token_hex"],
+                    credential["encryption_key_version"],
+                )
+                credentials = Credentials(
+                    token=None,
+                    refresh_token=refresh_token,
+                    token_uri="https://oauth2.googleapis.com/token",
+                    client_id=config.client_id,
+                    client_secret=config.client_secret,
+                    scopes=sorted(required_scopes),
+                )
+                credentials.refresh(GoogleRequest())
+                analytics = build("youtubeAnalytics", "v2", credentials=credentials, cache_discovery=False)
+                youtube = build("youtube", "v3", credentials=credentials, cache_discovery=False)
+                report = analytics.reports().query(
+                    ids="channel==MINE",
+                    startDate=start_text,
+                    endDate=end_text,
+                    metrics="views,estimatedMinutesWatched,averageViewDuration,likes,comments,shares,subscribersGained,subscribersLost",
+                ).execute()
+                headers = [item.get("name") for item in report.get("columnHeaders", [])]
+                row = (report.get("rows") or [[]])[0]
+                values = dict(zip(headers, row))
+                stats_response = youtube.channels().list(part="statistics", mine=True).execute()
+                stats_items = stats_response.get("items") or []
+                stats = (stats_items[0].get("statistics") or {}) if stats_items else {}
+                metric = {
+                    "views": int(float(values.get("views") or 0)),
+                    "watch_minutes": float(values.get("estimatedMinutesWatched") or 0),
+                    "average_view_duration_seconds": float(values.get("averageViewDuration") or 0),
+                    "likes": int(float(values.get("likes") or 0)),
+                    "comments": int(float(values.get("comments") or 0)),
+                    "shares": int(float(values.get("shares") or 0)),
+                    "subscribers_gained": int(float(values.get("subscribersGained") or 0)),
+                    "subscribers_lost": int(float(values.get("subscribersLost") or 0)),
+                    "subscriber_count": None if stats.get("hiddenSubscriberCount", False) else int(stats.get("subscriberCount") or 0),
+                }
+                for key in totals:
+                    totals[key] += metric[key]
+                weighted_duration += metric["average_view_duration_seconds"] * metric["views"]
+                total_views += metric["views"]
+                if metric["subscriber_count"] is not None:
+                    subscribers.append(metric["subscriber_count"])
+                channel_results.append({
+                    "connection_id": connection_id,
+                    "display_name": connection.get("display_name") or "YouTube",
+                    "status": "connected",
+                    **metric,
+                })
+            except Exception as exc:
+                logger.warning("Hosted YouTube Analytics query failed (%s)", type(exc).__name__)
+                channel_results.append({
+                    "connection_id": connection_id,
+                    "display_name": connection.get("display_name") or "YouTube",
+                    "status": "error",
+                    "error_type": type(exc).__name__,
+                })
+
+        connected_count = sum(1 for item in channel_results if item["status"] == "connected")
+        failed_count = len(channel_results) - connected_count
+        if not connected_count:
+            status = ("scope_required" if any(x["status"] == "scope_required" for x in channel_results) else "reauth_required" if any(x["status"] == "reauth_required" for x in channel_results) else "error")
+            return {
+                "status": status, "period_days": 28,
+                "period_start": start_text, "period_end": end_text,
+                "views": None, "watch_minutes": None, "average_view_duration_seconds": None,
+                "likes": None, "comments": None, "shares": None,
+                "subscribers_gained": None, "subscribers_lost": None,
+                "engagement_rate": None, "subscriber_count": None,
+                "source": None, "updated_at": None, "channels": channel_results,
+                "note": "Analytics 권한을 확인하거나 YouTube 계정을 다시 연결해 주세요. 실제 수치는 추정하지 않습니다.",
+            }
+        engagement = (totals["likes"] + totals["comments"] + totals["shares"]) / total_views * 100 if total_views else 0.0
+        return {
+            "status": "partial" if failed_count else "connected",
+            "period_days": 28,
+            "period_start": start_text,
+            "period_end": end_text,
+            **totals,
+            "average_view_duration_seconds": weighted_duration / total_views if total_views else 0.0,
+            "subscriber_count": sum(subscribers) if subscribers else None,
+            "engagement_rate": engagement,
+            "source": "YouTube Analytics API",
+            "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "channels": channel_results,
+            "note": "실제 YouTube Analytics API의 최근 완료된 28일 데이터입니다. 예상치나 샘플 수치는 포함하지 않습니다.",
+        }
+    except HTTPException:
+        raise
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+    except (GoogleOAuthError, SupabaseAdminError, TokenVaultError) as exc:
+        logger.warning("Hosted Analytics setup failed (%s)", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="YouTube Analytics를 안전하게 조회할 수 없습니다.") from exc
+
+
+@app.post("/api/hosted/workspaces/{workspace_id}/jobs")
+def hosted_create_job(workspace_id: str, req: HostedJobCreateReq, request: Request):
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    user = request.state.hosted_user
+    payload = {
+        "workspace_id": workspace_id,
+        "channel_id": str(req.channel_id),
+        "created_by": user["user_id"],
+        "topic": req.topic.strip(),
+        "title": req.title.strip(),
+        "script": req.script.strip(),
+    }
+    if not payload["topic"]:
+        raise HTTPException(status_code=422, detail="Topic is required")
+    try:
+        rows = client.insert("shorts_jobs", payload) or []
+        if not rows:
+            raise HTTPException(status_code=403, detail="Workspace job creation was denied")
+        return {"job": rows[0]}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+@app.get("/api/hosted/workspaces/{workspace_id}/social/platforms")
+def hosted_social_platforms(workspace_id: str, request: Request):
+    """Return the provider catalogue and per-workspace connection counts."""
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    user_id = request.state.hosted_user["user_id"]
+    try:
+        memberships = client.select("workspace_members", {
+            "select": "role",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{user_id}",
+            "limit": "1",
+        }) or []
+        if not memberships:
+            raise HTTPException(status_code=404, detail="Workspace not found")
+        connections = client.select("youtube_connections", {
+            "select": "provider,status",
+            "workspace_id": f"eq.{workspace_id}",
+        }) or []
+        counts = {}
+        for connection in connections:
+            if connection.get("status") == "connected":
+                provider = connection.get("provider")
+                counts[provider] = counts.get(provider, 0) + 1
+        items = get_social_platform_catalog()
+        for item in items:
+            item["connected_account_count"] = counts.get(item["id"], 0)
+        return {"items": items}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+@app.get("/api/hosted/workspaces/{workspace_id}/social/connections")
+def hosted_social_connections(workspace_id: str, request: Request):
+    """List all provider connections in the active workspace, not just YouTube."""
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    user_id = request.state.hosted_user["user_id"]
+    try:
+        memberships = client.select("workspace_members", {
+            "select": "role",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{user_id}",
+            "limit": "1",
+        }) or []
+        if not memberships:
+            raise HTTPException(status_code=404, detail="Workspace not found")
+        items = client.select("youtube_connections", {
+            "select": "connection_id,provider,provider_account_id,display_name,status,scopes,created_at,updated_at,disconnected_at",
+            "workspace_id": f"eq.{workspace_id}",
+            "order": "created_at.desc",
+        })
+        return {"items": items or []}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+@app.get("/api/hosted/workspaces/{workspace_id}/youtube/connections")
+def hosted_youtube_connections(workspace_id: str, request: Request):
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    try:
+        items = client.select("youtube_connections", {
+            "select": "connection_id,provider,provider_account_id,display_name,status,scopes,created_at,updated_at,disconnected_at",
+            "workspace_id": f"eq.{workspace_id}",
+            "order": "created_at.desc",
+        })
+        return {"items": items or []}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+@app.post("/api/hosted/workspaces/{workspace_id}/youtube/connect")
+def hosted_youtube_connect(workspace_id: str, request: Request):
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    user = request.state.hosted_user
+    try:
+        memberships = client.select("workspace_members", {
+            "select": "role",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{user['user_id']}",
+        }) or []
+        if not any(item.get("role") in {"owner", "admin"} for item in memberships):
+            raise HTTPException(status_code=403, detail="Workspace owner or admin permission required")
+        config = GoogleOAuthConfig.from_env()
+        state, state_hash = create_oauth_state()
+        verifier, challenge = create_pkce_pair()
+        return_uri = f"{config.app_url}/signup"
+        expires_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+        admin = SupabaseAdminRestClient()
+        admin.store_oauth_state(
+            state_hash, user["user_id"], workspace_id, config.redirect_uri,
+            return_uri, verifier, expires_at,
+        )
+        return {"authorization_url": config.authorization_url(state, challenge)}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+    except (GoogleOAuthError, SupabaseAdminError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/api/hosted/workspaces/{workspace_id}/tiktok/connect")
+def hosted_tiktok_connect(workspace_id: str, request: Request):
+    """Start a server-side TikTok Login Kit flow for an owner/admin."""
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    user = request.state.hosted_user
+    try:
+        memberships = client.select("workspace_members", {
+            "select": "role",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{user['user_id']}",
+            "limit": "1",
+        }) or []
+        if not any(item.get("role") in {"owner", "admin"} for item in memberships):
+            raise HTTPException(status_code=403, detail="Workspace owner or admin permission required")
+        config = TikTokOAuthConfig.from_env()
+        state, state_hash = create_oauth_state()
+        verifier, _challenge = create_pkce_pair()
+        return_uri = f"{config.app_url}/signup"
+        expires_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+        SupabaseAdminRestClient().store_oauth_state(
+            state_hash, user["user_id"], workspace_id, config.redirect_uri,
+            return_uri, verifier, expires_at, provider="tiktok",
+        )
+        return {"authorization_url": config.authorization_url(state)}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+    except (TikTokOAuthError, SupabaseAdminError) as exc:
+        raise HTTPException(status_code=503, detail="TikTok OAuth is not configured") from exc
+
+
+@app.get("/api/hosted/tiktok/callback")
+def hosted_tiktok_callback(
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    error_description: str | None = None,
+):
+    if not state:
+        raise HTTPException(status_code=400, detail="OAuth state is required")
+    state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()
+    try:
+        admin = SupabaseAdminRestClient()
+        state_data = admin.consume_oauth_state(state_hash)
+        if not state_data or state_data.get("provider") != "tiktok":
+            raise HTTPException(status_code=400, detail="TikTok OAuth state is invalid, expired, or already consumed")
+        config = TikTokOAuthConfig.from_env()
+        expected_return_uri = f"{config.app_url}/signup"
+        if state_data.get("redirect_uri") != config.redirect_uri or state_data.get("return_uri") != expected_return_uri:
+            raise HTTPException(status_code=400, detail="TikTok OAuth redirect configuration mismatch")
+        if error:
+            logger.info("TikTok OAuth was not completed (%s)", str(error)[:64])
+            return RedirectResponse(f"{expected_return_uri}?tiktok=denied", status_code=303)
+        if not code:
+            raise HTTPException(status_code=400, detail="TikTok authorization code is missing")
+
+        memberships = admin.list_account_user_memberships(state_data["user_id"])
+        if not any(
+            row.get("workspace_id") == state_data["workspace_id"]
+            and row.get("role") in {"owner", "admin"}
+            for row in memberships
+        ):
+            raise HTTPException(status_code=403, detail="Workspace owner or admin permission is no longer available")
+
+        token_data = config.exchange_code(code)
+        account = config.fetch_account(token_data["access_token"])
+        if account["account_id"] != token_data.get("open_id"):
+            raise TikTokOAuthError("TikTok account identity did not match the token subject")
+        refresh_token = token_data.get("refresh_token")
+        if not refresh_token:
+            raise TikTokOAuthError("TikTok did not return a refresh token")
+        encrypted = encrypt_refresh_token(refresh_token)
+        scopes = [scope.strip() for scope in (token_data.get("scope") or "").split(",") if scope.strip()]
+        refresh_expires_in = max(60, int(token_data.get("refresh_expires_in") or 15552000))
+        token_expires_at = (
+            datetime.now(timezone.utc) + timedelta(seconds=refresh_expires_in)
+        ).isoformat()
+
+        memberships = admin.list_account_user_memberships(state_data["user_id"])
+        if not any(
+            row.get("workspace_id") == state_data["workspace_id"]
+            and row.get("role") in {"owner", "admin"}
+            for row in memberships
+        ):
+            raise HTTPException(status_code=403, detail="Workspace owner or admin permission is no longer available")
+
+        connections = admin.upsert_connection({
+            "workspace_id": state_data["workspace_id"],
+            "provider": "tiktok",
+            "provider_account_id": account["account_id"],
+            "display_name": account.get("display_name") or "TikTok account",
+            "status": "connected",
+            "scopes": scopes,
+            "connected_by": state_data["user_id"],
+            "disconnected_at": None,
+        })
+        if not connections:
+            raise SupabaseAdminError("TikTok connection metadata could not be saved")
+        connection_id = connections[0]["connection_id"]
+        try:
+            admin.upsert_credential(
+                connection_id, state_data["workspace_id"], encrypted["ciphertext_hex"],
+                encrypted["key_version"], scopes, token_expires_at,
+            )
+            admin.upsert_channel({
+                "workspace_id": state_data["workspace_id"],
+                "connection_id": connection_id,
+                "platform": "tiktok",
+                "provider_channel_id": account["account_id"],
+                "display_name": account.get("display_name") or "TikTok account",
+                "created_by": state_data["user_id"],
+            })
+        except SupabaseAdminError:
+            admin.update_connection(connection_id, state_data["workspace_id"], {
+                "status": "reauth_required",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+            raise
+        return RedirectResponse(f"{expected_return_uri}?tiktok=connected", status_code=303)
+    except HTTPException:
+        raise
+    except (TikTokOAuthError, SupabaseAdminError, TokenVaultError, ValueError) as exc:
+        logger.warning("TikTok OAuth callback failed (%s)", type(exc).__name__)
+        try:
+            config = TikTokOAuthConfig.from_env()
+            return RedirectResponse(f"{config.app_url}/signup?tiktok=error", status_code=303)
+        except TikTokOAuthError:
+            raise HTTPException(status_code=503, detail="TikTok OAuth is not configured") from exc
+
+
+@app.post("/api/hosted/workspaces/{workspace_id}/tiktok/{connection_id}/disconnect")
+def hosted_tiktok_disconnect(workspace_id: str, connection_id: UUID, request: Request):
+    """Revoke a TikTok grant safely, preserving rotated refresh tokens for retries."""
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    user = request.state.hosted_user
+    try:
+        memberships = client.select("workspace_members", {
+            "select": "role",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{user['user_id']}",
+            "limit": "1",
+        }) or []
+        if not any(item.get("role") in {"owner", "admin"} for item in memberships):
+            raise HTTPException(status_code=403, detail="Workspace owner or admin permission required")
+        connections = client.select("youtube_connections", {
+            "select": "connection_id,status,provider,provider_account_id",
+            "workspace_id": f"eq.{workspace_id}",
+            "connection_id": f"eq.{connection_id}",
+            "provider": "eq.tiktok",
+        }) or []
+        if not connections:
+            raise HTTPException(status_code=404, detail="TikTok connection not found")
+        admin = SupabaseAdminRestClient()
+        connection_key = str(connection_id)
+        credential = admin.get_credential(connection_key)
+        revocation_state = admin.get_youtube_disconnect_state(connection_key)
+        if credential:
+            shared_grant = admin.has_other_active_connections(
+                connections[0]["provider_account_id"], connection_key, provider="tiktok"
+            )
+            if shared_grant:
+                saved = admin.set_youtube_disconnect_state(connection_key, "preserved")
+                if saved != "preserved":
+                    raise SupabaseAdminError("Shared TikTok grant preservation state was not persisted")
+            elif revocation_state not in {"revoked", "preserved", "not_required"}:
+                started = admin.set_youtube_disconnect_state(connection_key, "revocation_started")
+                if started != "revocation_started":
+                    raise SupabaseAdminError("TikTok token revocation intent was not durably recorded")
+                refresh_token = decrypt_refresh_token(
+                    credential["encrypted_refresh_token_hex"],
+                    credential["encryption_key_version"],
+                )
+                config = TikTokOAuthConfig.from_env()
+                token_data = config.refresh_access_token(refresh_token)
+                rotated_refresh = token_data.get("refresh_token") or refresh_token
+                encrypted = encrypt_refresh_token(rotated_refresh)
+                refresh_expires_in = max(60, int(token_data.get("refresh_expires_in") or 15552000))
+                admin.upsert_credential(
+                    connection_key, workspace_id, encrypted["ciphertext_hex"],
+                    encrypted["key_version"], token_data.get("scope", "").split(","),
+                    (datetime.now(timezone.utc) + timedelta(seconds=refresh_expires_in)).isoformat(),
+                )
+                config.revoke_access_token(token_data["access_token"])
+                completed = admin.set_youtube_disconnect_state(connection_key, "revoked")
+                if completed != "revoked":
+                    raise SupabaseAdminError("TikTok token revocation result was not durably recorded")
+        elif revocation_state == "revocation_started":
+            raise SupabaseAdminError("TikTok token revocation outcome is uncertain; credential retained for safe retry")
+        elif revocation_state is None:
+            saved = admin.set_youtube_disconnect_state(connection_key, "not_required")
+            if saved != "not_required":
+                raise SupabaseAdminError("No-token disconnect state was not durably recorded")
+        updated = admin.update_connection(connection_key, workspace_id, {
+            "status": "disconnected",
+            "disconnected_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+        if not updated:
+            raise SupabaseAdminError("TikTok connection could not be updated")
+        admin.update_channels(workspace_id, connection_key, {
+            "is_active": False,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+        admin.delete_credential(connection_key)
+        return {"status": "disconnected", "connection_id": connection_key}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+    except (TikTokOAuthError, SupabaseAdminError, TokenVaultError) as exc:
+        raise HTTPException(status_code=502, detail="TikTok disconnection could not be completed safely") from exc
+
+
+@app.get("/api/hosted/youtube/callback")
+def hosted_youtube_callback(code: str | None = None, state: str | None = None, error: str | None = None):
+    if not state:
+        raise HTTPException(status_code=400, detail="OAuth state is required")
+    state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()
+    try:
+        admin = SupabaseAdminRestClient()
+        state_data = admin.consume_oauth_state(state_hash)
+        if not state_data:
+            raise HTTPException(status_code=400, detail="OAuth state is invalid, expired, or already consumed")
+        config = GoogleOAuthConfig.from_env()
+        expected_return_uri = f"{config.app_url}/signup"
+        if state_data.get("redirect_uri") != config.redirect_uri or state_data.get("return_uri") != expected_return_uri:
+            raise HTTPException(status_code=400, detail="OAuth redirect configuration mismatch")
+        if error:
+            return RedirectResponse(f"{expected_return_uri}?youtube=denied", status_code=303)
+        if not code:
+            raise HTTPException(status_code=400, detail="OAuth authorization code is missing")
+
+        # OAuth may take several minutes. Re-check the initiating user's current
+        # workspace role after the public callback returns; a previously valid
+        # one-time state must not preserve admin rights after membership removal
+        # or role downgrade.
+        memberships = admin.list_account_user_memberships(state_data["user_id"])
+        if not any(
+            row.get("workspace_id") == state_data["workspace_id"]
+            and row.get("role") in {"owner", "admin"}
+            for row in memberships
+        ):
+            raise HTTPException(status_code=403, detail="Workspace owner or admin permission is no longer available")
+
+        token_data = config.exchange_code(code, state_data["code_verifier"])
+        refresh_token = token_data.get("refresh_token")
+        if not refresh_token:
+            return RedirectResponse(f"{expected_return_uri}?youtube=reauth_required", status_code=303)
+        account = config.fetch_account(token_data["access_token"])
+        channels = config.fetch_channels(token_data["access_token"])
+        encrypted = encrypt_refresh_token(refresh_token)
+        scopes = (token_data.get("scope") or "").split()
+        expires_in = max(60, int(token_data.get("expires_in") or 3600))
+        token_expires_at = (datetime.now(timezone.utc) + timedelta(seconds=expires_in)).isoformat()
+        # Re-check immediately before privileged persistence as the Google round
+        # trip may have outlived the initiator's workspace-admin membership.
+        memberships = admin.list_account_user_memberships(state_data["user_id"])
+        if not any(
+            row.get("workspace_id") == state_data["workspace_id"]
+            and row.get("role") in {"owner", "admin"}
+            for row in memberships
+        ):
+            raise HTTPException(status_code=403, detail="Workspace owner or admin permission is no longer available")
+
+        connections = admin.upsert_connection({
+            "workspace_id": state_data["workspace_id"],
+            "provider": "youtube",
+            "provider_account_id": account["account_id"],
+            "display_name": account.get("email") or account.get("name") or "Google account",
+            "status": "connected",
+            "scopes": scopes,
+            "connected_by": state_data["user_id"],
+            "disconnected_at": None,
+        })
+        if not connections:
+            raise SupabaseAdminError("YouTube connection metadata could not be saved")
+        connection_id = connections[0]["connection_id"]
+        try:
+            admin.upsert_credential(
+                connection_id, state_data["workspace_id"], encrypted["ciphertext_hex"],
+                encrypted["key_version"], scopes, token_expires_at,
+            )
+            for channel in channels:
+                admin.upsert_channel({
+                    "workspace_id": state_data["workspace_id"],
+                    "connection_id": connection_id,
+                    "platform": "youtube",
+                    "provider_channel_id": channel["channel_id"],
+                    "display_name": channel["title"],
+                    "created_by": state_data["user_id"],
+                })
+        except SupabaseAdminError:
+            admin.update_connection(connection_id, state_data["workspace_id"], {
+                "status": "reauth_required",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+            raise
+        return RedirectResponse(f"{expected_return_uri}?youtube=connected", status_code=303)
+    except HTTPException:
+        raise
+    except (GoogleOAuthError, SupabaseAdminError, TokenVaultError, ValueError) as exc:
+        logger.warning("YouTube OAuth callback failed (%s)", type(exc).__name__)
+        try:
+            config = GoogleOAuthConfig.from_env()
+            return RedirectResponse(f"{config.app_url}/signup?youtube=error", status_code=303)
+        except GoogleOAuthError:
+            raise HTTPException(status_code=503, detail="YouTube OAuth is not configured") from exc
+
+
+@app.post("/api/hosted/workspaces/{workspace_id}/youtube/{connection_id}/disconnect")
+def hosted_youtube_disconnect(workspace_id: str, connection_id: UUID, request: Request):
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    user = request.state.hosted_user
+    try:
+        memberships = client.select("workspace_members", {
+            "select": "role",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{user['user_id']}",
+        }) or []
+        if not any(item.get("role") in {"owner", "admin"} for item in memberships):
+            raise HTTPException(status_code=403, detail="Workspace owner or admin permission required")
+        connections = client.select("youtube_connections", {
+            "select": "connection_id,status,provider_account_id",
+            "workspace_id": f"eq.{workspace_id}",
+            "connection_id": f"eq.{connection_id}",
+        }) or []
+        if not connections:
+            raise HTTPException(status_code=404, detail="YouTube connection not found")
+        admin = SupabaseAdminRestClient()
+        connection_key = str(connection_id)
+        credential = admin.get_credential(connection_key)
+        revocation_state = admin.get_youtube_disconnect_state(connection_key)
+        if credential:
+            shared_grant = admin.has_other_active_connections(
+                connections[0]["provider_account_id"], connection_key
+            )
+            target_state = "preserved" if shared_grant else revocation_state
+            if shared_grant:
+                saved = admin.set_youtube_disconnect_state(connection_key, "preserved")
+                if saved != "preserved":
+                    raise SupabaseAdminError("Shared Google grant preservation state was not persisted")
+            elif target_state not in {"revoked", "preserved", "not_required"}:
+                started = admin.set_youtube_disconnect_state(connection_key, "revocation_started")
+                if started != "revocation_started":
+                    raise SupabaseAdminError("Google token revocation intent was not durably recorded")
+                refresh_token = decrypt_refresh_token(
+                    credential["encrypted_refresh_token_hex"],
+                    credential["encryption_key_version"],
+                )
+                GoogleOAuthConfig.from_env().revoke_refresh_token(refresh_token)
+                completed = admin.set_youtube_disconnect_state(connection_key, "revoked")
+                if completed != "revoked":
+                    raise SupabaseAdminError("Google token revocation result was not durably recorded")
+        elif revocation_state == "revocation_started":
+            raise SupabaseAdminError("Google token revocation outcome is uncertain; credential retained for safe retry")
+        elif revocation_state is None:
+            saved = admin.set_youtube_disconnect_state(connection_key, "not_required")
+            if saved != "not_required":
+                raise SupabaseAdminError("No-token disconnect state was not durably recorded")
+        updated = admin.update_connection(str(connection_id), workspace_id, {
+            "status": "disconnected",
+            "disconnected_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+        if not updated:
+            raise SupabaseAdminError("YouTube connection could not be updated")
+        admin.update_channels(workspace_id, str(connection_id), {
+            "is_active": False,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+        admin.delete_credential(str(connection_id))
+        return {"status": "disconnected", "connection_id": str(connection_id)}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+    except (GoogleOAuthError, SupabaseAdminError, TokenVaultError) as exc:
+        raise HTTPException(status_code=502, detail="YouTube disconnection could not be completed safely") from exc
+
+
+@app.get("/api/hosted/jobs/{job_id}/preview")
+def hosted_job_preview(job_id: UUID, request: Request):
+    client = _hosted_rest_client(request)
+    try:
+        rows = client.select("shorts_jobs", {
+            "select": "job_id,workspace_id,output_storage_key",
+            "job_id": f"eq.{job_id}",
+            "limit": "1",
+        }) or []
+        if not rows or not rows[0].get("output_storage_key"):
+            raise HTTPException(status_code=404, detail="Rendered preview is not available")
+        signed_url = SupabaseAdminRestClient().create_signed_url(rows[0]["output_storage_key"], 300)
+        return {"signed_url": signed_url, "expires_in": 300}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+    except SupabaseAdminError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/hosted/jobs/{job_id}/approve")
+def hosted_approve_job(job_id: UUID, request: Request):
+    """Approve only a review-pending job in a workspace the caller administers."""
+    client = _hosted_rest_client(request)
+    user = request.state.hosted_user
+    try:
+        jobs = client.select("shorts_jobs", {
+            "select": "job_id,workspace_id,stage,approval_status",
+            "job_id": f"eq.{job_id}",
+            "limit": "1",
+        }) or []
+        if not jobs:
+            raise HTTPException(status_code=404, detail="Job not found")
+        job = jobs[0]
+        if job.get("stage") != "review_pending" or job.get("approval_status") != "pending":
+            raise HTTPException(status_code=409, detail="Only jobs awaiting final review can be approved")
+        memberships = client.select("workspace_members", {
+            "select": "role",
+            "workspace_id": f"eq.{job['workspace_id']}",
+            "user_id": f"eq.{user['user_id']}",
+            "limit": "1",
+        }) or []
+        if not memberships or memberships[0].get("role") not in {"owner", "admin"}:
+            raise HTTPException(status_code=403, detail="Workspace owner or admin permission required")
+        payload = {
+            "approval_status": "approved",
+            "approved_by": user["user_id"],
+            "approved_at": datetime.now(timezone.utc).isoformat(),
+        }
+        rows = client.update("shorts_jobs", {
+            "job_id": f"eq.{job_id}",
+            "stage": "eq.review_pending",
+            "approval_status": "eq.pending",
+        }, payload) or []
+        if not rows:
+            raise HTTPException(status_code=409, detail="Job state changed before approval; refresh and review again")
+        return {"job": rows[0]}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+
+
+# Local filesystem output is used only by the desktop/loopback studio.
+# Hosted Vercel requests use Supabase Storage and must not write to the read-only bundle.
+if not is_hosted_auth_enabled():
+    os.makedirs("export", exist_ok=True)
+    os.makedirs("output", exist_ok=True)
+    app.mount("/output", StaticFiles(directory="output"), name="output")
 
 RADAR_INTERVAL_SEC = 300
 AUTO_PRODUCE_ENABLED = True
@@ -753,6 +2228,9 @@ def auto_radar_and_scheduler_loop():
 
 @app.on_event("startup")
 def startup_event():
+    if is_hosted_auth_enabled():
+        logger.warning("Hosted auth is enabled; local SQLite initialization, queue workers, and radar scheduler are disabled.")
+        return
     init_app_db()
     radar_db = trend_radar.init_radar_db()
     radar_db.close()
@@ -792,6 +2270,12 @@ class RejectReq(BaseModel):
 
 @app.get("/")
 def serve_home():
+    # Hosted SaaS users enter through the Supabase-authenticated workspace UI.
+    # The legacy single-operator dashboard remains available only in local mode.
+    if is_hosted_auth_enabled():
+        if os.path.exists("workspace.html"):
+            return FileResponse("workspace.html", media_type="text/html; charset=utf-8")
+        return RedirectResponse(url="/signup", status_code=307)
     if os.path.exists("index.html"):
         return FileResponse("index.html")
     return {"status": "OK"}
