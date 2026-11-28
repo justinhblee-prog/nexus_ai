@@ -16,6 +16,9 @@ class VercelFastApiEntrypointTests(unittest.TestCase):
         self.assertIn("from vercel_entrypoint import app", vercel_alias)
         self.assertIn('entrypoint = "main:app"', config)
         self.assertIn("import streamlit as st", streamlit_app)
+        api = (ROOT / "api_server.py").read_text(encoding="utf-8")
+        self.assertIn('@app.get("/signup")', api)
+        self.assertIn('return RedirectResponse(url="/signup", status_code=307)', api)
 
     def test_hosted_startup_skips_local_sqlite_and_output_directory_writes(self):
         api = (ROOT / "api_server.py").read_text(encoding="utf-8")
