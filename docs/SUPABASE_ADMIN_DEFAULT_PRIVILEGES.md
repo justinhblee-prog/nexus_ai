@@ -6,7 +6,7 @@ The live project was inspected read-only on 2026-11-28:
 
 - The migration/SQL-editor role is `postgres`, and it is not a member of `supabase_admin`.
 - `supabase_admin` is a superuser role and is a member of `postgres`; the membership does not grant the reverse `SET ROLE` capability.
-- Both roles currently have default ACL entries granting `anon` privileges on future objects in `public`.
+- Both roles currently have default ACL entries granting `anon` privileges on future tables, sequences, and functions in `public`.
 - PostgreSQL rejects `ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin` when executed as `postgres` (`permission denied to change default privileges`).
 
 The ordinary migration therefore does only the operations its executor can safely perform:
@@ -14,6 +14,7 @@ The ordinary migration therefore does only the operations its executor can safel
 1. Revoke existing `anon` table privileges from all 14 public tenant/legacy tables.
 2. Remove `anon` table defaults for objects created by `postgres`.
 3. Leave `authenticated` and `service_role` privileges unchanged.
+4. The ordinary migration does not change function defaults because the privileged operation owns the consolidated default-ACL cleanup.
 
 It intentionally does **not** claim to change defaults owned by `supabase_admin`. Do not add the failing statement back to the regular migration: the local Supabase replay and a normal `supabase db push` execute as `postgres`.
 
@@ -21,6 +22,7 @@ It intentionally does **not** claim to change defaults owned by `supabase_admin`
 
 The exact privileged SQL is maintained in `supabase/operations/nexus_admin_anon_acl_hardening.sql`. It:
 - removes future `anon` table and sequence defaults for `supabase_admin` in `public`;
+- removes future `anon` function-execution defaults for both `postgres` and `supabase_admin` in `public`;
 - revokes current `anon` table privileges from `storage.objects`.
 
 Execute that file only through a secure connection authenticated as `supabase_admin` or another superuser. Do not run it as the ordinary `postgres` migration role.
@@ -42,15 +44,16 @@ LEFT JOIN pg_roles grantee ON grantee.oid = a.grantee
 WHERE n.nspname = 'public'
   AND owner.rolname = 'supabase_admin'
   AND grantee.rolname = 'anon'
-  AND d.defaclobjtype IN ('r', 'S');
+  AND d.defaclobjtype IN ('r', 'S', 'f');
 ```
 
 Expected result after the privileged operation:
-- no rows for `supabase_admin` table or sequence defaults granted to `anon`;
-- `has_table_privilege('anon', 'storage.objects', 'SELECT')` returns false.
+- no rows for `postgres` or `supabase_admin` table, sequence, or function defaults granted to `anon`;
+- `has_table_privilege('anon', 'storage.objects', 'SELECT')` returns false;
+- `has_function_privilege('anon', 'some_public_function()', 'EXECUTE')` is false for functions created after the default cleanup.
 
 ## Operational boundary
 
 This follow-up has **not** been executed against the live project. The isolated local CI stack executes the operation script as its local `supabase_admin` role and verifies the resulting table/default ACLs. No live database password or privileged role credential was retrieved, changed, or placed in GitHub/ChatGPT. It requires an administrator-controlled connection with the required role; if the project owner cannot obtain that connection through supported Supabase controls, request Supabase platform support rather than weakening role boundaries or changing credentials speculatively.
 
-Until this is complete, all 14 public tenant/legacy tables are covered by the regular migration and the `postgres` defaults are hardened, but future tables created by `supabase_admin` may still inherit its existing `anon` defaults and `storage.objects` retains direct `anon` grants. Storage currently has only private buckets and RLS enabled with no `anon` object policies, so no anonymous object access was observed; the remaining direct grant is defense-in-depth. Treat the overall anonymous-privilege hardening as **partially complete**.
+Until this is complete, all 14 public tenant/legacy tables are covered by the regular migration and the `postgres` defaults are hardened, but future tables, sequences, and functions created by `supabase_admin` or functions created by `postgres` may still inherit their existing `anon` defaults, and `storage.objects` retains direct `anon` grants. Storage currently has only private buckets and RLS enabled with no `anon` object policies, so no anonymous object access was observed; the remaining direct grant is defense-in-depth. Treat the overall anonymous-privilege hardening as **partially complete**.
