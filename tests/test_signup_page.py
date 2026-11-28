@@ -155,7 +155,8 @@ class HostedSignupPageContractTests(unittest.TestCase):
 
     def test_youtube_channel_connect_and_disconnect_controls_use_authenticated_api(self):
         self.assertIn('/social/connections', self.html)
-        self.assertIn('"/youtube/connect"', self.html)
+        self.assertIn('encodeURIComponent(provider) + "/connect"', self.html)
+        self.assertIn('startSocialConnect("youtube"', self.html)
         self.assertIn('"/disconnect"', self.html)
         self.assertIn("YouTube 계정 추가", self.html)
         self.assertIn("authorization_url", self.html)

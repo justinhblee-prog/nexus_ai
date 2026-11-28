@@ -46,7 +46,7 @@ class AccountLifecycleApiContractTests(unittest.TestCase):
         self.assertIn('"unclassified_object_blockers": unclassified_storage_count', self.api)
         self.assertIn("Map or remove them before account deletion", self.api)
         self.assertIn("list_account_deletion_active_leases(deletion_workspace_ids)", self.api)
-        self.assertIn("list_youtube_connections_for_workspaces(deletion_workspace_ids)", self.api)
+        self.assertIn("list_social_connections_for_workspaces(deletion_workspace_ids)", self.api)
         self.assertIn('"provider_grants_preserved_for_other_workspaces": shared_provider_grants_preserved', self.api)
         self.assertIn("has_active_connection_outside_workspaces(", self.api)
         self.assertIn("seen_provider_accounts = set()", self.api)
