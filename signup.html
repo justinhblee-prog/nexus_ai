@@ -993,6 +993,8 @@
       } else {
         showMessage("Supabase Auth와 NEXUS 서버 세션 검증이 완료되었습니다.", "success");
       }
+      window.location.replace("/");
+      return;
     }
 
     document.getElementById("workspace-select").addEventListener("change", async event => {
