@@ -1,4 +1,7 @@
 from pathlib import Path
+import os
+import subprocess
+import sys
 import unittest
 
 
@@ -23,6 +26,28 @@ class VercelFastApiEntrypointTests(unittest.TestCase):
         api = (ROOT / "api_server.py").read_text(encoding="utf-8")
         self.assertIn('@app.get("/signup")', api)
         self.assertIn('return RedirectResponse(url="/signup", status_code=307)', api)
+
+    def test_standard_entrypoint_imports_and_exposes_hosted_routes(self):
+        script = """
+import main
+paths = {route.path for route in main.app.routes}
+required = {"/", "/signup", "/api/hosted/auth-config"}
+assert required.issubset(paths), sorted(paths)
+assert "/signup" in main.app.openapi()["paths"]
+print("hosted FastAPI entrypoint import passed")
+"""
+        env = {**os.environ, "NEXUS_HOSTED_AUTH_ENABLED": "false"}
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("hosted FastAPI entrypoint import passed", result.stdout)
 
     def test_hosted_startup_skips_local_sqlite_and_output_directory_writes(self):
         api = (ROOT / "api_server.py").read_text(encoding="utf-8")
