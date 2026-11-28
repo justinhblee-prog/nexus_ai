@@ -15,8 +15,9 @@ import time
 from collections import defaultdict
 
 from supabase_admin import SupabaseAdminError, SupabaseAdminRestClient
-from token_vault import TokenVaultError, decrypt_refresh_token
+from token_vault import TokenVaultError, decrypt_refresh_token, encrypt_refresh_token
 from youtube_oauth import GoogleOAuthConfig, GoogleOAuthError
+from tiktok_oauth import TikTokOAuthConfig, TikTokOAuthError, TikTokOAuthReauthRequired
 
 
 logger = logging.getLogger("nexus.account_deletion_worker")
@@ -104,47 +105,55 @@ def _inventory_storage(admin, user_id, deleting, shared):
     return objects
 
 
-def _cleanup_oauth(admin, user_id, deleting, oauth_config_factory, decrypt_token):
+def _cleanup_oauth(
+    admin,
+    user_id,
+    deleting,
+    oauth_config_factory,
+    decrypt_token,
+    tiktok_oauth_config_factory=None,
+    encrypt_token=encrypt_refresh_token,
+):
     if not deleting:
         return
-    connections = admin.list_youtube_connections_for_workspaces(deleting)
+    connections = admin.list_social_connections_for_workspaces(deleting)
     grouped = defaultdict(list)
     for connection in connections:
+        provider = connection.get("provider") or "youtube"
         provider_account_id = connection.get("provider_account_id")
         if not provider_account_id:
             raise AccountDeletionBlocked("oauth_cleanup", "provider_account_identity_missing")
-        grouped[provider_account_id].append(connection)
+        if provider not in {"youtube", "tiktok"}:
+            raise AccountDeletionBlocked("oauth_cleanup", "provider_revocation_not_supported")
+        grouped[(provider, provider_account_id)].append(connection)
 
-    oauth_config = None
-    for provider_account_id, group in grouped.items():
-        # Keep provider identifiers out of the durable deletion journal. The
-        # one-way fingerprint is sufficient to resume the per-grant operation.
-        provider_hash = hashlib.sha256(provider_account_id.encode("utf-8")).hexdigest()
+    for (provider, provider_account_id), group in grouped.items():
+        # Preserve the historical YouTube journal fingerprint for in-flight jobs.
+        fingerprint_input = provider_account_id if provider == "youtube" else f"{provider}:{provider_account_id}"
+        provider_hash = hashlib.sha256(fingerprint_input.encode("utf-8")).hexdigest()
         state = admin.get_account_deletion_oauth_state(user_id, provider_hash)
         if state not in {None, "revocation_started", "revoked", "preserved", "not_required"}:
             raise AccountDeletionBlocked("oauth_cleanup", "oauth_cleanup_state_invalid")
 
         if state not in {"revoked", "preserved", "not_required"}:
             active = [row for row in group if row.get("status") == "connected"]
-            if state is None and active and admin.has_active_connection_outside_workspaces(provider_account_id, deleting):
+            if state is None and active and admin.has_active_connection_outside_workspaces(
+                provider_account_id, deleting, provider=provider
+            ):
                 recorded = admin.set_account_deletion_oauth_state(user_id, provider_hash, "preserved")
                 if recorded != "preserved":
-                    raise SupabaseAdminError("Shared Google grant preservation could not be durably recorded")
+                    raise SupabaseAdminError("Shared social grant preservation could not be durably recorded")
                 state = "preserved"
             elif state is None and not active:
                 recorded = admin.set_account_deletion_oauth_state(user_id, provider_hash, "not_required")
                 if recorded != "not_required":
-                    raise SupabaseAdminError("Unused Google grant state could not be durably recorded")
+                    raise SupabaseAdminError("Unused social grant state could not be durably recorded")
                 state = "not_required"
             else:
-                # Persist intent before contacting Google. If the worker dies
-                # after Google revokes the grant but before recording success,
-                # the next attempt repeats the same revoke call. Only HTTP 200
-                # confirms revocation; HTTP 400 is an error and remains retryable.
                 if state is None:
                     recorded = admin.set_account_deletion_oauth_state(user_id, provider_hash, "revocation_started")
                     if recorded != "revocation_started":
-                        raise SupabaseAdminError("Google revocation intent could not be durably recorded")
+                        raise SupabaseAdminError("Social grant revocation intent could not be durably recorded")
                 credentials = []
                 for connection in group:
                     credential = admin.get_credential(str(connection["connection_id"]))
@@ -152,27 +161,54 @@ def _cleanup_oauth(admin, user_id, deleting, oauth_config_factory, decrypt_token
                         credentials.append((connection, credential))
                 if not credentials:
                     raise AccountDeletionBlocked("oauth_cleanup", "connected_oauth_credential_missing")
-                if oauth_config is None:
-                    oauth_config = oauth_config_factory()
-                refresh_token = None
-                for _connection, credential in credentials:
+
+                decrypted = []
+                for connection, credential in credentials:
                     try:
-                        refresh_token = decrypt_token(
+                        token = decrypt_token(
                             credential["encrypted_refresh_token_hex"],
                             credential["encryption_key_version"],
                         )
-                        break
+                        if token and all(existing[2] != token for existing in decrypted):
+                            decrypted.append((connection, credential, token))
                     except TokenVaultError:
                         continue
-                if not refresh_token:
+                if not decrypted:
                     raise AccountDeletionBlocked("oauth_cleanup", "oauth_refresh_token_unavailable")
-                oauth_config.revoke_refresh_token(refresh_token)
+
+                if provider == "youtube":
+                    oauth = oauth_config_factory()
+                    for _connection, _credential, refresh_token in decrypted:
+                        oauth.revoke_refresh_token(refresh_token)
+                else:
+                    oauth = (tiktok_oauth_config_factory or TikTokOAuthConfig.from_env)()
+                    for connection, credential, refresh_token in decrypted:
+                        try:
+                            token_data = oauth.refresh_access_token(refresh_token)
+                        except TikTokOAuthReauthRequired:
+                            # An invalid/expired/revoked refresh token cannot be used
+                            # to access this account; continue to any other stored grant.
+                            continue
+                        rotated_refresh = token_data.get("refresh_token") or refresh_token
+                        encrypted = encrypt_token(rotated_refresh)
+                        refresh_expires_in = max(60, int(token_data.get("refresh_expires_in") or 15552000))
+                        from datetime import datetime, timedelta, timezone
+                        expires_at = (datetime.now(timezone.utc) + timedelta(seconds=refresh_expires_in)).isoformat()
+                        scopes = [scope.strip() for scope in (token_data.get("scope") or "").split(",") if scope.strip()]
+                        admin.upsert_credential(
+                            str(connection["connection_id"]),
+                            connection["workspace_id"],
+                            encrypted["ciphertext_hex"],
+                            encrypted["key_version"],
+                            scopes,
+                            expires_at,
+                        )
+                        oauth.revoke_access_token(token_data["access_token"])
                 recorded = admin.set_account_deletion_oauth_state(user_id, provider_hash, "revoked")
                 if recorded != "revoked":
-                    raise SupabaseAdminError("Google revocation outcome could not be durably recorded")
+                    raise SupabaseAdminError("Social grant revocation outcome could not be durably recorded")
 
-        # Credentials are removed only after a durable terminal state. Repeated
-        # deletes are safe when a previous attempt stopped part-way through.
+        # Credentials are removed only after a durable terminal state.
         for connection in group:
             admin.delete_credential(str(connection["connection_id"]))
 
@@ -194,6 +230,8 @@ def process_one_account_deletion(
     worker_id,
     oauth_config_factory=None,
     decrypt_token=decrypt_refresh_token,
+    tiktok_oauth_config_factory=None,
+    encrypt_token=encrypt_refresh_token,
     lease_seconds=900,
     retry_seconds=120,
 ):
@@ -249,6 +287,8 @@ def process_one_account_deletion(
             deleting,
             oauth_config_factory or GoogleOAuthConfig.from_env,
             decrypt_token,
+            tiktok_oauth_config_factory=tiktok_oauth_config_factory,
+            encrypt_token=encrypt_token,
         )
 
         ensure_lease()
@@ -313,7 +353,7 @@ def process_one_account_deletion(
         )
         logger.warning("Account deletion will retry at %s (%s)", exc.phase, exc.code)
         return True
-    except (SupabaseAdminError, GoogleOAuthError, TokenVaultError) as exc:
+    except (SupabaseAdminError, GoogleOAuthError, TikTokOAuthError, TokenVaultError) as exc:
         code = type(exc).__name__.lower()
         try:
             admin.update_account_deletion_request(

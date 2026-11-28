@@ -497,7 +497,7 @@ def hosted_account_deletion_preflight(request: Request):
             for key in (item.get("storage_key"), item.get("thumbnail_key"))
             if key
         }
-        connections = admin.list_youtube_connections_for_workspaces(deletion_workspace_ids)
+        connections = admin.list_social_connections_for_workspaces(deletion_workspace_ids)
         credential_cleanup_count = len(connections)
         provider_grants_to_revoke = 0
         shared_provider_grants_preserved = 0
@@ -505,20 +505,23 @@ def hosted_account_deletion_preflight(request: Request):
         for connection in connections:
             if connection.get("status") != "connected":
                 continue
+            provider = connection.get("provider") or "youtube"
             provider_account_id = connection.get("provider_account_id")
-            if not provider_account_id or provider_account_id in seen_provider_accounts:
+            provider_key = (provider, provider_account_id)
+            if not provider_account_id or provider_key in seen_provider_accounts:
                 continue
-            seen_provider_accounts.add(provider_account_id)
+            seen_provider_accounts.add(provider_key)
             if admin.has_active_connection_outside_workspaces(
                 provider_account_id,
                 deletion_workspace_ids,
+                provider=provider,
             ):
                 shared_provider_grants_preserved += 1
             else:
                 provider_grants_to_revoke += 1
                 if not admin.get_credential(str(connection.get("connection_id"))):
                     blockers.append({
-                        "reason": "A connected YouTube account has no stored refresh credential to revoke safely.",
+                        "reason": f"A connected {provider} account has no stored refresh credential to revoke safely.",
                         "connection_id": connection.get("connection_id"),
                     })
         bucket_counts = {}

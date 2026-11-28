@@ -77,7 +77,7 @@ class AccountDeletionWorkerTests(unittest.TestCase):
 
     def test_oauth_grant_used_by_other_workspace_is_not_revoked(self):
         admin = Mock()
-        admin.list_youtube_connections_for_workspaces.return_value = [{
+        admin.list_social_connections_for_workspaces.return_value = [{
             "connection_id": "55555555-5555-4555-8555-555555555555",
             "provider_account_id": "google-account",
             "status": "connected",
@@ -91,7 +91,7 @@ class AccountDeletionWorkerTests(unittest.TestCase):
 
     def test_oauth_grant_without_external_workspace_is_revoked_and_credentials_removed(self):
         admin = Mock()
-        admin.list_youtube_connections_for_workspaces.return_value = [
+        admin.list_social_connections_for_workspaces.return_value = [
             {"connection_id": "55555555-5555-4555-8555-555555555555", "provider_account_id": "google-account", "status": "connected"},
             {"connection_id": "66666666-6666-4666-8666-666666666666", "provider_account_id": "google-account", "status": "connected"},
         ]
@@ -109,9 +109,41 @@ class AccountDeletionWorkerTests(unittest.TestCase):
         oauth.revoke_refresh_token.assert_called_once_with("refresh-token")
         self.assertEqual(admin.delete_credential.call_count, 2)
 
+    def test_tiktok_oauth_cleanup_rotates_refresh_token_before_revoking_and_removes_credential(self):
+        admin = Mock()
+        admin.list_social_connections_for_workspaces.return_value = [{
+            "connection_id": "55555555-5555-4555-8555-555555555555",
+            "workspace_id": SOLE,
+            "provider": "tiktok",
+            "provider_account_id": "tiktok-open-id",
+            "status": "connected",
+        }]
+        admin.get_account_deletion_oauth_state.return_value = None
+        admin.set_account_deletion_oauth_state.side_effect = ["revocation_started", "revoked"]
+        admin.get_credential.return_value = {
+            "encrypted_refresh_token_hex": "ciphertext",
+            "encryption_key_version": "v1",
+        }
+        oauth = Mock()
+        oauth.refresh_access_token.return_value = {
+            "access_token": "fresh-access",
+            "refresh_token": "rotated-refresh",
+            "refresh_expires_in": 15552000,
+            "scope": "user.info.basic",
+        }
+        encrypt = Mock(return_value={"ciphertext_hex": "rotated-ciphertext", "key_version": "v2"})
+        _cleanup_oauth(
+            admin, USER, [SOLE], oauth_config_factory=Mock(), decrypt_token=Mock(return_value="old-refresh"),
+            tiktok_oauth_config_factory=Mock(return_value=oauth), encrypt_token=encrypt,
+        )
+        admin.upsert_credential.assert_called_once()
+        self.assertEqual(admin.upsert_credential.call_args.args[2], "rotated-ciphertext")
+        oauth.revoke_access_token.assert_called_once_with("fresh-access")
+        admin.delete_credential.assert_called_once()
+
     def test_oauth_revocation_state_makes_retry_skip_completed_provider_call(self):
         admin = Mock()
-        admin.list_youtube_connections_for_workspaces.return_value = [{
+        admin.list_social_connections_for_workspaces.return_value = [{
             "connection_id": "55555555-5555-4555-8555-555555555555",
             "provider_account_id": "google-account",
             "status": "connected",
@@ -148,7 +180,7 @@ class AccountDeletionWorkerTests(unittest.TestCase):
         storage_object = {"bucket_id": "nexus-shorts", "name": f"{SOLE}/jobs/video.mp4"}
         admin.list_account_deletion_storage_objects.side_effect = [[storage_object], [storage_object], [], []]
         admin.list_account_personal_gallery_images.return_value = []
-        admin.list_youtube_connections_for_workspaces.return_value = [{
+        admin.list_social_connections_for_workspaces.return_value = [{
             "connection_id": "55555555-5555-4555-8555-555555555555",
             "provider_account_id": "google-account",
             "status": "connected",
@@ -190,7 +222,7 @@ class AccountDeletionWorkerTests(unittest.TestCase):
 
     def test_oauth_cleanup_fails_closed_when_revocation_intent_is_not_persisted(self):
         admin = Mock()
-        admin.list_youtube_connections_for_workspaces.return_value = [{
+        admin.list_social_connections_for_workspaces.return_value = [{
             "connection_id": "55555555-5555-4555-8555-555555555555",
             "provider_account_id": "google-account",
             "status": "connected",
@@ -209,7 +241,7 @@ class AccountDeletionWorkerTests(unittest.TestCase):
 
     def test_oauth_cleanup_tries_another_credential_when_one_ciphertext_is_invalid(self):
         admin = Mock()
-        admin.list_youtube_connections_for_workspaces.return_value = [
+        admin.list_social_connections_for_workspaces.return_value = [
             {"connection_id": "55555555-5555-4555-8555-555555555555", "provider_account_id": "google-account", "status": "connected"},
             {"connection_id": "66666666-6666-4666-8666-666666666666", "provider_account_id": "google-account", "status": "connected"},
         ]
@@ -254,7 +286,7 @@ class AccountDeletionWorkerTests(unittest.TestCase):
         admin.list_account_deletion_active_leases.return_value = []
         admin.list_account_deletion_storage_objects.return_value = []
         admin.list_account_personal_gallery_images.return_value = []
-        admin.list_youtube_connections_for_workspaces.return_value = []
+        admin.list_social_connections_for_workspaces.return_value = []
         admin.account_user_reference_counts.return_value = {}
         admin.count_account_private_user_rows.return_value = {}
         admin.update_account_deletion_request.return_value = True
@@ -283,7 +315,7 @@ class AccountDeletionWorkerTests(unittest.TestCase):
             "bucket_id": "nexus-shorts", "name": f"{SOLE}/jobs/video.mp4",
         }]
         admin.list_account_personal_gallery_images.return_value = []
-        admin.list_youtube_connections_for_workspaces.return_value = []
+        admin.list_social_connections_for_workspaces.return_value = []
         admin.delete_storage_object_in_bucket.side_effect = SupabaseAdminError("temporary storage failure")
         admin.update_account_deletion_request.return_value = True
 
@@ -311,7 +343,7 @@ class AccountDeletionWorkerTests(unittest.TestCase):
         admin.list_account_deletion_active_leases.return_value = []
         admin.list_account_deletion_storage_objects.return_value = []
         admin.list_account_personal_gallery_images.return_value = []
-        admin.list_youtube_connections_for_workspaces.return_value = [{
+        admin.list_social_connections_for_workspaces.return_value = [{
             "connection_id": "55555555-5555-4555-8555-555555555555",
             "provider_account_id": "google-account",
             "status": "connected",

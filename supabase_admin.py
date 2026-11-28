@@ -785,13 +785,32 @@ class SupabaseAdminRestClient:
             params={
                 "select": "connection_id,workspace_id,provider,provider_account_id,status",
                 "workspace_id": "in.(" + ",".join(ids) + ")",
-                "provider": f"eq.{provider}",
+                "provider": "eq.youtube",
                 "order": "created_at.asc",
             },
         ) or []
 
-    def has_active_connection_outside_workspaces(self, provider_account_id, workspace_ids):
+    def list_social_connections_for_workspaces(self, workspace_ids):
+        """List provider-neutral social connection metadata without token material."""
+        ids = [str(value) for value in workspace_ids]
+        if len(ids) > 100 or any(not re.fullmatch(r"wsp_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", value) for value in ids):
+            raise ValueError("Workspace connection inventory request is invalid")
+        if not ids:
+            return []
+        return self._call(
+            "GET",
+            "youtube_connections",
+            params={
+                "select": "connection_id,workspace_id,provider,provider_account_id,status",
+                "workspace_id": "in.(" + ",".join(ids) + ")",
+                "order": "created_at.asc",
+            },
+        ) or []
+
+    def has_active_connection_outside_workspaces(self, provider_account_id, workspace_ids, provider="youtube"):
         """Check whether a provider grant is still used outside workspaces being deleted."""
+        if provider not in {"youtube", "tiktok", "instagram", "facebook", "linkedin"}:
+            raise ValueError("Unsupported social provider")
         ids = [str(value) for value in workspace_ids]
         if len(ids) > 100 or any(not re.fullmatch(r"wsp_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", value) for value in ids):
             raise ValueError("Workspace connection inventory request is invalid")
@@ -799,7 +818,7 @@ class SupabaseAdminRestClient:
             return False
         params = {
             "select": "connection_id",
-            "provider": "eq.youtube",
+            "provider": f"eq.{provider}",
             "provider_account_id": f"eq.{provider_account_id}",
             "status": "eq.connected",
             "limit": "1",
@@ -817,7 +836,7 @@ class SupabaseAdminRestClient:
             "youtube_connections",
             params={
                 "select": "connection_id",
-                "provider": "eq.youtube",
+                "provider": f"eq.{provider}",
                 "provider_account_id": f"eq.{provider_account_id}",
                 "status": "eq.connected",
                 "connection_id": f"neq.{connection_id}",
