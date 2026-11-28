@@ -8,7 +8,7 @@
 **CODE + CI VERIFIED · LIVE SECURITY / PROVIDER / DEVICE E2E PENDING**
 
 - 작업 브랜치: `feat/nexus-user-onboarding-web-oauth-20261127`
-- 통합 PR: [PR #11](https://github.com/justinhblee-prog/nexus_ai/pull/11) — **Draft / Open / Unmerged**. 최신 코드 head `9a1543de7823356ea9ffc9a2636f9cff2fe740fb`; 이 상태 문서 갱신 커밋은 `42f34ad5ab7786e7c949746cffc78b96c3cfac5c`.
+- 통합 PR: [PR #11](https://github.com/justinhblee-prog/nexus_ai/pull/11) — **Draft / Open / Unmerged**. 최신 코드 head `9a1543de7823356ea9ffc9a2636f9cff2fe740fb`; 상태 문서 갱신 커밋은 `42f34ad5ab7786e7c949746cffc78b96c3cfac5c` 및 `a83d028ef3b0ff300c68421adca7fc2e4165a7d7`.
 - 최신 애플리케이션 코드 head CI: [UI/runtime run 46119395215](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46119395215) 성공 — **344 tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, Playwright interaction smoke.
 - 동일 코드 head의 [Supabase migration run 46119395208](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46119395208) 성공 — 전체 repository migrations 빈 격리 Supabase에 replay, privileged ACL operation assertion, schema lint PASS.
 - Supabase `ai_studio` (`lmdhgqfqvfyymfrovaty`)는 ACTIVE_HEALTHY, PostgreSQL 17.11, Seoul region, Free plan. Live migration ledger는 repository와 일치하는 **23개**이며 `20261128100000_nexus_topic_queue_user_fk_index` 포함.
