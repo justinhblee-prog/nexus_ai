@@ -43,9 +43,13 @@ class NexusAnonPrivilegeHardeningMigrationTests(unittest.TestCase):
         self.assertIn("alter default privileges for role supabase_admin in schema public", admin_sql)
         self.assertIn("alter default privileges for role supabase_admin in schema public", admin_sql)
         self.assertIn("revoke all on sequences from anon", admin_sql)
+        self.assertIn("alter default privileges for role postgres in schema public", admin_sql)
+        self.assertIn("revoke execute on functions from anon", admin_sql)
+        self.assertEqual(admin_sql.count("revoke execute on functions from anon"), 2)
         self.assertIn("revoke all on table storage.objects from anon", admin_sql)
         self.assertIn("set role supabase_admin", admin_sql)
         self.assertIn("partially complete", admin_doc)
+        self.assertIn("function", admin_doc)
 
     def test_authenticated_and_service_role_grants_are_not_revoked(self):
         self.assertNotIn("from authenticated", self.sql)
