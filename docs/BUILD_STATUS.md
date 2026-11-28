@@ -306,3 +306,17 @@
 - The live operation only added the covering index and migration-ledger entry; no tenant data, user records, workers, OAuth credentials, or upload state were modified.
 - Latest verified Vercel Preview for the exact head: READY at `https://neural-network-pz89js5n1-justinhblee-9540.vercel.app`. Preview runtime query for error/fatal records returned no logs in the checked window.
 - PR #11 remains Draft/Open/Unmerged. Production deployment, main writes, public uploads, and paid services remain prohibited.
+
+## Current live security and tenant recheck — 2026-11-28 (read-only)
+
+This section supersedes older live-state counts and advisor snapshots above. Checked against the active Seoul project `ai_studio` after the 23-entry migration ledger was present.
+
+- Migration ledger: **23 entries**, including `20261128100000_nexus_topic_queue_user_fk_index`. Live performance advisor reports no unindexed foreign keys. Remaining unused-index notices are informational; no indexes were dropped.
+- Live row counts: **1 Auth user, 1 workspace, 1 workspace membership**; 0 Shorts channels, 0 Shorts jobs, 0 YouTube connections, 0 saved topics, 0 shared trend signals, and 0 trend scan records. No test users or tenant data were created during this recheck.
+- Health advisor: **0 findings**.
+- Security advisor: 11 INFO findings for private service-only tables with RLS and no client policies; 2 WARN findings for authenticated-callable SECURITY DEFINER functions; and 1 WARN finding because Supabase Auth leaked-password protection is disabled.
+- Reviewed both SECURITY DEFINER function bodies read-only. `transfer_workspace_ownership` checks `auth.uid()`, current workspace ownership, the existing admin membership of the new owner, locks the relevant rows, and verifies both membership updates. `is_account_deletion_tombstoned` rejects a null authenticated user and only checks the tombstone for `auth.uid()`. These warnings are intentional application RPCs with in-function authorization; do not revoke their authenticated execution without replacing their call paths.
+- Direct anon privileges on `storage.objects` remain: SELECT/INSERT/UPDATE/DELETE all currently evaluate true. No anonymous Storage policy was observed in the previous policy audit; the bucket remains private and RLS enabled. This is still defense-in-depth work, not proof of anonymous object access.
+- Public-schema default ACL inspection still shows anon grants owned by both `postgres` and `supabase_admin` (including table/sequence/function defaults). The documented privileged operation cannot be run from the ordinary database role. No role elevation, credential retrieval, or ACL mutation was attempted.
+- The hosted app still needs the separate external activation gates recorded above: secure Supabase Auth configuration (including leaked-password protection), administrator-controlled ACL cleanup, Preview SSO/OAuth-origin alignment, real Google consent/revocation, a second real account for tenant isolation, a real test channel for private-only upload, and Windows Docker/FFmpeg/backup-recovery verification.
+- No live data/schema write, worker activation, account deletion, OAuth change, upload, Production deployment, merge, main-branch write, or paid service use occurred during this read-only recheck.
