@@ -20,7 +20,6 @@ PLATFORM_DEFINITIONS = (
     {
         "id": "tiktok",
         "label": "TikTok",
-        "detail": "TikTok 계정 인증과 Content Posting API 권한·앱 검증을 준비하고 있습니다.",
         "detail": "계정 연결을 지원합니다. 실제 게시에는 video.publish 권한 승인과 TikTok 앱 심사가 추가로 필요합니다.",
         "capabilities": ["account_connect", "profile"],
         "adapter_ready": True,
