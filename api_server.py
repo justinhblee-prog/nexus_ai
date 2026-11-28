@@ -842,14 +842,6 @@ def hosted_workspace_analytics(workspace_id: str, request: Request, refresh: boo
             "status": "eq.connected",
             "order": "created_at.asc",
         }) or []
-        channels = client.select("shorts_channels", {
-            "select": "channel_id,provider_channel_id,display_name,connection_id,is_active",
-            "workspace_id": f"eq.{workspace_id}",
-            "platform": "eq.youtube",
-            "is_active": "eq.true",
-            "order": "created_at.asc",
-        }) or []
-
         today = date.today()
         end_date = today - timedelta(days=2)
         start_date = end_date - timedelta(days=27)
@@ -893,27 +885,27 @@ def hosted_workspace_analytics(workspace_id: str, request: Request, refresh: boo
                     "status": "scope_required",
                 })
                 continue
-            credential = admin.get_credential(connection_id)
-            if not credential:
-                channel_results.append({
-                    "connection_id": connection_id,
-                    "display_name": connection.get("display_name") or "YouTube",
-                    "status": "reauth_required",
-                })
-                continue
-            refresh_token = decrypt_refresh_token(
-                credential["encrypted_refresh_token_hex"],
-                credential["encryption_key_version"],
-            )
-            credentials = Credentials(
-                token=None,
-                refresh_token=refresh_token,
-                token_uri="https://oauth2.googleapis.com/token",
-                client_id=config.client_id,
-                client_secret=config.client_secret,
-                scopes=sorted(required_scopes),
-            )
             try:
+                credential = admin.get_credential(connection_id)
+                if not credential:
+                    channel_results.append({
+                        "connection_id": connection_id,
+                        "display_name": connection.get("display_name") or "YouTube",
+                        "status": "reauth_required",
+                    })
+                    continue
+                refresh_token = decrypt_refresh_token(
+                    credential["encrypted_refresh_token_hex"],
+                    credential["encryption_key_version"],
+                )
+                credentials = Credentials(
+                    token=None,
+                    refresh_token=refresh_token,
+                    token_uri="https://oauth2.googleapis.com/token",
+                    client_id=config.client_id,
+                    client_secret=config.client_secret,
+                    scopes=sorted(required_scopes),
+                )
                 credentials.refresh(GoogleRequest())
                 analytics = build("youtubeAnalytics", "v2", credentials=credentials, cache_discovery=False)
                 youtube = build("youtube", "v3", credentials=credentials, cache_discovery=False)
@@ -964,7 +956,7 @@ def hosted_workspace_analytics(workspace_id: str, request: Request, refresh: boo
         connected_count = sum(1 for item in channel_results if item["status"] == "connected")
         failed_count = len(channel_results) - connected_count
         if not connected_count:
-            status = "scope_required" if any(x["status"] == "scope_required" for x in channel_results) else "error"
+            status = ("scope_required" if any(x["status"] == "scope_required" for x in channel_results) else "reauth_required" if any(x["status"] == "reauth_required" for x in channel_results) else "error")
             return {
                 "status": status, "period_days": 28,
                 "period_start": start_text, "period_end": end_text,
