@@ -21,7 +21,7 @@ It intentionally does **not** claim to change defaults owned by `supabase_admin`
 ## Privileged follow-up SQL
 
 The exact privileged SQL is maintained in `supabase/operations/nexus_admin_anon_acl_hardening.sql`. It:
-- removes future `anon` table and sequence defaults for `supabase_admin` in `public`;
+- removes future `anon` table and sequence defaults for both `postgres` and `supabase_admin` in `public`;
 - removes future `anon` function-execution defaults for both `postgres` and `supabase_admin` in `public`;
 - revokes current `anon` table privileges from `storage.objects`.
 
@@ -56,4 +56,4 @@ Expected result after the privileged operation:
 
 This follow-up has **not** been executed against the live project. The isolated local CI stack executes the operation script as its local `supabase_admin` role and verifies the resulting table/default ACLs. No live database password or privileged role credential was retrieved, changed, or placed in GitHub/ChatGPT. It requires an administrator-controlled connection with the required role; if the project owner cannot obtain that connection through supported Supabase controls, request Supabase platform support rather than weakening role boundaries or changing credentials speculatively.
 
-Until this is complete, all 14 public tenant/legacy tables are covered by the regular migration and the `postgres` defaults are hardened, but future tables, sequences, and functions created by `supabase_admin` or functions created by `postgres` may still inherit their existing `anon` defaults, and `storage.objects` retains direct `anon` grants. Storage currently has only private buckets and RLS enabled with no `anon` object policies, so no anonymous object access was observed; the remaining direct grant is defense-in-depth. Treat the overall anonymous-privilege hardening as **partially complete**.
+Until this is complete, all 14 public tenant/legacy tables are covered by the regular migration and the `postgres` defaults are hardened, but future tables, sequences, and functions created by either `postgres` or `supabase_admin` may still inherit their existing `anon` defaults, and `storage.objects` retains direct `anon` grants. Storage currently has only private buckets and RLS enabled with no `anon` object policies, so no anonymous object access was observed; the remaining direct grant is defense-in-depth. Treat the overall anonymous-privilege hardening as **partially complete**.
