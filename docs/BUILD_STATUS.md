@@ -262,3 +262,17 @@
 - The Playwright workflow still exercises the static HTML fallback; the hosted route checks above are direct Preview HTTP smoke checks, not authenticated browser E2E.
 - PR #11 remains Draft/Open/unmerged. No Production deploy, live Supabase migration, live DB write, OAuth provider change, worker activation, or public YouTube upload was performed.
 - Remaining release gates are unchanged: approved live migration window (including administrator-only ACL follow-up), Preview/Google OAuth callback URL alignment and consent test, real two-account tenant isolation E2E, real test-channel Private upload E2E, and user Windows local runtime/backup-recovery verification.
+
+
+
+### Hosted FastAPI import guard, latest Preview, and integration lineage — 2026-11-28
+
+- Added a subprocess regression test that imports the exact Vercel entrypoint (`main.py`) with the hosted-mode guard and asserts that the root, signup, and hosted auth-config routes are registered. This catches missing runtime dependencies before deployment.
+- Exact code head `ac35f9240a9f4d0051fe7a01d2a122c5f2262d3e` passed:
+  - [NEXUS UI/runtime run 46086568788](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46086568788): **344 Python tests PASS**, Docker Compose validation, Python compile, browser JS syntax, and Playwright UI interaction smoke.
+  - [Supabase local migration run 46086569876](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46086569876): all **22 migrations PASS** from an empty local database; admin ACL hardening assertions PASS; Supabase DB lint reports no schema errors.
+- Latest verified Preview for this code head: `dpl_D5w9DmMfuRfmpAkTCXprBHADMDU7`, READY, Preview only. `/`, `/signup`, `/api/hosted/auth-config`, and `/openapi.json` each returned HTTP 200. The Preview build uses Python 3.12 and installs the runtime dependencies from `pyproject.toml`. No Production deploy was made.
+- Integration lineage audit (read-only): PR #9 is an ancestor of PR #10 (PR #10 is 5 commits ahead, 0 behind). PR #8's five changed files have identical Git blob SHAs on PR #10, despite the two branches' different commit histories. PR #11 is based directly on PR #10. Therefore PR #8/#9 functional content is already present in the PR #10 → PR #11 stack; no cherry-pick or merge is required. All PRs remain Draft/Open/unmerged.
+- Preview environment audit used metadata only (no decryption): eight variables are scoped to the PR #11 Preview branch; `hiddenProductionEnvCount=0`. Vercel Preview SSO protection remains `all_except_custom_domains`.
+- External OAuth remains a separate gate: the existing Google Web OAuth client is configured, but the Preview callback/app URL metadata still refers to an earlier Preview origin rather than the current branch alias. With Preview SSO protection enabled, a real Google consent/callback round-trip has not been verified. No Google Cloud OAuth allowlist, Vercel SSO policy, or secret value was changed.
+- Still not performed: live Supabase migrations, synthetic or real account creation, two-account tenant-isolation E2E, real YouTube channel consent/private-upload E2E, hosted worker activation, Production deployment, or local Windows backup/restore verification. These require explicit approval, a real user/test channel, or the user's local machine.
