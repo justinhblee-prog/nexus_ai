@@ -288,3 +288,10 @@
 - Remaining ACL work is not complete: no direct anon grants remain on the 14 public tenant/legacy tables, but anon still has direct privileges on storage.objects; supabase_admin retains default anon grants for public tables/sequences, and postgres retains sequence/function default grants. The documented privileged operation in supabase/operations/nexus_admin_anon_acl_hardening.sql cannot be run through the normal postgres MCP session; it requires a secure administrator/superuser connection. No role elevation, password retrieval, or credential change was attempted.
 - No account-deletion request was enqueued, no user data was modified, and no worker/collector was activated. Hosted render/upload/account-deletion/trend workers remain disabled by default. No Production deployment, Google OAuth setting change, YouTube upload, merge, main-branch write, or paid service use occurred.
 - Runtime release gates remain: Preview SSO currently intercepts protected session/OAuth routes; the Google OAuth callback/app origin still needs alignment to the active Preview alias and a real consent round-trip; two real accounts are needed for tenant-isolation E2E; a real test channel is needed for private-upload E2E; Windows local Docker/FFmpeg and backup/restore must be tested on the user's machine.
+
+
+## Topic queue FK advisor follow-up — 2026-11-28
+
+- The live performance advisor identified one remaining unindexed foreign key: `public.shorts_topic_queue.user_id`. The existing `(workspace_id, user_id, created_at DESC, topic_id DESC)` index does not cover lookups by `user_id` alone because `workspace_id` is its leading column.
+- Added additive migration `20261128100000_nexus_topic_queue_user_fk_index.sql` with `idx_shorts_topic_queue_user_id` to cover the exact FK column. This is a PR-only migration pending CI validation; it has not been applied to the live Supabase project.
+- The 42 unused-index notices remain informational and are not removed without workload evidence. No live data or schema was changed by this follow-up.
