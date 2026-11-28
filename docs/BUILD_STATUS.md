@@ -8,11 +8,11 @@
 **CODE + CI VERIFIED · LIVE SECURITY / PROVIDER / DEVICE E2E PENDING**
 
 - 작업 브랜치: `feat/nexus-user-onboarding-web-oauth-20261127`
-- 통합 PR: [PR #11](https://github.com/justinhblee-prog/nexus_ai/pull/11) — **Draft / Open / Unmerged**. 코드·ACL hardening 검증 대상 commit `dbadc457396e307b1e3c650d631e9c261b8eab18`; Hosted app runtime source는 `9a1543de7823356ea9ffc9a2636f9cff2fe740fb`이며 이후 변경은 SQL operation/test/workflow/docs에 한정.
-- 최신 [UI/runtime run #639](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46128287400) 성공 — **359 tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, Playwright interaction smoke.
-- 최신 [Supabase migration run #84](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46128287472) 성공 — 전체 migration replay, privileged ACL operation에서 `storage.objects` anon ACL **0**, `postgres`/`supabase_admin`의 public table/sequence/function anon default ACL **0**, `supabase db lint --fail-on error`에서 `No schema errors found`.
+- 통합 PR: [PR #11](https://github.com/justinhblee-prog/nexus_ai/pull/11) — **Draft / Open / Unmerged**. 코드·ACL hardening 검증 대상 commit `aa01181e15215f76b75b2564533e5b4de8fc6977`; Hosted app runtime source는 `9a1543de7823356ea9ffc9a2636f9cff2fe740fb`이며 이후 변경은 SQL operation/test/workflow/docs에 한정.
+- 최신 [UI/runtime run #640](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46128656522) 성공 — **359 tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, Playwright interaction smoke.
+- 최신 [Supabase migration run #85](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46128656549) 성공 — 전체 migration replay, privileged ACL operation에서 `storage.objects` anon ACL **0**, `postgres`/`supabase_admin`의 public table/sequence/function anon default ACL **0**, `supabase db lint --fail-on error`에서 `No schema errors found`.
 - Supabase `ai_studio` (`lmdhgqfqvfyymfrovaty`)는 ACTIVE_HEALTHY, PostgreSQL 17.11, Seoul region, Free plan. Live migration ledger는 **23개 적용** 상태이며 repository의 **24개 migration 중 1개** (`20261128110000_nexus_multi_platform_social_accounts.sql`)는 아직 live 미적용. 이 migration은 격리 CI에서 replay 검증했지만, live DDL은 별도 승인 전까지 적용하지 않음.
-- Live Preview: [NEXUS Preview](https://neural-network-git-feat-nexus-user-onbo-509390-justinhblee-9540.vercel.app/) — deployment `dpl_Ft3MKqS5KUJVKHanUTCMja7hC9sj`, branch head `dbadc457396e307b1e3c650d631e9c261b8eab18`, READY / Preview. Runtime source is unchanged from app-code head above. Production 배포는 없음.
+- Live Preview: [NEXUS Preview](https://neural-network-git-feat-nexus-user-onbo-509390-justinhblee-9540.vercel.app/) — deployment `dpl_33Kxvx5Yj4bMcaiAGyRYDnuvnBNK`, branch head `aa01181e15215f76b75b2564533e5b4de8fc6977`, READY / Preview. Runtime source is unchanged from app-code head above. Production 배포는 없음.
 - Issues #2 제작 파이프라인/큐, #3 QA·Human Approval·Private 업로드 안전성, #4 Discovery·Analytics·Operations API의 구현 내용은 PR #6 backend lineage와 PR #11 통합 코드에 반영되어 있다. 관련 issue comments 및 PR CI 증거를 기준으로 코드 범위를 검증한다.
 
 ### 코드 및 자동 검증 완료 범위
