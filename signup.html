@@ -39,8 +39,13 @@
     .platform-card p{margin:3px 0 0;font-size:12px;line-height:1.45}
     .platform-section-title{display:block;margin:14px 0 7px;color:var(--text);font-size:13px}
     .session{display:none;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-    .studio-navigation{grid-column:1/-1;display:flex;gap:7px;overflow-x:auto;padding:7px;border:1px solid var(--line);border-radius:13px;background:var(--inset);scrollbar-width:thin}
-    .studio-navigation button{flex:0 0 auto;border:1px solid transparent;border-radius:9px;background:transparent;color:var(--muted);padding:10px 13px;font:600 12px/1.2 inherit;cursor:pointer;white-space:nowrap}
+    .studio-shell{grid-column:1/-1;display:grid;grid-template-columns:220px minmax(0,1fr);gap:16px;align-items:start;min-width:0}
+    .studio-sidebar{position:sticky;top:18px;align-self:start;padding:14px;border:1px solid var(--line);border-radius:15px;background:var(--inset)}
+    .studio-brand{font-size:11px;font-weight:900;letter-spacing:.13em;color:var(--muted);padding:7px 10px 14px;border-bottom:1px solid var(--line);margin-bottom:10px}
+    .studio-navigation{display:grid;gap:5px}
+    .studio-navigation button{width:100%;text-align:left;border:1px solid transparent;border-radius:9px;background:transparent;color:var(--muted);padding:11px 12px;font:600 12px/1.2 inherit;cursor:pointer;white-space:nowrap}
+    .studio-navigation button[aria-current="page"]{background:var(--surface);border-color:var(--accent);color:var(--text)}
+    .studio-main{display:grid;gap:12px;min-width:0}
     .studio-navigation button[aria-current="page"]{background:var(--surface);border-color:var(--accent);color:var(--text)}
     .studio-section{grid-column:1/-1;display:grid;gap:12px;min-width:0}
     .studio-section[hidden]{display:none!important}
@@ -67,6 +72,7 @@
     :root[data-theme="coral"]{--bg:#211e1e;--surface:#2c2828;--inset:#373131;--line:#514544;--text:#fff5f1;--muted:#c4b0aa}
     :root[data-theme="violet"]{--bg:#111326;--surface:#191c35;--inset:#222746;--line:#393f69;--text:#f0f1ff;--muted:#a9afd2}
     :root[data-theme="ocean"] .primary,:root[data-theme="forest"] .primary,:root[data-theme="coral"] .primary,:root[data-theme="violet"] .primary{background:var(--accent);color:var(--bg)}
+    @media(max-width:900px){.studio-shell{grid-template-columns:1fr}.studio-sidebar{position:relative;top:auto;padding:10px}.studio-brand{display:none}.studio-navigation{display:flex;overflow-x:auto}.studio-navigation button{width:auto;flex:0 0 auto}}
     @media(max-width:760px){body[data-authenticated="true"]{padding:12px}.session{grid-template-columns:1fr}.appearance-controls{grid-template-columns:1fr 110px}.studio-metrics{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 
   </style>
@@ -125,7 +131,7 @@
           </select>
           <input id="studio-accent" type="color" value="#4d8dff" aria-label="강조 색상">
         </div>
-        <nav class="studio-navigation" aria-label="NEXUS 스튜디오 메뉴">
+        <div class="studio-shell"><aside class="studio-sidebar"><div class="studio-brand">NEXUS STUDIO PRO</div><nav class="studio-navigation" aria-label="NEXUS 스튜디오 메뉴">
           <button type="button" data-studio-view="dashboard" aria-current="page">대시보드</button>
           <button type="button" data-studio-view="discovery">Discovery</button>
           <button type="button" data-studio-view="studio">AI Content Studio</button>
@@ -133,7 +139,7 @@
           <button type="button" data-studio-view="publishing">Publishing</button>
           <button type="button" data-studio-view="analytics">Analytics</button>
           <button type="button" data-studio-view="operations">Operations</button>
-        </nav>
+        </nav></aside><main class="studio-main">
         <section class="studio-section" data-studio-section="dashboard">
         <div id="workspace" class="workspace">워크스페이스 정보를 확인하고 있습니다.</div>
         <div class="studio-metrics" aria-label="워크스페이스 실시간 현황">
@@ -211,8 +217,9 @@
             <button class="secondary" type="button" id="deletion-submit" disabled>계정 영구 삭제 요청</button>
           </div>
         </div>
-        <button class="secondary" type="button" id="signout">로그아웃</button>
         </section>
+        </main></div>
+        <button class="secondary" type="button" id="signout">로그아웃</button>
       </div>
       <div class="muted">현재는 계정·개인 워크스페이스 기반을 연결하는 단계입니다. 기존 단일 사용자 제작 API는 SaaS 테넌트 격리가 끝날 때까지 호스팅 모드에서 차단됩니다.</div>
     </section>
