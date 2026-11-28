@@ -42,7 +42,7 @@ JOIN pg_namespace n ON n.oid = d.defaclnamespace
 CROSS JOIN LATERAL aclexplode(d.defaclacl) a
 LEFT JOIN pg_roles grantee ON grantee.oid = a.grantee
 WHERE n.nspname = 'public'
-  AND owner.rolname = 'supabase_admin'
+  AND owner.rolname IN ('postgres', 'supabase_admin')
   AND grantee.rolname = 'anon'
   AND d.defaclobjtype IN ('r', 'S', 'f');
 ```
