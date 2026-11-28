@@ -8,7 +8,7 @@
   <style>
     :root{color-scheme:dark;--bg:#050811;--panel:#0b101d;--line:#202a3d;--muted:#91a0b8;--text:#f4f7fb;--blue:#4d8dff;--green:#39d6a0;--amber:#f4c16b}
     *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 20% 0%,#102044 0,transparent 42%),var(--bg);color:var(--text);font:15px/1.55 Pretendard,"Malgun Gothic",system-ui,sans-serif;display:grid;place-items:center;padding:24px}
-    .shell{width:min(100%,980px);display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:stretch}
+    .shell{width:min(100%,1440px);display:grid;grid-template-columns:minmax(0,1.1fr) minmax(420px,.9fr);gap:24px;align-items:stretch}
     .intro,.panel{background:rgba(11,16,29,.94);border:1px solid var(--line);border-radius:22px;padding:clamp(24px,4vw,40px);box-shadow:0 24px 80px #0005}
     .brand{display:flex;align-items:center;gap:12px;font-weight:800;letter-spacing:.08em}.mark{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(135deg,#2563eb,#06b6d4);font-weight:900}
     h1{font-size:clamp(30px,4vw,48px);line-height:1.12;letter-spacing:-.04em;margin:56px 0 18px}p{color:var(--muted);margin:0 0 18px}.features{display:grid;gap:12px;margin-top:32px}.feature{border:1px solid var(--line);border-radius:13px;padding:14px;background:#080e19}.feature b{display:block;font-size:14px;margin-bottom:3px}.feature span{font-size:13px;color:var(--muted)}
@@ -17,7 +17,7 @@
     .primary,.secondary{width:100%;border:0;border-radius:10px;padding:12px 14px;margin-top:18px;font:700 14px inherit;cursor:pointer}.primary{background:linear-gradient(100deg,#2563eb,#397eea);color:white}.secondary{background:#111a2b;color:#dce7fa;border:1px solid #263650;margin-top:10px}.primary:disabled,.secondary:disabled{opacity:.55;cursor:wait}
     .message{min-height:44px;margin-top:14px;padding:10px 12px;border:1px solid transparent;border-radius:10px;color:var(--muted);font-size:13px}.message[data-kind=success]{border-color:#1d654d;background:#0b241d;color:#8df0c7}.message[data-kind=error]{border-color:#713c43;background:#2a1419;color:#ffb3bd}.message[data-kind=info]{border-color:#344765;background:#111d31;color:#c6d9fb}
     .session{display:none;margin-top:18px;padding:16px;border:1px solid #245d4b;background:#0a201a;border-radius:12px}.session strong{color:#8df0c7}.studio-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:14px 0}.studio-metric{min-width:0;padding:12px;border:1px solid var(--line);border-radius:12px;background:#080e19}.studio-metric span{display:block;color:var(--muted);font-size:11px}.studio-metric strong{display:block;color:var(--text);font-size:22px;margin-top:4px}@media(max-width:520px){.studio-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}.workspace{margin-top:12px;padding-top:12px;border-top:1px solid #245d4b;color:#d6e9e1;font-size:13px}.workspace-select{margin-top:10px}.workspace-select select{width:100%;background:#060a14;border:1px solid #29364c;border-radius:10px;padding:11px;color:white;font:inherit}.muted{font-size:12px;color:var(--muted);margin-top:18px}.hidden{display:none!important}
-    @media(max-width:760px){body{padding:12px}.shell{grid-template-columns:1fr;gap:12px}.intro{padding:22px}.intro h1{margin:30px 0 14px}.features{grid-template-columns:1fr 1fr;margin-top:20px}.panel{padding:22px}}
+    @media(max-width:900px){body{padding:12px}.shell{grid-template-columns:1fr;gap:12px}.intro{padding:22px}.intro h1{margin:30px 0 14px}.features{grid-template-columns:1fr 1fr;margin-top:20px}.panel{padding:22px}}
     @media(max-width:420px){.features{grid-template-columns:1fr}}
 
     :root{--accent:#4d8dff;--surface:#0b101d;--inset:#060a14;--line:#202a3d;--muted:#91a0b8;--text:#f4f7fb}
@@ -36,7 +36,7 @@
     .session>#workspace-picker,.session>#connections,.session>#workspace-members-panel,.session>#connect-youtube,
     .session>.workspace,.session>#account-deletion-panel,.session>#signout{grid-column:1/-1}
     body[data-authenticated="true"]{display:block;padding:24px}
-    body[data-authenticated="true"] .shell{width:min(100%,1320px);grid-template-columns:1fr}
+    body[data-authenticated="true"] .shell{width:min(100%,1680px);grid-template-columns:1fr}
     body[data-authenticated="true"] .intro{display:none}
     body[data-authenticated="true"] .panel>.eyebrow,
     body[data-authenticated="true"] .panel>h2,
