@@ -36,5 +36,5 @@ class SocialPlatformCatalogTests(unittest.TestCase):
                 self.assertFalse(provider["connectable"])
 
 
-if not __name__ == "__main__":
+if __name__ == "__main__":
     unittest.main()

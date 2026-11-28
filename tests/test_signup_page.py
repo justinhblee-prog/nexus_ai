@@ -157,7 +157,7 @@ class HostedSignupPageContractTests(unittest.TestCase):
         self.assertIn('"/youtube/connections"', self.html)
         self.assertIn('"/youtube/connect"', self.html)
         self.assertIn('"/disconnect"', self.html)
-        self.assertIn("YouTube 채널 연결", self.html)
+        self.assertIn("YouTube 계정 추가", self.html)
         self.assertIn("authorization_url", self.html)
         self.assertIn('"/jobs"', self.html)
         self.assertIn('"/preview"', self.html)
