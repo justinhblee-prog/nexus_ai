@@ -52,8 +52,8 @@ jobs:
           PGPASSWORD=postgres psql \
             --host 127.0.0.1 --port 55432 --username supabase_admin --dbname postgres \
             --set ON_ERROR_STOP=1 --file supabase/operations/nexus_admin_anon_acl_hardening.sql
-          storage_anon_select="$(PGPASSWORD=postgres psql --host 127.0.0.1 --port 54322 --username supabase_admin --dbname postgres --tuples-only --no-align --command "SELECT has_table_privilege('anon', 'storage.objects', 'SELECT')")"
-          admin_default_anon_count="$(PGPASSWORD=postgres psql --host 127.0.0.1 --port 54322 --username supabase_admin --dbname postgres --tuples-only --no-align --command "SELECT count(*) FROM pg_default_acl d JOIN pg_roles r ON r.oid=d.defaclrole JOIN pg_namespace n ON n.oid=d.defaclnamespace CROSS JOIN LATERAL aclexplode(d.defaclacl) a LEFT JOIN pg_roles g ON g.oid=a.grantee WHERE r.rolname='supabase_admin' AND n.nspname='public' AND g.rolname='anon' AND d.defaclobjtype IN ('r','S')")"
+          storage_anon_select="$(PGPASSWORD=postgres psql --host 127.0.0.1 --port 55432 --username supabase_admin --dbname postgres --tuples-only --no-align --command "SELECT has_table_privilege('anon', 'storage.objects', 'SELECT')")"
+          admin_default_anon_count="$(PGPASSWORD=postgres psql --host 127.0.0.1 --port 55432 --username supabase_admin --dbname postgres --tuples-only --no-align --command "SELECT count(*) FROM pg_default_acl d JOIN pg_roles r ON r.oid=d.defaclrole JOIN pg_namespace n ON n.oid=d.defaclnamespace CROSS JOIN LATERAL aclexplode(d.defaclacl) a LEFT JOIN pg_roles g ON g.oid=a.grantee WHERE r.rolname='supabase_admin' AND n.nspname='public' AND g.rolname='anon' AND d.defaclobjtype IN ('r','S')")"
           echo "storage.objects anon SELECT after privileged cleanup: ${storage_anon_select}"
           echo "supabase_admin anon table/sequence default ACL entries after cleanup: ${admin_default_anon_count}"
           test "${storage_anon_select}" = "f"
