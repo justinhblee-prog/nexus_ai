@@ -10,6 +10,14 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public
 ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public
   REVOKE ALL ON SEQUENCES FROM anon;
 
+-- Remove anonymous EXECUTE on future public functions created by either
+-- privileged owner. Keep authenticated/service_role grants unchanged.
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+  REVOKE EXECUTE ON FUNCTIONS FROM anon;
+
+ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public
+  REVOKE EXECUTE ON FUNCTIONS FROM anon;
+
 REVOKE ALL ON TABLE storage.objects FROM anon;
 
 RESET ROLE;
