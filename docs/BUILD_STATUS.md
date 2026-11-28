@@ -244,3 +244,21 @@
 - Added tests for the exact server-side DELETE filter and for retaining failed-source data.
 - Exact application head `ccf24ee4808de05c738993d7b2b151c8d0ae8039` passed GitHub Actions [run 46039623628](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46039623628): **340 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, and Playwright browser interaction smoke.
 - Shared trend tables are still absent from the live project; their documented migration must be generated and linted locally before an approved live migration. The hosted trend worker remains disabled.
+
+
+
+### Vercel FastAPI runtime activation and hosted-route smoke — 2026-11-28
+
+- Root cause of the earlier Preview mismatch: the Vercel project had no framework preset, so Git deployments were published as static files; the existing `pyproject.toml` only contained `tool.vercel` metadata and did not declare Python runtime dependencies.
+- Added the standard root `main.py` entrypoint, retaining the hosted-auth guard through `vercel_entrypoint.py`; changed the Vercel entrypoint to `main:app`.
+- Set the Vercel project framework preset to `fastapi`. This changes the build preset only; no Production deployment was created.
+- Declared the hosted runtime dependencies in `pyproject.toml` (`fastapi`, `requests`, `PyJWT[crypto]`, and `cryptography`). The Preview build now reports Python 3.12, installs dependencies from `pyproject.toml`, compiles Python bytecode, and completes successfully.
+- Exact application/CI head: `04a6f10e71da405c5b0b357a3972d07283cb1131`.
+- Latest Preview deployment: `dpl_9e3X1w8XQBpz2bZDQZ8zTzuV58Vk`, READY, Preview, exact head above. Unique URL: `https://neural-network-oa5f57bjf-justinhblee-9540.vercel.app`; branch alias: `https://neural-network-git-feat-nexus-user-onbo-509390-justinhblee-9540.vercel.app`.
+- Hosted-route smoke on that Preview returned HTTP 200 for `/` (redirected to the account page), `/signup`, `/api/hosted/auth-config`, and `/openapi.json`. The auth-config response contains only the public Supabase URL and publishable key. No signup/login, Google consent, or live account creation was attempted; no synthetic Auth user was created.
+- GitHub Actions on the exact head passed:
+  - [UI/runtime validation run 46086192122](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46086192122): **343 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, and Playwright static UI interaction smoke.
+  - [Supabase local migration validation run 46086192155](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46086192155): all **22 repository migrations** replayed on an isolated empty local Supabase stack; privileged `supabase_admin` ACL cleanup verified (`storage.objects` anon SELECT = false; public default anon ACL entries = 0); `supabase db lint --fail-on error` reported `No schema errors found`.
+- The Playwright workflow still exercises the static HTML fallback; the hosted route checks above are direct Preview HTTP smoke checks, not authenticated browser E2E.
+- PR #11 remains Draft/Open/unmerged. No Production deploy, live Supabase migration, live DB write, OAuth provider change, worker activation, or public YouTube upload was performed.
+- Remaining release gates are unchanged: approved live migration window (including administrator-only ACL follow-up), Preview/Google OAuth callback URL alignment and consent test, real two-account tenant isolation E2E, real test-channel Private upload E2E, and user Windows local runtime/backup-recovery verification.
