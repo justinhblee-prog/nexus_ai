@@ -2101,6 +2101,8 @@ def serve_home():
     # Hosted SaaS users enter through the Supabase-authenticated workspace UI.
     # The legacy single-operator dashboard remains available only in local mode.
     if is_hosted_auth_enabled():
+        if os.path.exists("workspace.html"):
+            return FileResponse("workspace.html", media_type="text/html; charset=utf-8")
         return RedirectResponse(url="/signup", status_code=307)
     if os.path.exists("index.html"):
         return FileResponse("index.html")
