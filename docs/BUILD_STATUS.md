@@ -5,88 +5,56 @@
 
 ## 최신 Hosted SaaS 릴리스 상태
 
-**CODE + CI VERIFIED · LIVE ACTIVATION / USER E2E PENDING**
+**CODE + CI VERIFIED · LIVE SECURITY / PROVIDER / DEVICE E2E PENDING**
 
 - 작업 브랜치: `feat/nexus-user-onboarding-web-oauth-20261127`
-- PR #11 현재 상태: Draft / Open / Unmerged. [PR #11](https://github.com/justinhblee-prog/nexus_ai/pull/11)
-- 최신 app-code GitHub Actions [run 46089574359](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46046048384) 성공: **344 Python tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, Playwright browser interaction smoke.
-- 최신 Supabase local migration validation [run 46089574413](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46046048450) 성공: **22개 migration 전체(기존 ACS 5개 + NEXUS 17개)를 빈 local Supabase stack에 순서대로 적용**, privileged ACL script를 local `supabase_admin` 역할로 실행해 `storage.objects`의 anon 직접 ACL 항목 = 0 및 public default ACL anon table/sequence 항목 = 0 확인, `supabase db lint --fail-on error`에서 `No schema errors found`.
-- 기존 PR #1, #5, #6, #7, #8, #9, #10은 Draft/Open으로 보존. PR #5와 #7은 이후 통합 PR에서 기능이 이어진 과거 브랜치로 PR 대화에 상태를 기록함.
-- Supabase `ai_studio` (`lmdhgqfqvfyymfrovaty`)는 ACTIVE_HEALTHY, PostgreSQL 17.11, Seoul region, Free plan. Live migration history는 14개이며 아래 8개 후속 migration은 아직 적용하지 않음.
-- Live Supabase에는 Auth 사용자/workspace/Shorts tenant 데이터가 없고, `public.shorts_topic_queue`, `public.public_trend_signals`, `public.public_trend_scans` 테이블도 아직 없음. 합성 사용자/데이터는 생성하지 않음.
-- SaaS auth/workspace, trend reader/collector, topic queue API/UI, private render/review/upload, account-deletion 설계는 코드와 회귀 테스트에 포함됨. 실제 Google/YouTube 계정과 두 사용자 기반 E2E는 별도 검증 필요.
+- 통합 PR: [PR #11](https://github.com/justinhblee-prog/nexus_ai/pull/11) — **Draft / Open / Unmerged**. 최신 코드 head `9a1543de7823356ea9ffc9a2636f9cff2fe740fb`; 이 상태 문서 갱신 커밋은 `42f34ad5ab7786e7c949746cffc78b96c3cfac5c`.
+- 최신 애플리케이션 코드 head CI: [UI/runtime run 46119395215](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46119395215) 성공 — **344 tests PASS**, Docker Compose validation, Python compilation, browser JavaScript syntax, Playwright interaction smoke.
+- 동일 코드 head의 [Supabase migration run 46119395208](https://github.com/justinhblee-prog/nexus_ai/actions/runs/46119395208) 성공 — 전체 repository migrations 빈 격리 Supabase에 replay, privileged ACL operation assertion, schema lint PASS.
+- Supabase `ai_studio` (`lmdhgqfqvfyymfrovaty`)는 ACTIVE_HEALTHY, PostgreSQL 17.11, Seoul region, Free plan. Live migration ledger는 repository와 일치하는 **23개**이며 `20261128100000_nexus_topic_queue_user_fk_index` 포함.
+- Live Preview: [NEXUS Preview](https://neural-network-pm6pvlvjz-justinhblee-9540.vercel.app/) — deployment `dpl_8QMPLh5Zr7GMUvnFpfitY6VZtEa1`, exact app-code head `9a1543de7823356ea9ffc9a2636f9cff2fe740fb`, READY / Preview. 이후 `docs/BUILD_STATUS.md`만 변경되었으므로 app runtime source는 동일. Production 배포는 없음.
+- Issues #2 제작 파이프라인/큐, #3 QA·Human Approval·Private 업로드 안전성, #4 Discovery·Analytics·Operations API의 구현 내용은 PR #6 backend lineage와 PR #11 통합 코드에 반영되어 있다. 관련 issue comments 및 PR CI 증거를 기준으로 코드 범위를 검증한다.
 
-### 코드 및 CI 검증 완료 범위
+### 코드 및 자동 검증 완료 범위
 
-- Supabase Auth signup/login/password recovery 및 사용자별 workspace bootstrap, JWT 검증, tenant-scoped APIs.
-- Workspace RLS 기반 exact-count overview, job history, workspace 전환 stale-response 방지.
-- Owner/admin 전용 최종 승인과 conditional state update.
-- Vercel FastAPI entrypoint 분리. 로컬 Streamlit `app.py`는 유지하며 Hosted cold start는 로컬 SQLite/worker/scheduler를 시작하지 않음.
-- Google OAuth PKCE/one-time state, encrypted refresh-token vault, callback membership 재검증, channel discovery 및 disconnect lifecycle.
-- Private Storage, render/review/approval, private-only YouTube upload path, upload lease/checkpoint, account-deletion retry/checkpoint 코드 및 회귀 테스트.
-- 사용자·workspace scoped saved topic queue API/UI와 browser-local fallback. 서버 저장형 queue는 migration 적용 전까지 live에서 사용할 수 없음.
-- Hosted shared trend reader/collector 구현. Worker는 source별 최신 데이터 upsert 후 성공한 source만 오래된 행을 정리하며, 실패 source의 마지막 정상 데이터는 보존. 일일/주간 scan 실패는 health metadata를 게시하고 다른 period도 시도한 뒤 worker retry loop로 전달.
-- CLI-generated shared trend migration: `supabase/migrations/20261127172712_nexus_shared_public_trend_store.sql`.
-- 로컬 migration replay 중 발견한 SQL 오류를 수정함:
-  - `character_bundle_imports.user_id`는 composite primary key이므로 nullable로 바꾸지 않음. Auth 삭제 시 계정별 idempotency 기록은 FK cascade로 제거.
-  - account-deletion migration이 worker claim 함수를 다시 정의할 때 `ON CONFLICT (job_id)`가 PL/pgSQL 출력 변수와 모호해지는 문제를 named constraint `shorts_worker_leases_pkey`로 수정.
-  - 일반 migration은 `postgres` 실행 role이 변경할 수 없는 `supabase_admin` default ACL을 수정하지 않도록 분리. 별도 관리자 작업은 아래 문서 참조.
+- Supabase Auth signup/login/password recovery, 사용자별 workspace bootstrap, 서버 JWT 검증, tenant-scoped API/RLS.
+- workspace-scoped channels/jobs/events/assets, exact-count overview, job history, stale workspace response 방지.
+- Discovery trend radar, source provenance/freshness, shared trend persistence/worker retry, user/workspace-scoped saved topic queue.
+- 제작 queue dedupe, bounded retry/quarantine, atomic claim, lease/heartbeat/fencing, job state/progress contract.
+- deterministic media QA, QA gate, explicit owner/admin Human Approval, concurrent upload claim safety, private-only YouTube upload workflow, provider video ID/privacy verification and uncertain-result quarantine.
+- encrypted OAuth token vault, one-time state/PKCE, callback membership revalidation, channel identity verification, disconnect/revocation checkpoints.
+- responsive seven-workspace UI, four selectable layouts, accent customization, workspace switching and hosted route integration.
+- Provider capability catalogue and multi-account connection model. YouTube adapter and TikTok Login Kit identity/profile adapter are present; TikTok publishing is not enabled. Instagram/Facebook/LinkedIn remain non-connectable until their adapters and provider approvals are completed. Provider registrations and OAuth review are deferred together per user decision.
+- Account-deletion flow is implemented but remains disabled by default; workers and public publishing remain disabled.
+- Full migration replay from an empty isolated local Supabase database and SQL lint pass. Historical ACS migrations are restored as version-matched source files; no migration history rewrite is required for the tested repository chain.
 
-### Supabase local migration validation
+### Current live Supabase read-only verification
 
-- Live `supabase_migrations.schema_migrations` read-only metadata contained five historical ACS migrations that were missing from the repository: `20261106082748`, `20261106082803`, `20261106082842`, `20261106082905`, and `20261106083604`.
-- Restored the exact original SQL statements stored in those live migration records as five version-matched files under `supabase/migrations/`. These are original historical migrations, not no-op placeholders or reconstructed guesses; no live migration history was modified.
-- The repository now contains 22 migration files: 5 historical ACS + 9 already-applied NEXUS foundation + 8 pending NEXUS follow-ups.
-- The local workflow starts an empty isolated Supabase stack and applies all 22 actual repository migrations in timestamp order. It no longer relies on a test-only legacy schema fixture.
-- Full 22-file replay passed. The privileged admin ACL operation also passed in the isolated local stack, and `supabase db lint --fail-on error` reported `No schema errors found`.
+- Live migration ledger: **23 expected entries**. Performance advisor reports no unindexed foreign keys; remaining unused-index findings are informational and indexes were not dropped.
+- Live row counts: **1 Auth user, 1 workspace, 1 workspace membership**; 0 Shorts channels, 0 Shorts jobs, 0 YouTube connections, 0 saved topics, 0 shared trend signals, and 0 trend scan records. No synthetic/test users or tenant data were created during this verification.
+- Health advisor: **0 findings**.
+- Security advisor: 11 INFO findings for private service-only tables with RLS/no client policies; 2 WARN findings for authenticated-callable SECURITY DEFINER application RPCs; 1 WARN because Supabase Auth leaked-password protection is disabled.
+- Read-only function review confirms `transfer_workspace_ownership` checks `auth.uid()`, owner identity, new-owner admin membership, row locks, and exact membership update count. `is_account_deletion_tombstoned` rejects unauthenticated calls and scopes its lookup to `auth.uid()`. Do not revoke these RPCs without replacing their application call paths.
+- `anon` still has direct SELECT/INSERT/UPDATE/DELETE privileges on `storage.objects`; RLS is enabled, no anon object policy was observed in the previous policy audit, and the bucket is private. This remains defense-in-depth cleanup.
+- Public-schema default ACLs still include `anon` grants owned by `postgres` and `supabase_admin`. The documented `supabase_admin` cleanup cannot be run through the ordinary database role. No role elevation or credential retrieval was attempted.
 
-### Vercel Preview 및 OAuth 설정
+### 남은 릴리스 게이트 — 코드 결함과 구분
 
-- 프로젝트: `neural-network`, Free plan.
-- Branch-scoped Preview 환경변수 8개 확인: Supabase URL/publishable/secret key, Google Web OAuth client ID/secret/redirect URI, hosted app URL, AES-256-GCM token-encryption key. Preview + feature branch 전용이며 Production 변수는 추가하지 않음.
-- 최신 READY Preview deployment: `dpl_GbToC9WRt9BfMPxdf1zif2haMtww`, app-code commit `ede1aca0bb8fe7aabe09a4e3f4d5478d1f64bddb`, branch alias:
-  `https://neural-network-git-feat-nexus-user-onbo-509390-justinhblee-9540.vercel.app`.
-- 현재 PR HEAD 이후 변경 파일은 migration/test/docs/workflow에 한정되며 Vercel app runtime 소스 변경은 없음. 따라서 READY Preview에는 현재 app runtime 코드가 포함되지만, live Supabase migration이 적용되었다는 뜻은 아님.
-- Deployment의 최근 30분 error/fatal runtime log 조회에서는 로그가 반환되지 않았음. 이는 기능 성공이나 요청 처리의 증거가 아님.
-- `NEXUS_GOOGLE_OAUTH_REDIRECT_URI`와 `NEXUS_HOSTED_APP_URL`, Google Cloud authorized origin/callback은 이전 unique deployment `https://neural-network-gkefyzt27-justinhblee-9540.vercel.app`에 고정되어 있음. 현재 branch alias와 다르므로 최신 branch alias에서 시작한 OAuth가 이전 호스트로 돌아갈 수 있음. 실제 Google consent/callback/refresh/revoke E2E 전에 URL 정합성 조정 필요.
-- Vercel Preview SSO/deployment protection은 유지 중이며 임의 해제하지 않음. 실제 OAuth callback이 이 보호 정책을 통과하는지도 확인되지 않음.
+1. **Auth security setting:** Supabase Auth leaked-password protection is disabled. Enable it through the supported Auth configuration/dashboard and verify the setting; no available connected action can safely change this setting.
+2. **Privileged ACL cleanup:** run `supabase/operations/nexus_admin_anon_acl_hardening.sql` only through a secure administrator/superuser connection, then verify `storage.objects` anon privileges and `supabase_admin` public defaults are absent. Ordinary `postgres` session is insufficient.
+3. **Provider registration and OAuth E2E:** Google/TikTok/Meta/LinkedIn registration, app review, redirect alignment and real consent/refresh/revoke tests are deferred to the later single SNS registration session. Preview SSO/protection must remain enabled until a safe supported callback design is confirmed.
+4. **Tenant-isolation E2E:** requires a second real test account and owner-controlled test data; current live project has one user/workspace only. Do not create synthetic or persistent test users without authorization.
+5. **Private YouTube upload E2E:** requires an approved test channel and explicit human approval. Keep upload private; never public-publish automatically.
+6. **Windows local runtime:** Docker/FFmpeg startup, render, restart, backup and restore must be verified on the user's Windows machine; this environment has no direct local-machine access.
+7. **Hosted authenticated E2E:** CI/static Playwright and Preview route smoke do not prove real signup/session, two-tenant isolation, provider OAuth, hosted worker, or upload success.
 
-### Supabase live read-only 점검
+### 안전 경계
 
-- Health advisor: findings 0.
-- Security advisor: INFO 6건 — RLS가 활성화됐으나 client policy가 없는 private worker/OAuth tables. 의도된 service-only 접근 영역.
-- Performance advisor: unindexed foreign keys 14건, unused indexes 26건. 14개 FK index coverage migration은 CI replay/lint 통과했으나 live 미적용. 26개 unused indexes는 workload 근거 없이 삭제하지 않음.
-- 14개 public tenant/legacy tables에 `anon` direct table grants가 존재하지만 RLS 정책은 authenticated 역할만 대상으로 함. 정규 migration은 이 14개 테이블과 `postgres`가 생성할 미래 public table의 anon defaults를 정리하도록 작성됨. 아직 live 미적용.
-- `storage.objects`에도 `anon` direct grants가 있으나 RLS가 켜져 있고 anon policy가 없으며 현재 Storage bucket은 모두 private. 이 grant는 defense-in-depth 정리 대상.
-- `postgres`는 `supabase_admin`의 member가 아니므로 일반 migration role로 `supabase_admin` default ACL 및 `storage.objects` owner grant를 수정할 수 없음. 별도 operation `supabase/operations/nexus_admin_anon_acl_hardening.sql`은 CI의 격리 local stack에서 `supabase_admin` 역할로 실행·검증됨. Live 프로젝트에는 아직 실행하지 않음. 자세한 내용은 `docs/SUPABASE_ADMIN_DEFAULT_PRIVILEGES.md` 참조.
-- 이번 read-only 점검과 CI migration replay에서는 live DDL, migration, 데이터 변경을 수행하지 않음.
-
-### 남은 릴리스 게이트
-
-1. **Live Supabase migrations** — 아래 8개는 local replay/lint PASS, live 미적용. 별도 승인된 migration window에서 review/apply 필요:
-   - `20261127110000_nexus_account_deletion_safety.sql`
-   - `20261127123000_nexus_account_deletion_oauth_retry_state.sql`
-   - `20261127130000_nexus_foreign_key_index_coverage.sql`
-   - `20261127140000_nexus_account_deletion_retry_lookup.sql`
-   - `20261127143658_nexus_user_workspace_topic_queue.sql`
-   - `20261127150000_nexus_youtube_disconnect_retry_state.sql`
-   - `20261127160000_nexus_anon_privilege_hardening.sql`
-   - `20261127172712_nexus_shared_public_trend_store.sql`
-2. **Privileged ACL follow-up** — `supabase_admin` public default ACL과 `storage.objects` anon direct grant 정리는 일반 migration role로 수행 불가. 관리자 권한 connection/지원 경로가 필요하며 `docs/SUPABASE_ADMIN_DEFAULT_PRIVILEGES.md`의 SQL은 아직 실행하지 않음.
-3. **OAuth configuration alignment** — Google Cloud authorized origin/redirect URI, Vercel Preview redirect URI/app URL, branch alias 및 Preview protection 정책 정합성 조정 후 실제 Google consent/callback/refresh/revoke 검증 필요.
-4. **Tenant isolation E2E** — 실제 두 사용자 계정으로 같은 workspace/서로 다른 workspace의 read/write/delete 격리 검증 필요. 현재 live Auth user count 0.
-5. **Private upload E2E** — 실제 테스트 YouTube 채널 연결 후 명시적 Human approval를 거쳐 private upload 및 video ID/privacyStatus 확인 필요. 공개 게시/자동 공개 전환 금지.
-6. **Windows local runtime** — 사용자 Windows Docker/Streamlit/FFmpeg 실제 시작·재시작·render·backup/recovery 검증은 이 세션에서 사용자 PC에 직접 접근할 수 없어 미완료.
-7. **Hosted runtime E2E** — READY Preview와 static Playwright smoke는 확인했지만 실제 signup/login, Supabase API, tenant isolation, OAuth, worker, upload runtime E2E는 별도 검증 필요.
-
-### 안전 경계 및 Git 정합성
-
-- PR #11 및 기존 Draft PR은 Open/Draft/unmerged 유지. merge, production deployment, public YouTube upload, force-push, history rewrite 금지.
-- Supabase live migrations/DDL 및 데이터 변경은 별도 명시적 승인 전까지 수행하지 않음.
-- 유료 API, 유료 인프라, 플랜 업그레이드 금지.
-- Worker flags는 기본 비활성화 유지. 계정 삭제, render/upload, trend worker를 실서비스에서 임의 활성화하지 않음.
-- 알려진 Git 정책 위반 기록: test-only commit `af8aa82195c2642623b5461a623c8bd0a8c99336`가 실수로 `main`에 생성됨. 추가 main 변경/삭제/revert는 수행하지 않았으며, 별도 명시적 승인 전까지 그대로 보존.
-- 비밀값은 채팅/Git에 입력하거나 출력하지 않음.
+- PR #11 및 기존 PR은 Draft/Open/Unmerged 유지. main push, merge, force-push, history rewrite, Production deployment 금지.
+- SNS provider registration/OAuth review는 사용자 결정에 따라 보류. 미지원 provider를 YouTube uploader로 보내지 않음.
+- Live schema/data changes, worker activation, account deletion, public upload, paid APIs/infrastructure/plan upgrade는 별도 승인 없이 수행하지 않음.
+- Secrets, OAuth tokens, service-role keys, encryption keys는 채팅이나 Git에 출력하지 않음.
+- 알려진 기존 main 정책 위반 기록 `af8aa82195c2642623b5461a623c8bd0a8c99336`는 보존. 별도 승인 없이 추가 main 수정/삭제/revert 하지 않음.
 
 
 ---
