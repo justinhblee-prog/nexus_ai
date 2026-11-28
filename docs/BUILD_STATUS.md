@@ -295,3 +295,14 @@
 - The live performance advisor identified one remaining unindexed foreign key: `public.shorts_topic_queue.user_id`. The existing `(workspace_id, user_id, created_at DESC, topic_id DESC)` index does not cover lookups by `user_id` alone because `workspace_id` is its leading column.
 - Added additive migration `20261128100000_nexus_topic_queue_user_fk_index.sql` with `idx_shorts_topic_queue_user_id` to cover the exact FK column. This is a PR-only migration pending CI validation; it has not been applied to the live Supabase project.
 - The 42 unused-index notices remain informational and are not removed without workload evidence. No live data or schema was changed by this follow-up.
+
+
+## Final validation and live topic-queue index — 2026-11-28
+
+- Exact PR head `73aa5b029115d3b0e26f79023ac0be036c79698f`: NEXUS UI/runtime validation passed. Evidence: 344 regression tests passed; Docker Compose configuration, Python module compilation, browser JavaScript syntax, and Playwright browser interaction checks all passed.
+- Exact PR head `73aa5b029115d3b0e26f79023ac0be036c79698f`: Supabase local migration validation passed. All repository migrations replayed from an empty isolated database; privileged admin ACL operation assertions passed in that isolated database; schema lint passed.
+- Applied additive migration `20261128100000_nexus_topic_queue_user_fk_index.sql` to the live Seoul Supabase project after the exact-head CI validation passed. Reconciled the Supabase migration ledger to the repository version `20261128100000` and verified the complete 23-entry ledger.
+- Post-apply performance advisor no longer reports `unindexed_foreign_keys`. It reports 43 informational unused-index notices; the newly added FK index is also unused until corresponding workload occurs. No unused indexes were removed.
+- The live operation only added the covering index and migration-ledger entry; no tenant data, user records, workers, OAuth credentials, or upload state were modified.
+- Latest verified Vercel Preview for the exact head: READY at `https://neural-network-pz89js5n1-justinhblee-9540.vercel.app`. Preview runtime query for error/fatal records returned no logs in the checked window.
+- PR #11 remains Draft/Open/Unmerged. Production deployment, main writes, public uploads, and paid services remain prohibited.
