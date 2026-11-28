@@ -39,8 +39,8 @@ class SignedSessionTests(unittest.TestCase):
     def test_root_routes_hosted_mode_to_authenticated_workspace_studio(self):
         with patch.dict(os.environ, {"NEXUS_HOSTED_AUTH_ENABLED": "true"}):
             response = self.api.serve_home()
-        self.assertEqual(response.status_code, 307)
-        self.assertEqual(response.headers.get("location"), "/signup")
+        self.assertEqual(response.path, "workspace.html")
+        self.assertTrue(response.media_type.startswith("text/html"))
 
     def test_root_keeps_legacy_dashboard_in_local_mode(self):
         with patch.dict(os.environ, {"NEXUS_HOSTED_AUTH_ENABLED": "false"}):
