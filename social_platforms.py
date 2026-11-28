@@ -21,8 +21,9 @@ PLATFORM_DEFINITIONS = (
         "id": "tiktok",
         "label": "TikTok",
         "detail": "TikTok 계정 인증과 Content Posting API 권한·앱 검증을 준비하고 있습니다.",
-        "capabilities": ["account_connect", "video_publish"],
-        "adapter_ready": False,
+        "detail": "계정 연결을 지원합니다. 실제 게시에는 video.publish 권한 승인과 TikTok 앱 심사가 추가로 필요합니다.",
+        "capabilities": ["account_connect", "profile"],
+        "adapter_ready": True,
     },
     {
         "id": "instagram",
@@ -51,6 +52,15 @@ PLATFORM_DEFINITIONS = (
 def get_social_platform_catalog(env: Mapping[str, str] | None = None) -> list[dict]:
     """Return public capability metadata without exposing provider credentials."""
     values = os.environ if env is None else env
+    tiktok_ready = all(
+        values.get(key, "").strip()
+        for key in (
+            "NEXUS_TIKTOK_CLIENT_KEY",
+            "NEXUS_TIKTOK_CLIENT_SECRET",
+            "NEXUS_TIKTOK_OAUTH_REDIRECT_URI",
+            "NEXUS_HOSTED_APP_URL",
+        )
+    )
     google_ready = all(
         values.get(key, "").strip()
         for key in (
@@ -68,6 +78,9 @@ def get_social_platform_catalog(env: Mapping[str, str] | None = None) -> list[di
             item["status"] = "coming_soon"
             item["connectable"] = False
         elif item["id"] == "youtube" and google_ready:
+            item["status"] = "ready"
+            item["connectable"] = True
+        elif item["id"] == "tiktok" and tiktok_ready:
             item["status"] = "ready"
             item["connectable"] = True
         else:

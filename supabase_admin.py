@@ -785,7 +785,7 @@ class SupabaseAdminRestClient:
             params={
                 "select": "connection_id,workspace_id,provider,provider_account_id,status",
                 "workspace_id": "in.(" + ",".join(ids) + ")",
-                "provider": "eq.youtube",
+                "provider": f"eq.{provider}",
                 "order": "created_at.asc",
             },
         ) or []
@@ -809,7 +809,9 @@ class SupabaseAdminRestClient:
         rows = self._call("GET", "youtube_connections", params=params) or []
         return bool(rows)
 
-    def has_other_active_connections(self, provider_account_id, connection_id):
+    def has_other_active_connections(self, provider_account_id, connection_id, provider="youtube"):
+        if provider not in {"youtube", "tiktok", "instagram", "facebook", "linkedin"}:
+            raise ValueError("Unsupported social provider")
         rows = self._call(
             "GET",
             "youtube_connections",

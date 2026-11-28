@@ -29,6 +29,7 @@ from supabase_admin import SupabaseAdminRestClient, SupabaseAdminError
 from hosted_trend_store import read_shared_trends
 from social_platforms import get_social_platform_catalog
 from youtube_oauth import GoogleOAuthConfig, GoogleOAuthError, create_oauth_state, create_pkce_pair
+from tiktok_oauth import TikTokOAuthConfig, TikTokOAuthError, TikTokOAuthReauthRequired
 from token_vault import encrypt_refresh_token, decrypt_refresh_token, TokenVaultError
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -41,9 +42,9 @@ class OAuthCallbackLogFilter(logging.Filter):
         args = record.args
         if isinstance(args, tuple) and len(args) >= 3:
             target = args[2]
-            if isinstance(target, str) and target.startswith("/api/hosted/youtube/callback"):
+            if isinstance(target, str) and target.startswith(("/api/hosted/youtube/callback", "/api/hosted/tiktok/callback")):
                 redacted = list(args)
-                redacted[2] = "/api/hosted/youtube/callback?[REDACTED]"
+                redacted[2] = record.args[2].split("?", 1)[0] + "?[REDACTED]"
                 record.args = tuple(redacted)
         return True
 
@@ -939,6 +940,218 @@ def hosted_youtube_connect(workspace_id: str, request: Request):
         _hosted_rest_error(exc)
     except (GoogleOAuthError, SupabaseAdminError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/api/hosted/workspaces/{workspace_id}/tiktok/connect")
+def hosted_tiktok_connect(workspace_id: str, request: Request):
+    """Start a server-side TikTok Login Kit flow for an owner/admin."""
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    user = request.state.hosted_user
+    try:
+        memberships = client.select("workspace_members", {
+            "select": "role",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{user['user_id']}",
+            "limit": "1",
+        }) or []
+        if not any(item.get("role") in {"owner", "admin"} for item in memberships):
+            raise HTTPException(status_code=403, detail="Workspace owner or admin permission required")
+        config = TikTokOAuthConfig.from_env()
+        state, state_hash = create_oauth_state()
+        verifier, _challenge = create_pkce_pair()
+        return_uri = f"{config.app_url}/signup"
+        expires_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+        SupabaseAdminRestClient().store_oauth_state(
+            state_hash, user["user_id"], workspace_id, config.redirect_uri,
+            return_uri, verifier, expires_at, provider="tiktok",
+        )
+        return {"authorization_url": config.authorization_url(state)}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+    except (TikTokOAuthError, SupabaseAdminError) as exc:
+        raise HTTPException(status_code=503, detail="TikTok OAuth is not configured") from exc
+
+
+@app.get("/api/hosted/tiktok/callback")
+def hosted_tiktok_callback(
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    error_description: str | None = None,
+):
+    if not state:
+        raise HTTPException(status_code=400, detail="OAuth state is required")
+    state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()
+    try:
+        admin = SupabaseAdminRestClient()
+        state_data = admin.consume_oauth_state(state_hash)
+        if not state_data or state_data.get("provider") != "tiktok":
+            raise HTTPException(status_code=400, detail="TikTok OAuth state is invalid, expired, or already consumed")
+        config = TikTokOAuthConfig.from_env()
+        expected_return_uri = f"{config.app_url}/signup"
+        if state_data.get("redirect_uri") != config.redirect_uri or state_data.get("return_uri") != expected_return_uri:
+            raise HTTPException(status_code=400, detail="TikTok OAuth redirect configuration mismatch")
+        if error:
+            logger.info("TikTok OAuth was not completed (%s)", str(error)[:64])
+            return RedirectResponse(f"{expected_return_uri}?tiktok=denied", status_code=303)
+        if not code:
+            raise HTTPException(status_code=400, detail="TikTok authorization code is missing")
+
+        memberships = admin.list_account_user_memberships(state_data["user_id"])
+        if not any(
+            row.get("workspace_id") == state_data["workspace_id"]
+            and row.get("role") in {"owner", "admin"}
+            for row in memberships
+        ):
+            raise HTTPException(status_code=403, detail="Workspace owner or admin permission is no longer available")
+
+        token_data = config.exchange_code(code)
+        account = config.fetch_account(token_data["access_token"])
+        if account["account_id"] != token_data.get("open_id"):
+            raise TikTokOAuthError("TikTok account identity did not match the token subject")
+        refresh_token = token_data.get("refresh_token")
+        if not refresh_token:
+            raise TikTokOAuthError("TikTok did not return a refresh token")
+        encrypted = encrypt_refresh_token(refresh_token)
+        scopes = [scope.strip() for scope in (token_data.get("scope") or "").split(",") if scope.strip()]
+        refresh_expires_in = max(60, int(token_data.get("refresh_expires_in") or 15552000))
+        token_expires_at = (
+            datetime.now(timezone.utc) + timedelta(seconds=refresh_expires_in)
+        ).isoformat()
+
+        memberships = admin.list_account_user_memberships(state_data["user_id"])
+        if not any(
+            row.get("workspace_id") == state_data["workspace_id"]
+            and row.get("role") in {"owner", "admin"}
+            for row in memberships
+        ):
+            raise HTTPException(status_code=403, detail="Workspace owner or admin permission is no longer available")
+
+        connections = admin.upsert_connection({
+            "workspace_id": state_data["workspace_id"],
+            "provider": "tiktok",
+            "provider_account_id": account["account_id"],
+            "display_name": account.get("display_name") or "TikTok account",
+            "status": "connected",
+            "scopes": scopes,
+            "connected_by": state_data["user_id"],
+            "disconnected_at": None,
+        })
+        if not connections:
+            raise SupabaseAdminError("TikTok connection metadata could not be saved")
+        connection_id = connections[0]["connection_id"]
+        try:
+            admin.upsert_credential(
+                connection_id, state_data["workspace_id"], encrypted["ciphertext_hex"],
+                encrypted["key_version"], scopes, token_expires_at,
+            )
+            admin.upsert_channel({
+                "workspace_id": state_data["workspace_id"],
+                "connection_id": connection_id,
+                "platform": "tiktok",
+                "provider_channel_id": account["account_id"],
+                "display_name": account.get("display_name") or "TikTok account",
+                "created_by": state_data["user_id"],
+            })
+        except SupabaseAdminError:
+            admin.update_connection(connection_id, state_data["workspace_id"], {
+                "status": "reauth_required",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+            raise
+        return RedirectResponse(f"{expected_return_uri}?tiktok=connected", status_code=303)
+    except HTTPException:
+        raise
+    except (TikTokOAuthError, SupabaseAdminError, TokenVaultError, ValueError) as exc:
+        logger.warning("TikTok OAuth callback failed (%s)", type(exc).__name__)
+        try:
+            config = TikTokOAuthConfig.from_env()
+            return RedirectResponse(f"{config.app_url}/signup?tiktok=error", status_code=303)
+        except TikTokOAuthError:
+            raise HTTPException(status_code=503, detail="TikTok OAuth is not configured") from exc
+
+
+@app.post("/api/hosted/workspaces/{workspace_id}/tiktok/{connection_id}/disconnect")
+def hosted_tiktok_disconnect(workspace_id: str, connection_id: UUID, request: Request):
+    """Revoke a TikTok grant safely, preserving rotated refresh tokens for retries."""
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    user = request.state.hosted_user
+    try:
+        memberships = client.select("workspace_members", {
+            "select": "role",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{user['user_id']}",
+            "limit": "1",
+        }) or []
+        if not any(item.get("role") in {"owner", "admin"} for item in memberships):
+            raise HTTPException(status_code=403, detail="Workspace owner or admin permission required")
+        connections = client.select("youtube_connections", {
+            "select": "connection_id,status,provider,provider_account_id",
+            "workspace_id": f"eq.{workspace_id}",
+            "connection_id": f"eq.{connection_id}",
+            "provider": "eq.tiktok",
+        }) or []
+        if not connections:
+            raise HTTPException(status_code=404, detail="TikTok connection not found")
+        admin = SupabaseAdminRestClient()
+        connection_key = str(connection_id)
+        credential = admin.get_credential(connection_key)
+        revocation_state = admin.get_youtube_disconnect_state(connection_key)
+        if credential:
+            shared_grant = admin.has_other_active_connections(
+                connections[0]["provider_account_id"], connection_key, provider="tiktok"
+            )
+            if shared_grant:
+                saved = admin.set_youtube_disconnect_state(connection_key, "preserved")
+                if saved != "preserved":
+                    raise SupabaseAdminError("Shared TikTok grant preservation state was not persisted")
+            elif revocation_state not in {"revoked", "preserved", "not_required"}:
+                started = admin.set_youtube_disconnect_state(connection_key, "revocation_started")
+                if started != "revocation_started":
+                    raise SupabaseAdminError("TikTok token revocation intent was not durably recorded")
+                refresh_token = decrypt_refresh_token(
+                    credential["encrypted_refresh_token_hex"],
+                    credential["encryption_key_version"],
+                )
+                config = TikTokOAuthConfig.from_env()
+                token_data = config.refresh_access_token(refresh_token)
+                rotated_refresh = token_data.get("refresh_token") or refresh_token
+                encrypted = encrypt_refresh_token(rotated_refresh)
+                refresh_expires_in = max(60, int(token_data.get("refresh_expires_in") or 15552000))
+                admin.upsert_credential(
+                    connection_key, workspace_id, encrypted["ciphertext_hex"],
+                    encrypted["key_version"], token_data.get("scope", "").split(","),
+                    (datetime.now(timezone.utc) + timedelta(seconds=refresh_expires_in)).isoformat(),
+                )
+                config.revoke_access_token(token_data["access_token"])
+                completed = admin.set_youtube_disconnect_state(connection_key, "revoked")
+                if completed != "revoked":
+                    raise SupabaseAdminError("TikTok token revocation result was not durably recorded")
+        elif revocation_state == "revocation_started":
+            raise SupabaseAdminError("TikTok token revocation outcome is uncertain; credential retained for safe retry")
+        elif revocation_state is None:
+            saved = admin.set_youtube_disconnect_state(connection_key, "not_required")
+            if saved != "not_required":
+                raise SupabaseAdminError("No-token disconnect state was not durably recorded")
+        updated = admin.update_connection(connection_key, workspace_id, {
+            "status": "disconnected",
+            "disconnected_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+        if not updated:
+            raise SupabaseAdminError("TikTok connection could not be updated")
+        admin.update_channels(workspace_id, connection_key, {
+            "is_active": False,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+        admin.delete_credential(connection_key)
+        return {"status": "disconnected", "connection_id": connection_key}
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+    except (TikTokOAuthError, SupabaseAdminError, TokenVaultError) as exc:
+        raise HTTPException(status_code=502, detail="TikTok disconnection could not be completed safely") from exc
 
 
 @app.get("/api/hosted/youtube/callback")
