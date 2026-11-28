@@ -819,6 +819,186 @@ def hosted_workspace_trends(workspace_id: str, request: Request):
         _hosted_rest_error(exc)
 
 
+@app.get("/api/hosted/workspaces/{workspace_id}/analytics")
+def hosted_workspace_analytics(workspace_id: str, request: Request, refresh: bool = False):
+    """Return real YouTube Analytics metrics for connections owned by this workspace."""
+    _validate_workspace_id(workspace_id)
+    client = _hosted_rest_client(request)
+    user = request.state.hosted_user
+    try:
+        memberships = client.select("workspace_members", {
+            "select": "role",
+            "workspace_id": f"eq.{workspace_id}",
+            "user_id": f"eq.{user['user_id']}",
+            "limit": "1",
+        }) or []
+        if not memberships:
+            raise HTTPException(status_code=404, detail="Workspace not found")
+
+        connections = client.select("youtube_connections", {
+            "select": "connection_id,display_name,status,scopes",
+            "workspace_id": f"eq.{workspace_id}",
+            "provider": "eq.youtube",
+            "status": "eq.connected",
+            "order": "created_at.asc",
+        }) or []
+        channels = client.select("shorts_channels", {
+            "select": "channel_id,provider_channel_id,display_name,connection_id,is_active",
+            "workspace_id": f"eq.{workspace_id}",
+            "platform": "eq.youtube",
+            "is_active": "eq.true",
+            "order": "created_at.asc",
+        }) or []
+
+        today = date.today()
+        end_date = today - timedelta(days=2)
+        start_date = end_date - timedelta(days=27)
+        start_text, end_text = start_date.isoformat(), end_date.isoformat()
+        if not connections:
+            return {
+                "status": "not_connected", "period_days": 28,
+                "period_start": start_text, "period_end": end_text,
+                "views": None, "watch_minutes": None, "average_view_duration_seconds": None,
+                "likes": None, "comments": None, "shares": None,
+                "subscribers_gained": None, "subscribers_lost": None,
+                "engagement_rate": None, "source": None, "updated_at": None,
+                "channels": [], "note": "YouTube 계정을 연결하면 실제 Analytics 지표가 표시됩니다.",
+            }
+
+        admin = SupabaseAdminRestClient()
+        config = GoogleOAuthConfig.from_env()
+        from google.auth.transport.requests import Request as GoogleRequest
+        from google.oauth2.credentials import Credentials
+        from googleapiclient.discovery import build
+
+        channel_results = []
+        totals = {key: 0.0 for key in (
+            "views", "watch_minutes", "likes", "comments", "shares",
+            "subscribers_gained", "subscribers_lost",
+        )}
+        weighted_duration = 0.0
+        total_views = 0.0
+        subscribers = []
+        for connection in connections:
+            connection_id = str(connection["connection_id"])
+            scopes = set(connection.get("scopes") or [])
+            required_scopes = {
+                "https://www.googleapis.com/auth/yt-analytics.readonly",
+                "https://www.googleapis.com/auth/youtube.readonly",
+            }
+            if not required_scopes.issubset(scopes):
+                channel_results.append({
+                    "connection_id": connection_id,
+                    "display_name": connection.get("display_name") or "YouTube",
+                    "status": "scope_required",
+                })
+                continue
+            credential = admin.get_credential(connection_id)
+            if not credential:
+                channel_results.append({
+                    "connection_id": connection_id,
+                    "display_name": connection.get("display_name") or "YouTube",
+                    "status": "reauth_required",
+                })
+                continue
+            refresh_token = decrypt_refresh_token(
+                credential["encrypted_refresh_token_hex"],
+                credential["encryption_key_version"],
+            )
+            credentials = Credentials(
+                token=None,
+                refresh_token=refresh_token,
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=config.client_id,
+                client_secret=config.client_secret,
+                scopes=sorted(required_scopes),
+            )
+            try:
+                credentials.refresh(GoogleRequest())
+                analytics = build("youtubeAnalytics", "v2", credentials=credentials, cache_discovery=False)
+                youtube = build("youtube", "v3", credentials=credentials, cache_discovery=False)
+                report = analytics.reports().query(
+                    ids="channel==MINE",
+                    startDate=start_text,
+                    endDate=end_text,
+                    metrics="views,estimatedMinutesWatched,averageViewDuration,likes,comments,shares,subscribersGained,subscribersLost",
+                ).execute()
+                headers = [item.get("name") for item in report.get("columnHeaders", [])]
+                row = (report.get("rows") or [[]])[0]
+                values = dict(zip(headers, row))
+                stats_response = youtube.channels().list(part="statistics", mine=True).execute()
+                stats_items = stats_response.get("items") or []
+                stats = (stats_items[0].get("statistics") or {}) if stats_items else {}
+                metric = {
+                    "views": int(float(values.get("views") or 0)),
+                    "watch_minutes": float(values.get("estimatedMinutesWatched") or 0),
+                    "average_view_duration_seconds": float(values.get("averageViewDuration") or 0),
+                    "likes": int(float(values.get("likes") or 0)),
+                    "comments": int(float(values.get("comments") or 0)),
+                    "shares": int(float(values.get("shares") or 0)),
+                    "subscribers_gained": int(float(values.get("subscribersGained") or 0)),
+                    "subscribers_lost": int(float(values.get("subscribersLost") or 0)),
+                    "subscriber_count": None if stats.get("hiddenSubscriberCount", False) else int(stats.get("subscriberCount") or 0),
+                }
+                for key in totals:
+                    totals[key] += metric[key]
+                weighted_duration += metric["average_view_duration_seconds"] * metric["views"]
+                total_views += metric["views"]
+                if metric["subscriber_count"] is not None:
+                    subscribers.append(metric["subscriber_count"])
+                channel_results.append({
+                    "connection_id": connection_id,
+                    "display_name": connection.get("display_name") or "YouTube",
+                    "status": "connected",
+                    **metric,
+                })
+            except Exception as exc:
+                logger.warning("Hosted YouTube Analytics query failed (%s)", type(exc).__name__)
+                channel_results.append({
+                    "connection_id": connection_id,
+                    "display_name": connection.get("display_name") or "YouTube",
+                    "status": "error",
+                    "error_type": type(exc).__name__,
+                })
+
+        connected_count = sum(1 for item in channel_results if item["status"] == "connected")
+        failed_count = len(channel_results) - connected_count
+        if not connected_count:
+            status = "scope_required" if any(x["status"] == "scope_required" for x in channel_results) else "error"
+            return {
+                "status": status, "period_days": 28,
+                "period_start": start_text, "period_end": end_text,
+                "views": None, "watch_minutes": None, "average_view_duration_seconds": None,
+                "likes": None, "comments": None, "shares": None,
+                "subscribers_gained": None, "subscribers_lost": None,
+                "engagement_rate": None, "subscriber_count": None,
+                "source": None, "updated_at": None, "channels": channel_results,
+                "note": "Analytics 권한을 확인하거나 YouTube 계정을 다시 연결해 주세요. 실제 수치는 추정하지 않습니다.",
+            }
+        engagement = (totals["likes"] + totals["comments"] + totals["shares"]) / total_views * 100 if total_views else 0.0
+        return {
+            "status": "partial" if failed_count else "connected",
+            "period_days": 28,
+            "period_start": start_text,
+            "period_end": end_text,
+            **totals,
+            "average_view_duration_seconds": weighted_duration / total_views if total_views else 0.0,
+            "subscriber_count": sum(subscribers) if subscribers else None,
+            "engagement_rate": engagement,
+            "source": "YouTube Analytics API",
+            "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "channels": channel_results,
+            "note": "실제 YouTube Analytics API의 최근 완료된 28일 데이터입니다. 예상치나 샘플 수치는 포함하지 않습니다.",
+        }
+    except HTTPException:
+        raise
+    except SupabaseRestError as exc:
+        _hosted_rest_error(exc)
+    except (GoogleOAuthError, SupabaseAdminError, TokenVaultError) as exc:
+        logger.warning("Hosted Analytics setup failed (%s)", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="YouTube Analytics를 안전하게 조회할 수 없습니다.") from exc
+
+
 @app.post("/api/hosted/workspaces/{workspace_id}/jobs")
 def hosted_create_job(workspace_id: str, req: HostedJobCreateReq, request: Request):
     _validate_workspace_id(workspace_id)
