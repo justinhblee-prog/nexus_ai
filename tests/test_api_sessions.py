@@ -644,27 +644,29 @@ class SignedSessionTests(unittest.TestCase):
         admin_type.return_value.delete_credential.assert_called_once()
         self.assertEqual(result["status"], "disconnected")
 
-    def test_youtube_callback_is_public_but_state_protected_in_hosted_mode(self):
+    def test_social_oauth_callbacks_are_public_but_state_protected_in_hosted_mode(self):
         async def next_response(_request):
             return Response(status_code=204)
         with patch.dict(os.environ, {"NEXUS_HOSTED_AUTH_ENABLED": "true"}):
-            response = asyncio.run(self.api.enforce_local_origin_and_session(
-                self._request("/api/hosted/youtube/callback", method="GET"), next_response
-            ))
-        self.assertEqual(response.status_code, 204)
+            for callback_path in ("/api/hosted/youtube/callback", "/api/hosted/tiktok/callback"):
+                response = asyncio.run(self.api.enforce_local_origin_and_session(
+                    self._request(callback_path, method="GET"), next_response
+                ))
+                self.assertEqual(response.status_code, 204)
 
 
-    def test_oauth_callback_access_log_redacts_query_parameters(self):
-        record = logging.LogRecord(
-            "uvicorn.access", logging.INFO, __file__, 1, "%s - %s %s %s %s",
-            ("127.0.0.1", "GET", "/api/hosted/youtube/callback?code=code123&state=state123", "1.1", 200),
-            None,
-        )
+    def test_social_oauth_callback_access_logs_redact_query_parameters(self):
         filter_instance = self.api.OAuthCallbackLogFilter()
-        self.assertTrue(filter_instance.filter(record))
-        self.assertEqual(record.args[2], "/api/hosted/youtube/callback?[REDACTED]")
-        self.assertNotIn("code123", str(record.args))
-        self.assertNotIn("state123", str(record.args))
+        for provider in ("youtube", "tiktok"):
+            record = logging.LogRecord(
+                "uvicorn.access", logging.INFO, __file__, 1, "%s - %s %s %s %s",
+                ("127.0.0.1", "GET", f"/api/hosted/{provider}/callback?code=code123&state=state123", "1.1", 200),
+                None,
+            )
+            self.assertTrue(filter_instance.filter(record))
+            self.assertEqual(record.args[2], f"/api/hosted/{provider}/callback?[REDACTED]")
+            self.assertNotIn("code123", str(record.args))
+            self.assertNotIn("state123", str(record.args))
 
 
     def test_youtube_disconnect_does_not_revoke_google_grant_shared_by_another_workspace(self):
