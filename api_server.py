@@ -121,7 +121,7 @@ async def enforce_local_origin_and_session(request, call_next):
     if is_hosted_auth_enabled():
         if path in {"/api/hosted/auth-config", "/api/session/status"} and request.method == "GET":
             return await call_next(request)
-        if path == "/api/hosted/youtube/callback" and request.method == "GET":
+        if path in {"/api/hosted/youtube/callback", "/api/hosted/tiktok/callback"} and request.method == "GET":
             return await call_next(request)
         if path.startswith("/api/hosted/"):
             try:
